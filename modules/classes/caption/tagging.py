@@ -40,7 +40,7 @@ AESTHETIC_TAGS = set(CUSTOM_TAGS.get('aesthetic', []))
 STYLE_TAGS = set(CUSTOM_TAGS.get('style', []))
 GAME_TAGS = set(CUSTOM_TAGS.get('game', []))
 CHARACTER_TAGS = set(CUSTOM_TAGS.get('character', []))
-CUSTOM_TAGS = QUALITY_TAGS | AESTHETIC_TAGS | STYLE_TAGS | GAME_TAGS | CHARACTER_TAGS
+CUSTOM_TAGS = QUALITY_TAGS | AESTHETIC_TAGS | STYLE_TAGS | GAME_TAGS
 
 PATTERN_CHARACTER_TAGS = '(' + '|'.join([REGEX_UNESCAPED_BRACKET.sub(r'\\\?\\\1', tag).replace(' ', r'[\s_]') for tag in CHARACTER_TAGS]) + ')'
 REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
@@ -94,7 +94,7 @@ def init_priority_tags():
         # Artist
         [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
         # Quality
-        [r'\b(amazing|best|high|normal|low|worst) quality\b'],
+        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
         # Style
         [PATTERN_STYLE_TAGS, PATTERN_STYLE],
         # Aesthetic
@@ -106,12 +106,12 @@ def init_priority_tags():
         # Theme
         [r'.*\b(theme)\b.*', 'science fiction', 'fantasy'],
         # Character
-        [GAME_TAGS],
+        ['|'.join(GAME_TAGS)],
         [PATTERN_CHARACTER_TAGS, PATTERN_CHARACTER, 'cosplay'],
         # Figure
         [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
         [r'(furry|fox|pig|horse|cat|dog|cow|animal|maid|sheep|bear|monster) (female|male|girl|boy)s?',
-         'maid', 'nun', 'androgynous', 'demon', 'giant', 'loli', 'demon', 'angel', 'monster'],
+         'maid', 'nun', 'androgynous', 'demon', 'giant', 'loli', 'angel', 'monster'],
         ['solo'],
         # Environment
         ['nature'],
@@ -143,7 +143,7 @@ def init_priority_tags():
 
         # Hair
         [r'[\w\-\s]+ hair'],
-        [r'.*\b(hair|ponytail|twintail|hairbun|bun|bob cut|hairclip|braid|haircut|bang|ahoge)s?\b.*', 'ringlets', 'sidelocks', 'fringe', 'forelock', 'two side up'],
+        [r'.*\b(hair|ponytail|twintail|hairbun|bun|bob cut|braid|bang|ahoge)s?\b.*', 'ringlets', 'sidelocks', 'fringe', 'forelock', 'two side up'],
         # Hair ornaments
         [r'.*\b(hairclip|haircut|hairband|hair ornament)s?\b.*'],
 
@@ -180,3 +180,11 @@ def init_priority_tags():
 
 
 PRIORITY, PRIORITY_REGEX = None, None
+
+
+PATTERN_CHARACTER_FEATURES = [
+    r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyeliner|eyebrow|pupil|tongue|lip|mole|ear|horn|tail|wing|breast|skin)s?\b.*",
+    r".*\b(twintails|ponytail|hairbun|double bun|bob cut|sidelocks|loli|tan|eyelashes)\b.*",
+    r".*\b(furry|fox|pig|wolf|horse|cat|dog|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature)([\s_](girl|boy|other|male|female))?\b.*"
+]
+REGEX_CHARACTER_FEATURES = [re.compile(pattern) for pattern in PATTERN_CHARACTER_FEATURES]

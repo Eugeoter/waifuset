@@ -23,7 +23,7 @@ def track_path(image_info: ImageInfo, dataset):
 
 def track_caption(image_info: ImageInfo, dataset):
     image_key = image_info.key
-    if image_key in dataset:
+    if image_key in dataset and dataset[image_key].caption:
         image_info.caption = dataset[image_key].caption
     return image_info
 
@@ -61,4 +61,10 @@ def track_everything(image_info: ImageInfo, dataset):
     image_info = track_caption(image_info, dataset)
     image_info = track_artist(image_info)
     image_info = track_characters(image_info)
+    return image_info
+
+
+def change_source(image_info: ImageInfo, new_src_name: str):
+    old_src = image_info.source
+    image_info.image_path = old_src.parent / new_src_name / image_info.image_path.relative_to(old_src)
     return image_info

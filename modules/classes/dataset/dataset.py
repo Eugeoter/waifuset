@@ -1,5 +1,6 @@
 import time
 import pandas as pd
+import concurrent.futures as cf
 from tqdm import tqdm
 from torch.utils.data import dataset as torch_dataset
 from pathlib import Path
@@ -180,15 +181,25 @@ class Dataset(torch_dataset.Dataset):
     def __repr__(self):
         return repr(self._data)
 
-    def apply_map(self, func, *args, **kwargs):
+    def apply_map(self, func, *args, max_workers=1, **kwargs):
         if self.verbose:
             tic = time.time()
             logu.info(f'Applying map `{logu.yellow(func.__name__)}`...')
 
-        for image_info in tqdm(self.values(), desc='Applying map', smoothing=1, disable=not self.verbose):
-            image_info = func(image_info, *args, **kwargs)
-            assert isinstance(image_info, ImageInfo), f'Invalid return type for map `{func.__name__}`. Expected `ImageInfo`, but got `{type(image_info)}`.'
+        pbar = tqdm(self.items(), desc=f'Applying map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
+        func_ = logu.track_tqdm(pbar)(func)
+        if max_workers == 1:
+            for image_key, image_info in self.items():
+                self[image_key] = func_(image_info, *args, **kwargs)
+        else:
+            with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(func_, image_info, *args, **kwargs) for image_info in self.values()]
 
+                for future in cf.as_completed(futures):
+                    image_info = future.result()
+                    self[image_info.key] = image_info
+
+        pbar.close()
         if self.verbose:
             toc = time.time()
             logu.success(f'Map applied: time_cost={toc - tic:.2f}s.')

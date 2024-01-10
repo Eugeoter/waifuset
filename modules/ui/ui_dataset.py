@@ -53,11 +53,39 @@ class UIDataset(Dataset):
         self.selected = SelectData()
         self.history = {}
 
+        self.make_subsets()
+
+    def make_subsets(self):
+        subsets = {}
+        for k, v in tqdm(self.items(), desc='making subsets'):
+            if v.category not in subsets:
+                subsets[v.category] = Dataset()
+            subsets[v.category][k] = v
+        self.subsets = subsets
+
     def select(self, selected: gr.SelectData):
-        self.selected.index = selected.index
-        image_key = os.path.basename(os.path.splitext(selected.value['image']['orig_name'])[0])
-        self.selected.image_key = image_key
-        return self.__getitem__(image_key)
+        if isinstance(selected, gr.SelectData):
+            self.selected.index = selected.index
+            image_key = os.path.basename(os.path.splitext(selected.value['image']['orig_name'])[0])
+            self.selected.image_key = image_key
+
+        elif isinstance(selected, str):  # selected is image_key
+            self.selected.image_key = selected
+            img_info = self[selected]
+            subset = self.subsets[img_info.category]
+            self.selected.index = list(subset.keys()).index(selected)
+
+        elif isinstance(selected, int):  # selected is index
+            pre_img_key = self.selected.image_key
+            category = self[pre_img_key].category
+            self.selected.index = selected
+            self.selected.image_key = list(self.subsets[category].keys())[selected]
+
+        elif selected is None:  # selected is None
+            self.selected.index = None
+            self.selected.image_key = None
+
+        return self.selected.image_key
 
     def __setitem__(self, key, value):
         super().__setitem__(key, value)

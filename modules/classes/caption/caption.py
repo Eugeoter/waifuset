@@ -15,15 +15,17 @@ class Caption:
 
     def __init__(self, caption_or_tags=None, sep=',', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
-            self.tags = caption_or_tags.tags
+            tags = caption_or_tags.tags
         elif isinstance(caption_or_tags, (str, list)):
             if fix_typos and isinstance(caption_or_tags, str):
                 caption_or_tags = caption_or_tags.replace('，', ',')
-            self.tags: List[str] = tagify(caption_or_tags, sep=sep)
+            tags: List[str] = tagify(caption_or_tags, sep=sep)
         elif caption_or_tags is None:
-            self.tags: List[str] = []
+            tags: List[str] = []
         else:
             raise TypeError(f"unsupported type for caption: {type(caption_or_tags).__name__}")
+
+        self.tags = [tag.strip() for tag in tags if tag.strip() != '']
 
         # caches
         self._artist: str = EMPTY_CACHE
@@ -34,6 +36,8 @@ class Caption:
     def load_cache(self, **kwargs):
         for key, value in kwargs.items():
             if key in self._cached_properties:
+                if isinstance(value, str) and ',' in value:
+                    value = [v.strip() for v in value.split(',')]
                 setattr(self, f"_{key}", value)
 
     def clean_cache(self):
