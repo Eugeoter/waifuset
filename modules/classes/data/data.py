@@ -5,6 +5,8 @@ from ..caption import Caption, captionize
 
 
 class ImageInfo:
+    LAZY_READING = 0
+
     image_path: Path
     caption: Caption
     original_size: Tuple[int, int]
@@ -17,10 +19,10 @@ class ImageInfo:
         **kwargs,
     ):
         self._image_path = Path(image_path).absolute()
-        self._caption = Caption(caption) if caption else None
+        self._caption = caption if caption is None or caption is ImageInfo.LAZY_READING else Caption(caption)
         self._original_size = tuple(original_size) if original_size else None
 
-        if self.caption:
+        if self._caption:
             self.caption.load_cache(**kwargs)
 
         # caches
@@ -44,6 +46,8 @@ class ImageInfo:
 
     @property
     def caption(self):
+        if self._caption is ImageInfo.LAZY_READING:
+            self.read_caption()
         return self._caption
 
     @caption.setter

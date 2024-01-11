@@ -22,7 +22,7 @@ class Dataset(_father_class):
 
     _data: Dict[str, ImageInfo]
 
-    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_caption=False, formalize_caption=False, recur=True, verbose=False):
+    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_caption=False, lazy_reading=True, formalize_caption=False, recur=True, verbose=False):
         self.verbose = verbose
         if self.verbose:
             tic = time.time()
@@ -79,7 +79,8 @@ class Dataset(_father_class):
                             continue
                         if read_caption:
                             cap_path = file.with_suffix('.txt')
-                            caption = cap_path.read_text(encoding='utf-8') if cap_path.is_file() else None
+                            if cap_path.is_file():
+                                caption = cap_path.read_text(encoding='utf-8') if not lazy_reading else ImageInfo.LAZY_READING
                         else:
                             caption = None
                         image_info = ImageInfo(file, caption=caption)

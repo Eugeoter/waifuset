@@ -3,10 +3,11 @@ import os
 import json
 import pickle
 import time
+import math
 import functools
 from pathlib import Path
 from tqdm import tqdm
-from typing import List, Iterable, Dict, Any
+from typing import List, Iterable, Dict, Any, Callable
 from ..classes import Dataset, ImageInfo
 from ..utils import log_utils as logu
 
@@ -85,17 +86,33 @@ class History:
         return len(self._z)
 
 
+class ChunkedDataset(Dataset):
+    def __init__(self, source, *args, chunk_size=None, **kwargs):
+        super().__init__(source, *args, **kwargs)
+        self.chunk_size = chunk_size
+
+    def chunk(self, index) -> Dataset:
+        if index < 0 or index >= self.num_chunks:
+            return Dataset()
+        return Dataset(self.values()[index * self.chunk_size: (index + 1) * self.chunk_size])
+
+    @property
+    def num_chunks(self):
+        return math.ceil(len(self) / self.chunk_size)
+
+
 class UIDataset(Dataset):
     selected: SelectData
     history: History
 
-    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, *args, **kwargs):
+    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, subset_chunk_size=200, *args, **kwargs):
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
+        self.subset_chunk_size = subset_chunk_size
 
         if isinstance(source, (str, Path)) and source.endswith(".pkl"):
             with open(source, 'rb') as f:
@@ -116,7 +133,7 @@ class UIDataset(Dataset):
         subsets = {}
         for k, v in tqdm(self.items(), desc='making subsets'):
             if v.category not in subsets:
-                subsets[v.category] = Dataset()
+                subsets[v.category] = ChunkedDataset(source=None, chunk_size=self.subset_chunk_size)
             subsets[v.category][k] = v
         self.subsets = subsets
 
@@ -182,7 +199,7 @@ class UIDataset(Dataset):
         del subset[key]
 
         # update buffer
-        self.buffer[key] = None
+        self.buffer[key] = img_info
 
         return img_info
 
@@ -213,10 +230,11 @@ class UIDataset(Dataset):
 
     def save(self, progress=gr.Progress(track_tqdm=True)):
         if self.verbose:
-            tic = time.time()
             logu.info(f'Saving dataset...')
 
         if self.write_to_database:
+            if self.verbose:
+                tic = time.time()
             if not self.database_file.is_file():  # dump all
                 self.database_file.parent.mkdir(parents=True, exist_ok=True)
                 self.to_json(self.database_file)
@@ -230,8 +248,13 @@ class UIDataset(Dataset):
                         del json_data[img_key]
                 with open(self.database_file, 'w', encoding='utf-8') as f:
                     json.dump(json_data, f, indent=4, ensure_ascii=False, sort_keys=False)
+            if self.verbose:
+                toc = time.time()
+                time_cost1 = toc - tic
 
         if self.write_to_txt:
+            if self.verbose:
+                tic = time.time()
             for img_key, img_info in tqdm(self.buffer.items(), desc='dumping to txt', disable=not self.verbose):
                 img_info: ImageInfo
                 if img_key in self:
@@ -242,6 +265,9 @@ class UIDataset(Dataset):
                     cap_path = img_info.with_suffix('.txt')
                     if cap_path.is_file():
                         cap_path.unlink()
+            if self.verbose:
+                toc = time.time()
+                time_cost2 = toc - tic
 
         if self.verbose:
             logu.info(f"revised total {len(self.buffer)} items.")
@@ -249,4 +275,7 @@ class UIDataset(Dataset):
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset saved to `{logu.yellow(self.database_file)}`: time_cost={toc - tic:.2f}s.')
+            if self.write_to_database:
+                logu.success(f'Write to database: saved to `{logu.yellow(self.database_file)}`: time_cost={time_cost1:.2f}s.')
+            if self.write_to_txt:
+                logu.success(f'Write to txt: time_cost={time_cost2:.2f}s.')

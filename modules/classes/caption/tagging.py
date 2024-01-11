@@ -93,14 +93,12 @@ def init_priority_tags():
     PRIORITY = [
         # Artist
         [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
-        # Quality
-        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
         # Style
         [PATTERN_STYLE_TAGS, PATTERN_STYLE],
-        # Aesthetic
-        ['aesthetic', 'detailed', 'messy', 'beautiful'],
         # Artistic
         ['|'.join(AESTHETIC_TAGS)],
+        # Quality
+        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
         # Subject
         ['portrait', 'scenery'],
         # Theme

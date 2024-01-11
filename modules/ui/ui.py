@@ -1,9 +1,10 @@
 import gradio as gr
 import random
+import pandas
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
-from typing import Callable, Any, Tuple, Dict
+from typing import Callable, Any, Tuple, Dict, List, Union
 from . import custom_components as cc
 from ..import tagging
 from .emoji import Emoji
@@ -38,6 +39,7 @@ def prepare_dataset(
         write_to_database=args.write_to_database,
         write_to_txt=args.write_to_txt,
         database_file=args.database_file,
+        subset_chunk_size=args.subset_chunk_size,
         read_caption=True,
         verbose=True,
     )
@@ -67,13 +69,14 @@ def create_ui(
 
     # ========================================= Base variables ========================================= #
 
-    database_path = Path(args.database_file)
     dataset = prepare_dataset(args)
+    database_path = Path(args.database_file) if args.database_file else None
     subsets = dataset.subsets
     buffer = dataset.buffer
 
     wd14 = None
     character_feature_table = None
+    random_sample_history = set()
 
     # ========================================= UI ========================================= #
 
@@ -82,20 +85,30 @@ def create_ui(
             with gr.Tab("Main") as main_tab:
                 with gr.Row():
                     with gr.Column():
-                        subsets_selector = gr.Dropdown(
-                            label='Category',
-                            choices=[""] + sorted(subsets.keys()),
-                            value="",
-                            multiselect=False,
-                            allow_custom_value=False,
-                        )
+                        with gr.Row():
+                            subsets_selector = gr.Dropdown(
+                                label='Category',
+                                choices=[""] + sorted(subsets.keys()),
+                                value="",
+                                multiselect=False,
+                                allow_custom_value=False,
+                                min_width=256,
+                            )
+                            cur_chunk_index = gr.Number(label='Chunk', value=0, min_width=128, precision=0, scale=0)
                     with gr.Column():
                         log_box = gr.TextArea(
                             label='Log',
                             lines=1,
                             max_lines=1,
                         )
+                with gr.Row():
+                    with gr.Column():
+                        with gr.Row():
+                            load_pre_chunk_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
+                            load_next_chunk_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
 
+                    with gr.Column():
+                        ...
                 with gr.Tab("Tagging") as tagging_tab:
                     with gr.Row():
                         with gr.Column():
@@ -109,21 +122,30 @@ def create_ui(
                                     height=512,
                                     selected_index=0,
                                 )
-                                image_key = gr.Textbox(value=None, visible=False, label='Image Key')
+                                cur_image_key = gr.Textbox(value=None, visible=False, label='Image Key')
                             with gr.Row():
                                 reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise)
                                 remove_image_btn = cc.EmojiButton(Emoji.trash_bin, variant='stop')
 
                         with gr.Column():
                             with gr.Row():
-                                caption = gr.Textbox(
-                                    label='Caption',
-                                    value=None,
-                                    container=True,
-                                    show_copy_button=True,
-                                    lines=6,
-                                    max_lines=6,
-                                )
+                                with gr.Tab("Caption"):
+                                    caption = gr.Textbox(
+                                        label='Caption',
+                                        value=None,
+                                        container=True,
+                                        show_copy_button=True,
+                                        lines=6,
+                                        max_lines=6,
+                                    )
+                                with gr.Tab("Metadata"):
+                                    metadata_df = gr.Dataframe(
+                                        value=None,
+                                        label='Metadata',
+                                        type='pandas',
+                                        row_count=(1, 'fixed'),
+                                    )
+
                             with gr.Row():
                                 random_btn = cc.EmojiButton(Emoji.dice)
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
@@ -282,65 +304,57 @@ def create_ui(
                     )
 
             with gr.Tab("Buffer") as buffer_tab:
-                buffer_dataframe = gr.Dataframe(
+                buffer_df = gr.Dataframe(
                     value=None,
                     label='Buffer',
                     type='pandas',
+                    row_count=(20, 'fixed'),
                 )
 
         # ========================================= Functions ========================================= #
+
+        def kwargs_setter(func, **kwargs):
+            def wrapper(*args):
+                return func(*args, **kwargs)
+            return wrapper
 
         # ========================================= Tab changing parser ========================================= #
         activating_tab = gr.State(value='tagging')
 
         tagging_tab.select(
-            fn=lambda subset_key: ('tagging', *show_subset(subset_key).values()),
-            inputs=[subsets_selector],
-            outputs=[activating_tab, showcase, image_key],
+            fn=lambda subset_key, chunk_index: ('tagging', *show_subset(subset_key, chunk_index).values()),
+            inputs=[subsets_selector, cur_chunk_index],
+            outputs=[activating_tab, showcase, cur_image_key, cur_chunk_index],
         )
 
         database_tab.select(
-            fn=lambda subset_key: ('database', *show_database(subset_key).values()),
-            inputs=[subsets_selector],
-            outputs=[activating_tab, database],
-        )
-
-        def track_image_key(image_key):
-            if image_key is None or image_key == '':
-                return None, None
-            image_key = Path(image_key).stem
-            image_info = dataset.get(image_key, None)
-            image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
-            caption = str(image_info.caption) if image_info.caption is not None else None
-            return image_path, caption
-
-        image_key.change(
-            fn=track_image_key,
-            inputs=[image_key],
-            outputs=[image_path, caption],
+            fn=lambda subset_key, chunk_index: ('database', *show_database(subset_key, chunk_index).values()),
+            inputs=[subsets_selector, cur_chunk_index],
+            outputs=[activating_tab, database, cur_chunk_index],
         )
 
         # ========================================= Subset changing parser ========================================= #
 
-        def change_subset(subset_key, activating_tab):
+        def change_subset(activating_tab, subset_key, chunk_index):
             if activating_tab == 'tagging':
-                res = show_subset(subset_key)
+                res = show_subset(subset_key, chunk_index)
                 return res
             elif activating_tab == 'database':
-                res = show_database(subset_key)
+                res = show_database(subset_key, chunk_index)
                 return res
 
-        subsets_selector.change(
+        subset_change_inputs = [activating_tab, subsets_selector, cur_chunk_index]
+        subset_change_outputs = [showcase, cur_image_key, database, cur_chunk_index]
+
+        subsets_selector.input(
             fn=change_subset,
-            inputs=[subsets_selector, activating_tab],
-            outputs=[showcase, image_key, database],
+            inputs=subset_change_inputs,
+            outputs=subset_change_outputs,
             show_progress=True,
             trigger_mode='multiple',
         )
 
-        # ========================================= Showcase ========================================= #
-
-        def _get_new_selected_img_key(dset):
+        def _get_new_select_img_key(dset):
             pre_idx = dataset.selected.index
             if pre_idx is not None and pre_idx < len(dset):
                 new_img_key = dset.keys()[pre_idx]
@@ -348,25 +362,67 @@ def create_ui(
                 new_img_key = None
             return new_img_key
 
-        def show_subset(subset_key):
+        def show_subset(subset_key, chunk_index):
             if subset_key is None or subset_key == '':
                 return {
-                    showcase: None,
-                    image_key: None,
+                    showcase: gr.update(value=None, label='Showcase'),
+                    cur_image_key: None,
+                    cur_chunk_index: 0,
                 }
+
             subset = subsets[subset_key]
-            new_img_key = _get_new_selected_img_key(subset)
+            chunk_index = min(max(chunk_index, 1), subset.num_chunks)
+            subset_chunk = subset.chunk(chunk_index - 1)
+
+            new_select_img_key = _get_new_select_img_key(subset_chunk)
+
             return {
-                showcase: [(v.image_path, k) for k, v in subset.items()],
-                image_key: new_img_key
+                showcase: gr.update(value=[(v.image_path, k) for k, v in subset_chunk.items()], label=f"Showcase  {subset_key}  {chunk_index}/{subset.num_chunks}"),
+                cur_image_key: new_select_img_key,
+                cur_chunk_index: chunk_index,
             }
 
-        reload_subset_btn.click(
-            fn=show_subset,
-            inputs=[subsets_selector],
-            outputs=[showcase, image_key],
+        def show_database(subset_key, chunk_index):
+            if subset_key is None or subset_key == '':
+                return {
+                    database: gr.update(value=None, label='Database'),
+                    cur_chunk_index: 0,
+                }
+
+            subset = subsets[subset_key]
+            chunk_index = min(max(chunk_index, 1), subset.num_chunks)
+            subset_chunk = subset.chunk(chunk_index - 1)
+
+            return {
+                database: gr.update(value=subset_chunk.df(), label=f"Database  {subset_key}  {chunk_index}/{subset.num_chunks}"),
+                cur_chunk_index: chunk_index,
+            }
+
+        def change_chunk_index(activating_tab, subset_key, chunk_index):
+            return change_subset(activating_tab, subset_key, chunk_index) if chunk_index != 0 else {cur_chunk_index: 0}
+
+        cur_chunk_index.input(
+            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index),
+            inputs=subset_change_inputs,
+            outputs=subset_change_outputs,
             show_progress=True,
         )
+
+        load_pre_chunk_btn.click(
+            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index - 1),
+            inputs=subset_change_inputs,
+            outputs=subset_change_outputs,
+            show_progress=True,
+        )
+
+        load_next_chunk_btn.click(
+            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index + 1),
+            inputs=subset_change_inputs,
+            outputs=subset_change_outputs,
+            show_progress=True,
+        )
+
+        # ========================================= Showcase ========================================= #
 
         def select_image_key(selected: gr.SelectData):
             if selected is None:
@@ -376,41 +432,97 @@ def create_ui(
 
         showcase.select(
             fn=select_image_key,
-            outputs=[image_key],
+            outputs=[cur_image_key],
         )
 
-        def remove_image(image_key):
-            if image_key is None:
-                return f"image key is None."
+        def track_image_key(image_key):
+            if image_key is None or image_key == '':
+                return None, gr.update(value=None, label='Caption')
+            image_key = Path(image_key).stem
+            image_info = dataset.get(image_key, None)
+            if image_info is None:
+                raise ValueError(f"image key {image_key} not found in dataset")
+            image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
+            caption = str(image_info.caption) if image_info.caption is not None else None
+            return image_path, gr.update(value=caption, label=f"Caption: {image_key}")
+
+        cur_image_key.change(
+            fn=track_image_key,
+            inputs=[cur_image_key],
+            outputs=[image_path, caption],
+        )
+
+        def track_caption(image_key):
+            if image_key is None or image_key == '' or image_key not in dataset:
+                return None
+            image_info: ImageInfo = dataset[image_key]
+            info_dict = image_info.dict()
+            artist = info_dict.get('artist', None)
+            quality = info_dict.get('quality', None)
+            styles = info_dict.get('styles', None)
+            characters = info_dict.get('characters', None)
+            data = [{'Artist': artist, 'Quality': quality, 'Styles': styles, 'Characters': characters}]
+            df = pandas.DataFrame(data=data, columns=list(data[0].keys()))
+            return gr.update(value=df, label=f"Metadata: {image_key}")
+
+        caption.change(
+            fn=track_caption,
+            inputs=[cur_image_key],
+            outputs=[metadata_df],
+            trigger_mode='always_last',
+        )
+
+        reload_subset_btn.click(
+            fn=show_subset,
+            inputs=[subsets_selector, cur_chunk_index],
+            outputs=[showcase, cur_image_key, cur_chunk_index],
+            show_progress=True,
+        )
+
+        def remove_image(image_key, chunk_index):
+            if image_key is None or image_key == '':
+                return {log_box: f"empty image key"}
             subset_key = dataset[image_key].category
             dataset.remove(image_key)
-            return *show_subset(subset_key), f"removed: {image_key}"
+            res = show_subset(subset_key, chunk_index)
+            res.update({log_box: f"removed: {image_key}"})
+            return res
 
         remove_image_btn.click(
             fn=remove_image,
-            inputs=[image_key],
-            outputs=[showcase, image_key, log_box],
+            inputs=[cur_image_key, cur_chunk_index],
+            outputs=subset_change_outputs + [log_box],
         )
 
         # ========================================= Base Tagging Buttons ========================================= #
 
         def random_sample(subset_key):
             subset = subsets[subset_key] if subset_key is not None and subset_key != "" else dataset
+            if len(subset) == 0:
+                return {log_box: f"empty subset {subset_key}"}
+            subset = subset.make_subset(condition=lambda x: x.key not in random_sample_history)
+            if len(subset) == 0:
+                return {log_box: f"no more image to sample"}
             image_key = random.choice(list(subset.keys()))
+            random_sample_history.add(image_key)
             image_info = dataset[image_key]
             dataset.select(image_key)
-            return [(image_info.image_path, image_key)], image_key
+            return {
+                showcase: gr.update(value=[(image_info.image_path, image_key)], label=f"Showcase"),
+                cur_image_key: image_key,
+                cur_chunk_index: 1,
+            }
 
         random_btn.click(
             fn=random_sample,
             inputs=[subsets_selector],
-            outputs=[showcase, image_key],
+            outputs=[showcase, cur_image_key, cur_chunk_index, log_box],
         )
 
-        def edit_caption(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
+        def edit_caption_wrapper(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
             def wrapper(image_key, batch, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
                 if image_key is None or image_key == '':
-                    return gr.update(), f"nothing happened: empty {image_key}"
+                    return gr.update(), f"empty image key"
                 image_key = Path(image_key).stem
                 image_info = dataset[image_key]
                 proc_func_name = func.__name__
@@ -439,14 +551,14 @@ def create_ui(
                 if any(res):
                     return str(new_caption) if new_caption else None, f"{proc_func_name.replace('_', ' ')}: {image_key}"
                 else:
-                    return gr.update(), f"nothing happened: unchanged caption"
+                    return gr.update(), f"no change"
             return wrapper
 
         def write_caption(image_info, caption):
             return Caption(caption) if caption is not None and caption.strip() != '' else None
 
         caption.blur(
-            fn=edit_caption(write_caption),
+            fn=edit_caption_wrapper(write_caption),
             inputs=[image_path, gr.State(False), caption],
             outputs=[caption, log_box],
         )
@@ -457,8 +569,8 @@ def create_ui(
             return image_info.caption
 
         undo_btn.click(
-            fn=edit_caption(undo),
-            inputs=[image_key, batch_proc],
+            fn=edit_caption_wrapper(undo),
+            inputs=[cur_image_key, batch_proc],
             outputs=[caption, log_box],
         )
 
@@ -468,8 +580,8 @@ def create_ui(
             return image_info.caption
 
         redo_btn.click(
-            fn=edit_caption(redo),
-            inputs=[image_key, batch_proc],
+            fn=edit_caption_wrapper(redo),
+            inputs=[cur_image_key, batch_proc],
             outputs=[caption, log_box],
         )
 
@@ -485,34 +597,29 @@ def create_ui(
 
         # ========================================= Quick Tagging ========================================= #
 
-        def kwargs_setter(func, **kwargs):
-            def wrapper(*args):
-                return func(*args, **kwargs)
-            return wrapper
-
         def change_quality(image_info, quality):
             return image_info.caption.with_quality(quality)
 
         tagging_best_quality_btn.click(
-            fn=edit_caption(kwargs_setter(change_quality, quality='best')),
+            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='best')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_high_quality_btn.click(
-            fn=edit_caption(kwargs_setter(change_quality, quality='high')),
+            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='high')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_low_quality_btn.click(
-            fn=edit_caption(kwargs_setter(change_quality, quality='low')),
+            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='low')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_hate_btn.click(
-            fn=edit_caption(kwargs_setter(change_quality, quality='hate')),
+            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='hate')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -526,49 +633,49 @@ def create_ui(
             return caption
 
         tagging_color_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='beautiful color')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful color')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_detailed_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='detailed')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='detailed')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_lowres_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='lowres')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='lowres')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_messy_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='messy')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='messy')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_aesthetic_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='aesthetic')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='aesthetic')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_beautiful_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='beautiful')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_x_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='x')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='x')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
 
         tagging_y_btn.click(
-            fn=edit_caption(kwargs_setter(add_tags, tags='y')),
+            fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='y')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -577,12 +684,12 @@ def create_ui(
 
         for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
             add_tag_btn.click(
-                fn=edit_caption(add_tags),
+                fn=edit_caption_wrapper(add_tags),
                 inputs=[image_path, batch_proc, tag_selector],
                 outputs=[caption, log_box],
             )
             remove_tag_btn.click(
-                fn=edit_caption(remove_tags),
+                fn=edit_caption_wrapper(remove_tags),
                 inputs=[image_path, batch_proc, tag_selector],
                 outputs=[caption, log_box],
             )
@@ -610,7 +717,7 @@ def create_ui(
             return caption
 
         caption_operation_btn.click(
-            fn=edit_caption(caption_operation),
+            fn=edit_caption_wrapper(caption_operation),
             inputs=[image_path, batch_proc, op_dropdown, op_tag_dropdown, condition_dropdown, cond_tag_dropdown, inclusion_relationship_dropdown],
             outputs=[caption, log_box],
         )
@@ -621,7 +728,7 @@ def create_ui(
             return image_info.caption @ tagging.PRIORITY_REGEX
 
         sort_caption_btn.click(
-            fn=edit_caption(sort_caption),
+            fn=edit_caption_wrapper(sort_caption),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -630,7 +737,7 @@ def create_ui(
             return image_info.caption.formalized()
 
         formalize_caption_btn.click(
-            fn=edit_caption(formalize_caption),
+            fn=edit_caption_wrapper(formalize_caption),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -639,7 +746,7 @@ def create_ui(
             return image_info.caption.unique()
 
         deduplicate_caption_btn.click(
-            fn=edit_caption(deduplicate_caption),
+            fn=edit_caption_wrapper(deduplicate_caption),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -648,7 +755,7 @@ def create_ui(
             return image_info.caption.deovlped()
 
         deoverlap_caption_btn.click(
-            fn=edit_caption(deoverlap_caption),
+            fn=edit_caption_wrapper(deoverlap_caption),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -661,7 +768,7 @@ def create_ui(
             return image_info.caption.defeatured(ref=character_feature_table, threshold=threshold)
 
         defeature_caption_btn.click(
-            fn=edit_caption(defeature_caption),
+            fn=edit_caption_wrapper(defeature_caption),
             inputs=[image_path, batch_proc, defeature_caption_threshold],
             outputs=[caption, log_box],
         )
@@ -678,7 +785,7 @@ def create_ui(
             return caption
 
         wd14_run_btn.click(
-            fn=edit_caption(wd14_tagging),
+            fn=edit_caption_wrapper(wd14_tagging),
             inputs=[image_path, batch_proc, wd14_general_threshold, wd14_character_threshold],
             outputs=[caption, log_box],
         )
@@ -691,17 +798,6 @@ def create_ui(
             outputs=[],
         )
 
-        # ========================================= Database ========================================= #
-        def show_database(subset_key):
-            if subset_key is None or subset_key == '':
-                return {
-                    database: None
-                }
-            subset = subsets[subset_key]
-            return {
-                database: subset.df()
-            }
-
         # ========================================= Buffer ========================================= #
 
         def show_buffer():
@@ -709,7 +805,7 @@ def create_ui(
 
         buffer_tab.select(
             fn=show_buffer,
-            outputs=[buffer_dataframe],
+            outputs=[buffer_df],
         )
 
     return demo

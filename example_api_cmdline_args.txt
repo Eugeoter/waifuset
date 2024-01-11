@@ -1,1 +1,3 @@
-python api.py --source './images' --write_to_database --database_file './images/metadata.json' --write_to_txt
+python api.py --source './images' --subset_chunk_size 8
+python api.py --source 'D:\AI\datasets\aid\dataset' --subset_chunk_size 80 --write_to_database --database_file './database/md0111-ui.json'
+python api.py --source 'D:\AI\datasets\aid\dataset' --subset_chunk_size 80 --write_to_txt
