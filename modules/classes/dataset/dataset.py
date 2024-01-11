@@ -2,7 +2,6 @@ import time
 import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
-from torch.utils.data import dataset as torch_dataset
 from pathlib import Path
 from typing import Dict, Callable
 from ..data import ImageInfo
@@ -12,8 +11,14 @@ from ...utils import log_utils as logu
 
 COLORS = [logu.ANSI.WHITE, logu.ANSI.YELLOW, logu.ANSI.CYAN, logu.ANSI.WHITE, logu.ANSI.MAGENTA, logu.ANSI.GREEN]
 
+try:
+    from torch.utils.data import dataset as torch_dataset
+    _father_class = torch_dataset.Dataset
+except ImportError:
+    _father_class = object
 
-class Dataset(torch_dataset.Dataset):
+
+class Dataset(_father_class):
 
     _data: Dict[str, ImageInfo]
 
@@ -139,8 +144,11 @@ class Dataset(torch_dataset.Dataset):
         self._data.update(other._data)
         return self
 
-    def pop(self, image_key):
-        return self._data.pop(image_key)
+    def pop(self, image_key, default=None):
+        return self._data.pop(image_key, default)
+
+    def clear(self):
+        self._data.clear()
 
     def __getitem__(self, image_key):
         return self._data[image_key]
@@ -148,11 +156,13 @@ class Dataset(torch_dataset.Dataset):
     def __setitem__(self, image_key, image_info):
         if not isinstance(image_info, ImageInfo):
             raise TypeError('Dataset can only contain ImageInfo objects.')
-
         self._data[image_key] = image_info
 
     def __delitem__(self, image_key):
         self.pop(image_key)
+
+    def get(self, image_key, default=None):
+        return self._data.get(image_key, default)
 
     def keys(self):
         return list(self._data.keys())

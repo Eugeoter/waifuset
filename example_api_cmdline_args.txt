@@ -1,0 +1,1 @@
+python api.py --source './images' --write_to_database --database_file './images/metadata.json' --write_to_txt

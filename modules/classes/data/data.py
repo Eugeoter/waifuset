@@ -114,10 +114,23 @@ class ImageInfo:
     #     return dic
 
     def __eq__(self, other):
-        return self is other or self.image_path == other.image_path
+        if not isinstance(other, ImageInfo):
+            return False
+        return self is other or hash(self) == hash(other)
+
+    def __ne__(self, other):
+        return not self == other
 
     def __str__(self):
         return str(self.image_path.absolute().as_posix())
+
+    def __hash__(self):
+        hash_str = ''
+        for attr in self._self_attrs:
+            value = getattr(self, attr)
+            if value:
+                hash_str += str(value)
+        return hash(hash_str)
 
     def read_caption(self, label_path=None):
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
@@ -130,8 +143,15 @@ class ImageInfo:
         if not self.caption:
             return
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
-        label_path.write_text(str(self.caption), encoding='utf-8')
+        label_path.write_text(str(self.caption) if self.caption else '', encoding='utf-8')
+
+    def copy(self):
+        return ImageInfo(
+            image_path=self.image_path,
+            caption=self.caption.copy() if self.caption else None,
+            original_size=self.original_size,
+        )
 
     _all_attrs = ('image_path', 'caption', 'artist', 'styles', 'quality', 'characters', 'original_size')
-    _attrs = ('image_path', 'caption', 'original_size')
+    _self_attrs = ('image_path', 'caption', 'original_size')
     _caption_attrs = ('artist', 'styles', 'quality', 'characters')

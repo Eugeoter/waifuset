@@ -3,8 +3,8 @@ import emoji
 from typing import Literal
 
 
-def EmojiButton(value, variant: Literal['primary', 'secondary', 'stop'] = "secondary", *args, **kwargs):
-    return gr.Button(value=value, variant=variant, scale=0, min_width=40, *args, **kwargs)
+def EmojiButton(value, variant: Literal['primary', 'secondary', 'stop'] = "secondary", scale=0, min_width=40, *args, **kwargs):
+    return gr.Button(value=value, variant=variant, scale=scale, min_width=min_width, *args, **kwargs)
 
 
 def CaptionPainterPanel(choices):

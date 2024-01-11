@@ -1,6 +1,10 @@
 class Emoji:
     heart = u'\u2764\ufe0f'  # ❤️
-    heart_broken = u"\uE477"  # 💔
+    broken_heart = u'\U0001f494'  # 💔
+    love_emotion = u'\U0001f970'  # 🥰
+    hate_emotion = u'\U0001f621'  # 😡
+    color_palette = u'\U0001f3a8'  # 🎨
+    star = u'\u2b50\ufe0f'  # ⭐️
     black_heart = u"\U0001F5A4\ufe0f"
     cross = u'\u274c'  # ❌
     question = u'\u2754\uf0ef'  # ❔
@@ -20,6 +24,7 @@ class Emoji:
     clockwise_rightwards_and_leftwards_open_circle_arrows = u'\U0001f501'  # 🔁
     clockwise_rightwards_and_leftwards_open_circle_arrows_1 = u'\U0001f502'  # 🔂
     anticlockwise = '\U0001f504'  # 🔄
+    back_arrow = u'\U0001f519'  # 🔙
 
     dice_1 = u'\u2680\ufe0f'
     dice_2 = u'\u2681\ufe0f'
@@ -37,7 +42,7 @@ class Emoji:
     triangular_ruler = '\U0001F4D0'  # 📐
     clipboard = '\U0001f4cb'  # 📋
     flower_playing_cards = '\U0001F3B4'  # 🎴
-    check_correct = u'\u2714\ufe0f'
+    check_correct = u'\u2714\ufe0f'  # ✔️
     plus = u'\u2795'
     minus = u'\u2796'
     scroll = u'\U0001F4DC'  # 📜

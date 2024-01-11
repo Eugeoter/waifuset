@@ -1,0 +1,7 @@
+pandas
+tqdm
+numpy
+pillow
+gradio==4.13.0
+onnxruntime-gpu
+# onnxruntime

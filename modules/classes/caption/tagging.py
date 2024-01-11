@@ -123,7 +123,7 @@ def init_priority_tags():
 
         # Actions
         [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|leaning|looking|kissing|sex|sewing|facing|carrying|licking|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
-         'flying', 'falling', 'diving', 'holding'],
+         'flying', 'falling', 'diving', 'holding', "jack-o' challenge"],
         ['on back', 'on stomach'],
 
         # Emotions
@@ -184,7 +184,7 @@ PRIORITY, PRIORITY_REGEX = None, None
 
 PATTERN_CHARACTER_FEATURES = [
     r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyeliner|eyebrow|pupil|tongue|lip|mole|ear|horn|tail|wing|breast|skin)s?\b.*",
-    r".*\b(twintails|ponytail|hairbun|double bun|bob cut|sidelocks|loli|tan|eyelashes)\b.*",
+    r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes)\b.*",
     r".*\b(furry|fox|pig|wolf|horse|cat|dog|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature)([\s_](girl|boy|other|male|female))?\b.*"
 ]
 REGEX_CHARACTER_FEATURES = [re.compile(pattern) for pattern in PATTERN_CHARACTER_FEATURES]

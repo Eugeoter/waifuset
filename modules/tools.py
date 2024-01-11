@@ -166,3 +166,60 @@ def track_modification(
             log_path.parent.rmdir()
 
     logu.success('Done.')
+
+
+def make_character_feature_table(
+    source,
+    threshold=0.3,
+    verbose=True,
+):
+    from . import tagging
+    from collections import Counter
+    dataset = Dataset(source, verbose=verbose)
+    # 1. stat tag frequency
+    tag_freq_stat = {}
+    total_n_dic = Counter()
+    for image_info in tqdm(dataset.values(), desc='Stage 1/2: querying', disable=not verbose):
+        caption: Caption = image_info.caption
+        if caption.characters:
+            if isinstance(caption.characters, str):
+                caption.characters = [caption.characters]
+            for feature_tag in caption.characters:
+                cnter = tag_freq_stat.get(feature_tag, Counter())
+                total_n_dic[feature_tag] += 1
+                for tag_value in caption & tagging.REGEX_CHARACTER_FEATURES:
+                    cnter[tag_value] += 1
+                tag_freq_stat[feature_tag] = cnter
+
+    # 2. filter tags by threshold
+    for char_tag, freq_table in tqdm(tag_freq_stat.items(), desc='Stage 2/2: calculating', disable=not verbose):
+        # sort dict
+        # freq_table = dict(sorted(freq_table.items(), key=lambda x: x[1], reverse=True))
+        total_n = total_n_dic[char_tag]
+        for feature_tag in freq_table:
+            freq_table[feature_tag] /= total_n
+
+        if threshold is not None:
+            freq_table = {k: v for k, v in freq_table.items() if v >= threshold}
+
+        tag_freq_stat[char_tag] = freq_table
+
+    return tag_freq_stat
+
+
+def remove_character_feature_tags(
+    source,
+    threshold=0.3,
+    verbose=True,
+):
+    dataset = Dataset(source, verbose=verbose)
+    feature_table = make_character_feature_table(dataset, threshold=threshold, verbose=verbose)
+
+    # 3. remove tags from captions
+    for image_key, image_info in tqdm(dataset.items(), desc='Removing', disable=not verbose):
+        dataset[image_key].caption = image_info.caption.defeatured(ref=feature_table, threshold=threshold) if image_info.caption else None
+
+    if verbose:
+        logu.success('Done.')
+
+    return dataset

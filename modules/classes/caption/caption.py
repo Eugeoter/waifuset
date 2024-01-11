@@ -44,6 +44,13 @@ class Caption:
         for attr in self._cached_properties:
             setattr(self, f"_{attr}", EMPTY_CACHE)
 
+    def copy(self):
+        caption = Caption(self.tags.copy())
+        cache = {key: getattr(self, f"_{key}") for key in self._cached_properties}
+        cache = {key: value.copy() if isinstance(value, list) else value for key, value in cache.items()}
+        caption.load_cache(**cache)
+        return caption
+
     @property
     def caption(self):
         return captionize(self.tags)
@@ -134,15 +141,15 @@ class Caption:
 
     def deovlped(self):
         tagging.init_overlap_table()
-        caption_ = self.unescaped().underlined()
+        caption = self.unescaped().underlined()
         table = tagging.OVERLAP_TABLE
         tags_to_remove = set()
-        tag_set = set(caption_.tags)
+        tag_set = set(caption.tags)
         for tag in tag_set:
             if tag in table and tag not in tags_to_remove:
                 parents, children = table[tag]
                 tags_to_remove |= tag_set & children
-        return (caption_ - tags_to_remove).spaced().escaped()
+        return (caption - tags_to_remove).spaced().escaped()
 
     def copy(self):
         return Caption(self.tags.copy())
@@ -157,6 +164,17 @@ class Caption:
             elif tagging.REGEX_CHARACTER_TAGS.match(tag):
                 caption.tags[i] = f"character: {tag}"
         return Caption(caption)
+
+    def defeatured(self, ref, threshold=0.3):
+        caption = self.copy()
+        if self.characters and len(self.characters) > 0:
+            for char_tag in self.characters:
+                if ref.get(char_tag, 0.0) >= threshold:
+                    freq_table = ref[char_tag]
+                    caption -= list(freq_table.keys())
+        return caption
+
+    # ======================================== artist ======================================== #
 
     def get_artist(self):
         caption = self.caption
@@ -186,6 +204,13 @@ class Caption:
             self.tags.insert(0, f'artist: {artist}')
         self._artist = artist
 
+    def with_artist(self, artist):
+        caption = self.copy()
+        caption.artist = artist
+        return caption
+
+    # ======================================== quality ======================================== #
+
     def get_quality(self):
         caption = self.caption
         match = tagging.REGEX_QUALITY_TAG.search(caption)
@@ -209,6 +234,13 @@ class Caption:
         else:
             self.tags.insert(0, f"{quality} quality")
         self._quality = quality
+
+    def with_quality(self, quality):
+        caption = self.copy()
+        caption.quality = quality
+        return caption
+
+    # ======================================== characters ======================================== #
 
     def get_characters(self):
         caption = self.caption
@@ -240,6 +272,13 @@ class Caption:
             self.tags.insert(0, f'character: {characters[i]}')
         self._characters = characters
 
+    def with_characters(self, characters):
+        caption = self.copy()
+        caption.characters = characters
+        return caption
+
+    # ======================================== styles ======================================== #
+
     def get_styles(self):
         caption = self.caption
         styles = []
@@ -269,6 +308,11 @@ class Caption:
         for i in range(len(styles) - 1, -1, -1):
             self.tags.insert(0, f'style: {styles[i]}')
         self._styles = styles
+
+    def with_styles(self, styles):
+        caption = self.copy()
+        caption.styles = styles
+        return caption
 
     def __str__(self):
         return self.caption

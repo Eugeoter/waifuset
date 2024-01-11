@@ -1,5 +1,6 @@
 import gradio as gr
 import random
+from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 from typing import Callable, Any, Tuple, Dict
@@ -10,7 +11,7 @@ from ..utils import log_utils as logu
 
 
 OPS = {
-    'add': lambda x, y: x | y,
+    'add': lambda x, y: y | x,
     'remove': lambda x, y: x - y,
     'replace': lambda x, y: x.replace(y),
 }
@@ -26,172 +27,289 @@ INCLUSION_RELATIONSHIP = {
 }
 
 
-def create_ui(
-    source,
-    write_to_database=False,
-    write_to_txt=False,
-    database_path=None,
+def prepare_dataset(
+    args,
 ):
     from .ui_dataset import UIDataset
+
+    dataset = UIDataset(
+        args.source,
+        formalize_caption=args.formalize_caption,
+        write_to_database=args.write_to_database,
+        write_to_txt=args.write_to_txt,
+        database_file=args.database_file,
+        read_caption=True,
+        verbose=True,
+    )
+
+    if args.change_source:
+        old_img_src = args.old_img_src
+        new_img_src = args.new_img_src
+
+        def change_source(image_info):
+            nonlocal old_img_src, new_img_src
+            old_src = image_info.source.name
+            new_src = old_img_src if old_src == new_img_src else None
+            if new_src:
+                image_info.image_path = image_info.source.parent / new_src / image_info.image_path.relative_to(image_info.source)
+            return image_info
+
+        dataset.apply_map(change_source)
+
+    return dataset
+
+
+def create_ui(
+    args,
+):
     from ..classes import ImageInfo, Caption
-    dataset = UIDataset(source, write_to_database=write_to_database, write_to_txt=write_to_txt, database_path=database_path,
-                        read_caption=True, formalize_caption=False, verbose=True)
-    database_path = Path(database_path)
+    from .utils import open_file_folder
+
+    # ========================================= Base variables ========================================= #
+
+    database_path = Path(args.database_file)
+    dataset = prepare_dataset(args)
     subsets = dataset.subsets
+    buffer = dataset.buffer
+
+    wd14 = None
+    character_feature_table = None
 
     # ========================================= UI ========================================= #
 
     with gr.Blocks() as demo:
         with gr.Tab(label='Dataset'):
-            with gr.Row():
-                with gr.Column():
-                    subsets_selector = gr.Dropdown(
-                        label='Category',
-                        choices=[""] + sorted(subsets.keys()),
-                        value="",
-                        multiselect=False,
-                        allow_custom_value=False,
-                    )
-                with gr.Column():
-                    log_box = gr.TextArea(
-                        label='Log',
-                        lines=1,
-                        max_lines=1,
-                    )
-
-            with gr.Row():
-                with gr.Column():
-                    with gr.Row():
-                        showcase = gr.Gallery(
-                            label='Showcase',
-                            rows=4,
-                            columns=4,
-                            container=True,
-                            object_fit='scale-down',
-                            height=512,
-                            selected_index=0,
+            with gr.Tab("Main") as main_tab:
+                with gr.Row():
+                    with gr.Column():
+                        subsets_selector = gr.Dropdown(
+                            label='Category',
+                            choices=[""] + sorted(subsets.keys()),
+                            value="",
+                            multiselect=False,
+                            allow_custom_value=False,
                         )
-                        image_key = gr.Textbox(value=None, visible=False, label='Image Key')
-                    with gr.Row():
-                        reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise, variant='primary')
-                        remove_image_btn = cc.EmojiButton(Emoji.trash_bin, variant='stop')
-                with gr.Column():
-                    with gr.Row():
-                        caption = gr.Textbox(
-                            label='Caption',
-                            value=None,
-                            container=True,
-                            show_copy_button=True,
-                            lines=6,
-                            max_lines=6,
-                        )
-                    with gr.Row():
-                        random_roll_btn = cc.EmojiButton(Emoji.dice, variant='primary')
-                        save_caption_edition_btn = cc.EmojiButton(Emoji.label, variant='primary')
-                        save_to_disk_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
-                        batch_proc = gr.Checkbox(
-                            label='Batch',
-                            value=False,
-                            container=False,
-                            scale=0,
-                            min_width=144
-                        )
-
-            with gr.Row():
-                with gr.Column(scale=3):
-                    with gr.Row():
-                        image_path = gr.Textbox(
-                            label='Image Path',
-                            value=None,
-                            container=True,
-                            max_lines=2,
+                    with gr.Column():
+                        log_box = gr.TextArea(
+                            label='Log',
                             lines=1,
-                            show_copy_button=True,
-                            interactive=False,
+                            max_lines=1,
                         )
-                with gr.Column(scale=5):
-                    with gr.Tab(label='Quick Tagging'):
-                        add_tag_btns = []
-                        tag_selectors = []
-                        remove_tag_btns = []
-                        for r in range(3):
+
+                with gr.Tab("Tagging") as tagging_tab:
+                    with gr.Row():
+                        with gr.Column():
                             with gr.Row():
-                                for c in range(2):
-                                    add_tag_btns.append(cc.EmojiButton(Emoji.plus, variant='primary'))
-                                    tag_selectors.append(gr.Dropdown(
-                                        choices=list(tagging.CUSTOM_TAGS),
+                                showcase = gr.Gallery(
+                                    label='Showcase',
+                                    rows=4,
+                                    columns=4,
+                                    container=True,
+                                    object_fit='scale-down',
+                                    height=512,
+                                    selected_index=0,
+                                )
+                                image_key = gr.Textbox(value=None, visible=False, label='Image Key')
+                            with gr.Row():
+                                reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise)
+                                remove_image_btn = cc.EmojiButton(Emoji.trash_bin, variant='stop')
+
+                        with gr.Column():
+                            with gr.Row():
+                                caption = gr.Textbox(
+                                    label='Caption',
+                                    value=None,
+                                    container=True,
+                                    show_copy_button=True,
+                                    lines=6,
+                                    max_lines=6,
+                                )
+                            with gr.Row():
+                                random_btn = cc.EmojiButton(Emoji.dice)
+                                undo_btn = cc.EmojiButton(Emoji.leftwards)
+                                redo_btn = cc.EmojiButton(Emoji.rightwards)
+                                save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
+                            with gr.Row():
+                                batch_proc = gr.Checkbox(
+                                    label='Batch',
+                                    value=False,
+                                    container=False,
+                                    scale=0,
+                                    min_width=144
+                                )
+
+                            with gr.Tab("Quick Tagging"):
+                                with gr.Row(variant='compact'):
+                                    tagging_best_quality_btn = cc.EmojiButton(Emoji.love_emotion, variant='primary', scale=1)
+                                    tagging_high_quality_btn = cc.EmojiButton(Emoji.heart, scale=1)
+                                    tagging_low_quality_btn = cc.EmojiButton(Emoji.broken_heart, scale=1)
+                                    tagging_hate_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
+                                with gr.Row(variant='compact'):
+                                    tagging_color_btn = cc.EmojiButton(value='Color', scale=1, variant='primary')
+                                    tagging_detailed_btn = cc.EmojiButton(value='Detail', scale=1, variant='primary')
+                                    tagging_lowres_btn = cc.EmojiButton(value='Lowres', scale=1, variant='stop')
+                                    tagging_messy_btn = cc.EmojiButton(value='Messy', scale=1, variant='stop')
+                                with gr.Row(variant='compact'):
+                                    tagging_aesthetic_btn = cc.EmojiButton(value='Aesthetic', scale=1, variant='primary')
+                                    tagging_beautiful_btn = cc.EmojiButton(value='Beautiful', scale=1, variant='primary')
+                                    tagging_x_btn = cc.EmojiButton(value='X', scale=1, variant='stop', visible=False)
+                                    tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
+
+                            with gr.Tab(label='Custom Tagging'):
+                                add_tag_btns = []
+                                tag_selectors = []
+                                remove_tag_btns = []
+                                for r in range(3):
+                                    with gr.Row(variant='compact'):
+                                        for c in range(2):
+                                            add_tag_btns.append(cc.EmojiButton(Emoji.plus, variant='primary'))
+                                            tag_selectors.append(gr.Dropdown(
+                                                choices=list(tagging.CUSTOM_TAGS),
+                                                value=None,
+                                                multiselect=True,
+                                                allow_custom_value=True,
+                                                show_label=False,
+                                                container=False,
+                                                min_width=96,
+                                            ))
+                                            remove_tag_btns.append(cc.EmojiButton(Emoji.minus, variant='stop'))
+
+                            with gr.Tab(label='Operational Tagging'):
+                                with gr.Row():
+                                    op_dropdown = gr.Dropdown(
+                                        label='Op',
+                                        choices=list(OPS.keys()),
+                                        value=list(OPS.keys())[0],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        scale=0,
+                                        min_width=128,
+                                    )
+                                    op_tag_dropdown = gr.Dropdown(
+                                        label='Tags',
+                                        choices=[],
                                         value=None,
-                                        multiselect=True,
                                         allow_custom_value=True,
-                                        show_label=False,
-                                        container=False
-                                    ))
-                                    remove_tag_btns.append(cc.EmojiButton(Emoji.minus, variant='stop'))
-                    with gr.Tab(label='Caption Operation'):
-                        with gr.Row():
-                            op_dropdown = gr.Dropdown(
-                                label='Op',
-                                choices=[
-                                    'add',
-                                    'remove',
-                                    'replace',
-                                ],
-                                value='add',
-                                multiselect=False,
-                                allow_custom_value=False,
-                                scale=0,
-                                min_width=72,
-                            )
-                            op_tag_dropdown = gr.Dropdown(
-                                label='Tags',
-                                choices=[],
-                                value=None,
-                                allow_custom_value=True,
-                                multiselect=True,
-                            )
+                                        multiselect=True,
+                                    )
 
-                        with gr.Row():
-                            condition_dropdown = gr.Dropdown(
-                                label='Condition',
-                                choices=[
-                                    'any',
-                                    'all',
-                                ],
-                                value='any',
-                                multiselect=False,
-                                allow_custom_value=False,
-                                scale=0,
-                                min_width=64,
-                            )
+                                    caption_operation_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary')
 
-                            cond_tag_dropdown = gr.Dropdown(
-                                label='Tags',
-                                choices=[],
-                                value=None,
-                                allow_custom_value=True,
-                                multiselect=True,
-                            )
+                                with gr.Row():
+                                    condition_dropdown = gr.Dropdown(
+                                        label='If',
+                                        choices=list(CONDITION.keys()),
+                                        value=list(CONDITION.keys())[0],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        scale=0,
+                                        min_width=128,
+                                    )
 
-                            inclusion_relationship_dropdown = gr.Dropdown(
-                                label='Inclusion',
-                                choices=[
-                                    'include',
-                                    'exclude',
-                                ],
-                                value='include',
-                                multiselect=False,
-                                allow_custom_value=False,
-                                scale=0,
-                                min_width=64,
-                            )
+                                    cond_tag_dropdown = gr.Dropdown(
+                                        label='Tags',
+                                        choices=[],
+                                        value=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
 
-        # ========================================= functions ========================================= #
+                                    inclusion_relationship_dropdown = gr.Dropdown(
+                                        label='Inclusion',
+                                        choices=list(INCLUSION_RELATIONSHIP.keys()),
+                                        value=list(INCLUSION_RELATIONSHIP.keys())[0],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        scale=0,
+                                        min_width=144,
+                                    )
+
+                            with gr.Tab(label="Optimizers"):
+                                with gr.Row(variant='compact'):
+                                    formalize_caption_btn = cc.EmojiButton("Formalize", scale=1, min_width=116)
+                                    sort_caption_btn = cc.EmojiButton("Sort", scale=1, min_width=116)
+                                    deduplicate_caption_btn = cc.EmojiButton("Deduplicate", scale=1, min_width=116)
+                                    deoverlap_caption_btn = cc.EmojiButton("De-Overlap", scale=1, min_width=116)
+                                with gr.Row(variant='compact'):
+                                    defeature_caption_btn = cc.EmojiButton("De-Feature", scale=0, min_width=116)
+                                    defeature_caption_threshold = gr.Slider(
+                                        label='Threshold',
+                                        value=0.3,
+                                        minimum=0,
+                                        maximum=1,
+                                        step=0.01,
+                                    )
+
+                            with gr.Tab(label='WD14'):
+                                with gr.Row():
+                                    wd14_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=80)
+                                    wd14_general_threshold = gr.Slider(
+                                        label='General Threshold',
+                                        value=0.35,
+                                        minimum=0,
+                                        maximum=1,
+                                        step=0.01,
+                                    )
+                                    wd14_character_threshold = gr.Slider(
+                                        label='Character Threshold',
+                                        value=0.35,
+                                        minimum=0,
+                                        maximum=1,
+                                        step=0.01,
+                                    )
+
+                    with gr.Row():
+                        with gr.Column(scale=3):
+                            with gr.Row():
+                                image_path = gr.Textbox(
+                                    label='Image Path',
+                                    value=None,
+                                    container=True,
+                                    max_lines=2,
+                                    lines=1,
+                                    show_copy_button=True,
+                                    interactive=False,
+                                )
+                                open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
+                        with gr.Column(scale=5):
+                            ...
+
+                with gr.Tab("Database") as database_tab:
+                    database = gr.Dataframe(
+                        value=None,
+                        label='Database',
+                        type='pandas',
+                    )
+
+            with gr.Tab("Buffer") as buffer_tab:
+                buffer_dataframe = gr.Dataframe(
+                    value=None,
+                    label='Buffer',
+                    type='pandas',
+                )
+
+        # ========================================= Functions ========================================= #
+
+        # ========================================= Tab changing parser ========================================= #
+        activating_tab = gr.State(value='tagging')
+
+        tagging_tab.select(
+            fn=lambda subset_key: ('tagging', *show_subset(subset_key).values()),
+            inputs=[subsets_selector],
+            outputs=[activating_tab, showcase, image_key],
+        )
+
+        database_tab.select(
+            fn=lambda subset_key: ('database', *show_database(subset_key).values()),
+            inputs=[subsets_selector],
+            outputs=[activating_tab, database],
+        )
 
         def track_image_key(image_key):
             if image_key is None or image_key == '':
                 return None, None
             image_key = Path(image_key).stem
-            image_info = dataset[image_key]
+            image_info = dataset.get(image_key, None)
             image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
             caption = str(image_info.caption) if image_info.caption is not None else None
             return image_path, caption
@@ -202,25 +320,46 @@ def create_ui(
             outputs=[image_path, caption],
         )
 
-        def show_subset(subset_key):
-            if subset_key is None or subset_key == '':
-                return None, None
-            subset = subsets[subset_key]
-            pre_idx = dataset.selected.index
-            # print(f"pre_idx: {pre_idx} | len(subset): {len(subset)}")
-            if pre_idx is not None and pre_idx < len(subset):
-                new_img_key = subset.keys()[pre_idx]
-            else:
-                new_img_key = None
-            # print(f"new_img_key: {new_img_key}")
-            return gr.update(value=[(v.image_path, k) for k, v in subset.items()]), new_img_key
+        # ========================================= Subset changing parser ========================================= #
+
+        def change_subset(subset_key, activating_tab):
+            if activating_tab == 'tagging':
+                res = show_subset(subset_key)
+                return res
+            elif activating_tab == 'database':
+                res = show_database(subset_key)
+                return res
 
         subsets_selector.change(
-            fn=show_subset,
-            inputs=[subsets_selector],
-            outputs=[showcase, image_key],
+            fn=change_subset,
+            inputs=[subsets_selector, activating_tab],
+            outputs=[showcase, image_key, database],
             show_progress=True,
+            trigger_mode='multiple',
         )
+
+        # ========================================= Showcase ========================================= #
+
+        def _get_new_selected_img_key(dset):
+            pre_idx = dataset.selected.index
+            if pre_idx is not None and pre_idx < len(dset):
+                new_img_key = dset.keys()[pre_idx]
+            else:
+                new_img_key = None
+            return new_img_key
+
+        def show_subset(subset_key):
+            if subset_key is None or subset_key == '':
+                return {
+                    showcase: None,
+                    image_key: None,
+                }
+            subset = subsets[subset_key]
+            new_img_key = _get_new_selected_img_key(subset)
+            return {
+                showcase: [(v.image_path, k) for k, v in subset.items()],
+                image_key: new_img_key
+            }
 
         reload_subset_btn.click(
             fn=show_subset,
@@ -229,28 +368,31 @@ def create_ui(
             show_progress=True,
         )
 
-        def show_image_info(selected: gr.SelectData):
+        def select_image_key(selected: gr.SelectData):
             if selected is None:
                 return None, None
             image_key = dataset.select(selected)
             return image_key
 
         showcase.select(
-            fn=show_image_info,
+            fn=select_image_key,
             outputs=[image_key],
         )
 
         def remove_image(image_key):
             if image_key is None:
                 return f"image key is None."
-            del dataset[image_key]
-            return f"removed: {image_key}"
+            subset_key = dataset[image_key].category
+            dataset.remove(image_key)
+            return *show_subset(subset_key), f"removed: {image_key}"
 
         remove_image_btn.click(
             fn=remove_image,
-            inputs=[image_path],
-            outputs=[log_box],
+            inputs=[image_key],
+            outputs=[showcase, image_key, log_box],
         )
+
+        # ========================================= Base Tagging Buttons ========================================= #
 
         def random_sample(subset_key):
             subset = subsets[subset_key] if subset_key is not None and subset_key != "" else dataset
@@ -259,38 +401,75 @@ def create_ui(
             dataset.select(image_key)
             return [(image_info.image_path, image_key)], image_key
 
-        random_roll_btn.click(
+        random_btn.click(
             fn=random_sample,
             inputs=[subsets_selector],
             outputs=[showcase, image_key],
         )
 
-        def edit_caption(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> str:
+        def edit_caption(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
             def wrapper(image_key, batch, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
                 if image_key is None or image_key == '':
-                    return gr.update(), f"image key is None."
+                    return gr.update(), f"nothing happened: empty {image_key}"
                 image_key = Path(image_key).stem
                 image_info = dataset[image_key]
+                proc_func_name = func.__name__
+
+                def edit(image_key, image_info, *args, **kwargs):
+                    new_caption = func(image_info.copy(), *args, **kwargs)
+                    if image_info.caption == new_caption:
+                        return False
+                    new_img_info = image_info.copy()
+                    new_img_info.caption = new_caption
+                    dataset.set(image_key, new_img_info)
+                    return True
+
+                res = []
                 if batch:
-                    category = image_info.category
-                    subset = subsets[category]
-                    for img_key, img_info in tqdm(subset.items()):
-                        new_caption = func(img_info, *args, **kwargs)
-                        img_info.caption = new_caption
-                        dataset[img_key] = img_info  # add history
+                    subset_key = image_info.category
+                    subset = subsets[subset_key]
+                    for img_key, img_info in tqdm(subset.items(), desc=f'{proc_func_name} batch processing'):
+                        res.append(edit(img_key, img_info, *args, **kwargs))
                 else:
-                    new_caption = func(image_info, *args, **kwargs)
-                    image_info.caption = new_caption
-                    dataset[image_key] = image_info  # add history
-                return str(new_caption), f"{func.__name__.replace('_', ' ')}: {image_key}"
+                    res.append(edit(image_key, image_info, *args, **kwargs))
+
+                new_img_info = dataset[image_key]
+                new_caption = new_img_info.caption
+
+                if any(res):
+                    return str(new_caption) if new_caption else None, f"{proc_func_name.replace('_', ' ')}: {image_key}"
+                else:
+                    return gr.update(), f"nothing happened: unchanged caption"
             return wrapper
 
         def write_caption(image_info, caption):
             return Caption(caption) if caption is not None and caption.strip() != '' else None
 
-        save_caption_edition_btn.click(
+        caption.blur(
             fn=edit_caption(write_caption),
             inputs=[image_path, gr.State(False), caption],
+            outputs=[caption, log_box],
+        )
+
+        def undo(image_info):
+            image_key = image_info.key
+            image_info = dataset.undo(image_key)
+            return image_info.caption
+
+        undo_btn.click(
+            fn=edit_caption(undo),
+            inputs=[image_key, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        def redo(image_info):
+            image_key = image_info.key
+            image_info = dataset.redo(image_key)
+            return image_info.caption
+
+        redo_btn.click(
+            fn=edit_caption(redo),
+            inputs=[image_key, batch_proc],
             outputs=[caption, log_box],
         )
 
@@ -298,10 +477,44 @@ def create_ui(
             dataset.save(progress=progress)
             return f"database saved: {database_path.absolute().as_posix()}"
 
-        save_to_disk_btn.click(
+        save_btn.click(
             fn=save_to_disk,
             inputs=[],
             outputs=[log_box],
+        )
+
+        # ========================================= Quick Tagging ========================================= #
+
+        def kwargs_setter(func, **kwargs):
+            def wrapper(*args):
+                return func(*args, **kwargs)
+            return wrapper
+
+        def change_quality(image_info, quality):
+            return image_info.caption.with_quality(quality)
+
+        tagging_best_quality_btn.click(
+            fn=edit_caption(kwargs_setter(change_quality, quality='best')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_high_quality_btn.click(
+            fn=edit_caption(kwargs_setter(change_quality, quality='high')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_low_quality_btn.click(
+            fn=edit_caption(kwargs_setter(change_quality, quality='low')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_hate_btn.click(
+            fn=edit_caption(kwargs_setter(change_quality, quality='hate')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
         )
 
         def add_tags(image_info, tags):
@@ -311,6 +524,56 @@ def create_ui(
         def remove_tags(image_info, tags):
             caption = image_info.caption - tags
             return caption
+
+        tagging_color_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='beautiful color')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_detailed_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='detailed')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_lowres_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='lowres')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_messy_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='messy')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_aesthetic_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='aesthetic')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_beautiful_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='beautiful')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_x_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='x')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        tagging_y_btn.click(
+            fn=edit_caption(kwargs_setter(add_tags, tags='y')),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        # ========================================= Custom Tagging ========================================= #
 
         for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
             add_tag_btn.click(
@@ -327,13 +590,14 @@ def create_ui(
         # ========================================= Caption Operation ========================================= #
 
         def caption_operation(image_info, op, op_tags, condition, cond_tags, inclusion_relationship):
-            caption = image_info.caption
+            # print(f"op: {op} | op_tags: {op_tags} | condition: {condition} | cond_tags: {cond_tags} | inclusion_relationship: {inclusion_relationship}")
+            caption = image_info.caption or Caption()
             if op_tags is None or len(op_tags) == 0:
                 return caption
             op_func = OPS[op]
             op_caption = Caption(op_tags)
             do_condition = condition is not None and condition != ''
-            if do_condition:
+            if do_condition and cond_tags and len(cond_tags) > 0:
                 cond_func = CONDITION[condition]
                 cond_tags = set(cond_tags)
                 inclusion_relationship_func = INCLUSION_RELATIONSHIP[inclusion_relationship]
@@ -342,6 +606,110 @@ def create_ui(
                     return caption
 
             caption = op_func(caption, op_caption)
+            # print(f"caption: {caption}")
             return caption
+
+        caption_operation_btn.click(
+            fn=edit_caption(caption_operation),
+            inputs=[image_path, batch_proc, op_dropdown, op_tag_dropdown, condition_dropdown, cond_tag_dropdown, inclusion_relationship_dropdown],
+            outputs=[caption, log_box],
+        )
+
+        # ========================================= Optimizers ========================================= #
+        def sort_caption(image_info):
+            tagging.init_priority_tags()
+            return image_info.caption @ tagging.PRIORITY_REGEX
+
+        sort_caption_btn.click(
+            fn=edit_caption(sort_caption),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        def formalize_caption(image_info):
+            return image_info.caption.formalized()
+
+        formalize_caption_btn.click(
+            fn=edit_caption(formalize_caption),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        def deduplicate_caption(image_info):
+            return image_info.caption.unique()
+
+        deduplicate_caption_btn.click(
+            fn=edit_caption(deduplicate_caption),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        def deoverlap_caption(image_info):
+            return image_info.caption.deovlped()
+
+        deoverlap_caption_btn.click(
+            fn=edit_caption(deoverlap_caption),
+            inputs=[image_path, batch_proc],
+            outputs=[caption, log_box],
+        )
+
+        def defeature_caption(image_info, threshold):
+            nonlocal character_feature_table
+            if character_feature_table is None:
+                from ..tools import make_character_feature_table
+                character_feature_table = make_character_feature_table(dataset, threshold=None, verbose=True)
+            return image_info.caption.defeatured(ref=character_feature_table, threshold=threshold)
+
+        defeature_caption_btn.click(
+            fn=edit_caption(defeature_caption),
+            inputs=[image_path, batch_proc, defeature_caption_threshold],
+            outputs=[caption, log_box],
+        )
+
+        # ========================================= WD14 ========================================= #
+
+        def wd14_tagging(image_info, general_threshold, character_threshold):
+            nonlocal wd14
+            if wd14 is None:
+                from modules.compoents import WaifuTagger
+                wd14 = WaifuTagger(verbose=True)
+            image = Image.open(image_info.image_path)
+            caption = wd14(image, general_threshold=general_threshold, character_threshold=character_threshold)
+            return caption
+
+        wd14_run_btn.click(
+            fn=edit_caption(wd14_tagging),
+            inputs=[image_path, batch_proc, wd14_general_threshold, wd14_character_threshold],
+            outputs=[caption, log_box],
+        )
+
+        # ========================================= Open file folder ========================================= #
+
+        open_folder_btn.click(
+            fn=open_file_folder,
+            inputs=[image_path],
+            outputs=[],
+        )
+
+        # ========================================= Database ========================================= #
+        def show_database(subset_key):
+            if subset_key is None or subset_key == '':
+                return {
+                    database: None
+                }
+            subset = subsets[subset_key]
+            return {
+                database: subset.df()
+            }
+
+        # ========================================= Buffer ========================================= #
+
+        def show_buffer():
+            return buffer.df()
+
+        buffer_tab.select(
+            fn=show_buffer,
+            outputs=[buffer_dataframe],
+        )
 
     return demo
