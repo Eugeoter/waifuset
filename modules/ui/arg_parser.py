@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('--change_source', action='store_true', help='Whether to change image source when loading / 是否在加载数据源时替换数据图像的来源')
     parser.add_argument('--old_source', type=str, help='Old image source / 旧的图像来源')
     parser.add_argument('--new_source', type=str, help='New image source / 新的图像来源')
-    parser.add_argument('--subset_chunk_size', type=int, default=80, help='Chunk size when making subsets / 制作子集时的块大小')
+    parser.add_argument('--chunk_size', type=int, default=80, help='Chunk size when making subsets / 制作子集时的块大小')
 
     parser.add_argument('--share', action='store_true', help='Whether to share the API / 是否共享API')
 

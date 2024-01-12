@@ -34,7 +34,7 @@
 
 `--formalize_caption`: 是否在加载时将标注格式化。
 
-`--subset_chunk_size`: 每页显示的图像数量，默认为 80。太高可能会导致加载缓慢。
+`--chunk_size`: 每页显示的图像数量，默认为 80。太高可能会导致加载缓慢。
 
 `--share`: 是否共享 Gradio 网页。
 

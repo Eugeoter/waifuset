@@ -169,9 +169,10 @@ class Caption:
         caption = self.copy()
         if self.characters and len(self.characters) > 0:
             for char_tag in self.characters:
-                if ref.get(char_tag, 0.0) >= threshold:
-                    freq_table = ref[char_tag]
-                    caption -= list(freq_table.keys())
+                freq_table = ref[char_tag]
+                for tag, freq in freq_table.items():
+                    if freq >= threshold:
+                        caption -= tag
         return caption
 
     # ======================================== artist ======================================== #

@@ -7,7 +7,7 @@ import math
 import functools
 from pathlib import Path
 from tqdm import tqdm
-from typing import List, Iterable, Dict, Any, Callable
+from typing import List, Iterable, Dict, Any, Callable, Union, Tuple
 from ..classes import Dataset, ImageInfo
 from ..utils import log_utils as logu
 
@@ -92,27 +92,59 @@ class ChunkedDataset(Dataset):
         self.chunk_size = chunk_size
 
     def chunk(self, index) -> Dataset:
-        if index < 0 or index >= self.num_chunks:
+        if self.chunk_size is None:
+            return self
+        elif index < 0 or index >= self.num_chunks:
             return Dataset()
         return Dataset(self.values()[index * self.chunk_size: (index + 1) * self.chunk_size])
 
     @property
     def num_chunks(self):
-        return math.ceil(len(self) / self.chunk_size)
+        return math.ceil(len(self) / self.chunk_size) if self.chunk_size is not None else 1
 
 
-class UIDataset(Dataset):
+class TagTable:
+    def __init__(self):
+        self._table: Dict[str, set] = {}
+
+    def query(self, tag):
+        return self._table.get(tag, set())
+
+    def remove_key(self, key):
+        for tag, key_set in self._table.items():
+            if key in key_set:
+                key_set.remove(key)
+
+    def add(self, tag, key):
+        if tag not in self._table:
+            self._table[tag] = set()
+        self._table[tag].add(key)
+
+    def remove(self, tag, key):
+        if tag not in self._table:
+            return
+        self._table[tag].remove(key)
+        if len(self._table[tag]) == 0:
+            del self._table[tag]
+
+    def __contains__(self, tag):
+        return tag in self._table
+
+    def __getitem__(self, tag):
+        return self._table[tag]
+
+
+class UIDataset(ChunkedDataset):
     selected: SelectData
     history: History
 
-    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, subset_chunk_size=200, *args, **kwargs):
+    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, *args, **kwargs):
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
-        self.subset_chunk_size = subset_chunk_size
 
         if isinstance(source, (str, Path)) and source.endswith(".pkl"):
             with open(source, 'rb') as f:
@@ -120,44 +152,48 @@ class UIDataset(Dataset):
         else:
             super().__init__(source, *args, **kwargs)
 
+        # self.subsets = None
+        self.categories = sorted(list(set(img_info.category for img_info in self.values()))) if len(self) > 0 else []
+        self.tag_table = None
         self.selected = SelectData()
         self.history = History()
         self.buffer = Dataset()
 
-        self.make_subsets()
+        # self.init_subsets()
 
         if formalize_caption:
             self.buffer.update(self)
 
-    def make_subsets(self):
-        subsets = {}
-        for k, v in tqdm(self.items(), desc='making subsets'):
-            if v.category not in subsets:
-                subsets[v.category] = ChunkedDataset(source=None, chunk_size=self.subset_chunk_size)
-            subsets[v.category][k] = v
-        self.subsets = subsets
+    # def init_subsets(self):
+    #     subsets = {}
+    #     for k, v in tqdm(self.items(), desc='making subsets'):
+    #         if v.category not in subsets:
+    #             subsets[v.category] = ChunkedDataset(source=None, chunk_size=self.chunk_size)
+    #         subsets[v.category][k] = v
+    #     self.subsets = subsets
 
-    def select(self, selected: gr.SelectData):
+    def init_tag_table(self, subset_key=None):
+        if self.tag_table is not None:
+            return
+        self.tag_table = TagTable()
+        for image_key, image_info in tqdm(self.items(), desc='initializing tag table'):
+            if not image_info.caption:
+                continue
+            for tag in image_info.caption:
+                self.tag_table.add(tag, image_key)
+
+    def make_subset(self, condition: Callable[[ImageInfo], bool], chunk_size=None, *args, **kwargs):
+        return ChunkedDataset(self, chunk_size=chunk_size, *args, condition=condition, **kwargs)
+
+    def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):
             self.selected.index = selected.index
             image_key = os.path.basename(os.path.splitext(selected.value['image']['orig_name'])[0])
             self.selected.image_key = image_key
-
-        elif isinstance(selected, str):  # selected is image_key
-            self.selected.image_key = selected
-            img_info = self[selected]
-            subset = self.subsets[img_info.category]
-            self.selected.index = list(subset.keys()).index(selected)
-
-        elif isinstance(selected, int):  # selected is index
-            pre_img_key = self.selected.image_key
-            category = self[pre_img_key].category
-            self.selected.index = selected
-            self.selected.image_key = list(self.subsets[category].keys())[selected]
-
-        elif selected is None:  # selected is None
-            self.selected.index = None
-            self.selected.image_key = None
+        elif isinstance(selected, tuple):
+            self.selected.index, self.selected.image_key = selected
+        else:
+            raise NotImplementedError
 
         return self.selected.image_key
 
@@ -181,28 +217,44 @@ class UIDataset(Dataset):
             del self[image_key]
         return image_info
 
+    # core setitem method
     def __setitem__(self, key, value):
+        img_info = self.get(key)
+
+        # update tag table
+        if img_info and self.tag_table:
+            for tag in value.caption - img_info.caption:  # introduce new tags
+                self.tag_table.add(tag, key)
+            for tag in img_info.caption - value.caption:  # remove old tags
+                self.tag_table.remove(tag, key)
+
         super().__setitem__(key, value)
 
-        # update subset
-        subset = self.subsets[value.category]
-        subset[key] = value
+        # # update subset
+        # subset = self.subsets[value.category]
+        # subset[key] = value
 
         # update buffer
         self.buffer[key] = value
 
+    # core delitem method
     def pop(self, key, default=None):
         img_info = super().pop(key, default)
 
-        # update subset
-        subset = self.subsets[img_info.category]
-        del subset[key]
+        # # update subset
+        # subset = self.subsets[img_info.category]
+        # del subset[key]
+
+        # update tag table
+        if self.tag_table is not None:
+            self.tag_table.remove_key(key)
 
         # update buffer
         self.buffer[key] = img_info
 
         return img_info
 
+    # setitem with updating history
     def set(self, key, value):
         if self[key] == value:
             return
@@ -217,6 +269,7 @@ class UIDataset(Dataset):
         # record
         self.history.record(key, value)
 
+    # delitem with updating history
     def remove(self, key):
         # pop from dataset
         img_info = self.pop(key)

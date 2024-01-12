@@ -27,6 +27,11 @@ INCLUSION_RELATIONSHIP = {
     'exclude': lambda x, y: y not in x,
 }
 
+JOINER = {
+    'and': lambda x, y: x & y,
+    'or': lambda x, y: x | y,
+}
+
 
 def prepare_dataset(
     args,
@@ -39,7 +44,7 @@ def prepare_dataset(
         write_to_database=args.write_to_database,
         write_to_txt=args.write_to_txt,
         database_file=args.database_file,
-        subset_chunk_size=args.subset_chunk_size,
+        chunk_size=args.chunk_size,
         read_caption=True,
         verbose=True,
     )
@@ -64,16 +69,19 @@ def prepare_dataset(
 def create_ui(
     args,
 ):
-    from ..classes import ImageInfo, Caption
+    from ..classes import Dataset, ImageInfo, Caption
+    from .ui_dataset import ChunkedDataset
     from .utils import open_file_folder
 
     # ========================================= Base variables ========================================= #
 
     dataset = prepare_dataset(args)
     database_path = Path(args.database_file) if args.database_file else None
-    subsets = dataset.subsets
+    # subsets = dataset.subsets
     buffer = dataset.buffer
+    tag_table = None
 
+    cur_dataset = dataset
     wd14 = None
     character_feature_table = None
     random_sample_history = set()
@@ -88,13 +96,13 @@ def create_ui(
                         with gr.Row():
                             subsets_selector = gr.Dropdown(
                                 label='Category',
-                                choices=[""] + sorted(subsets.keys()),
+                                choices=[""] + dataset.categories,
                                 value="",
                                 multiselect=False,
                                 allow_custom_value=False,
                                 min_width=256,
                             )
-                            cur_chunk_index = gr.Number(label='Chunk', value=0, min_width=128, precision=0, scale=0)
+                            cur_chunk_index = gr.Number(label=f'Chunk {1}/{cur_dataset.num_chunks}', value=1, min_width=128, precision=0, scale=0)
                     with gr.Column():
                         log_box = gr.TextArea(
                             label='Log',
@@ -115,12 +123,12 @@ def create_ui(
                             with gr.Row():
                                 showcase = gr.Gallery(
                                     label='Showcase',
+                                    value=[(v.image_path, k) for k, v in cur_dataset.chunk(0).items()],
                                     rows=4,
                                     columns=4,
                                     container=True,
                                     object_fit='scale-down',
                                     height=512,
-                                    selected_index=0,
                                 )
                                 cur_image_key = gr.Textbox(value=None, visible=False, label='Image Key')
                             with gr.Row():
@@ -151,6 +159,7 @@ def create_ui(
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
                                 redo_btn = cc.EmojiButton(Emoji.rightwards)
                                 save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
+                                cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop')
                             with gr.Row():
                                 batch_proc = gr.Checkbox(
                                     label='Batch',
@@ -197,8 +206,8 @@ def create_ui(
                                             remove_tag_btns.append(cc.EmojiButton(Emoji.minus, variant='stop'))
 
                             with gr.Tab(label='Operational Tagging'):
-                                with gr.Row():
-                                    op_dropdown = gr.Dropdown(
+                                with gr.Row(variant='compact'):
+                                    cap_op_op_dropdown = gr.Dropdown(
                                         label='Op',
                                         choices=list(OPS.keys()),
                                         value=list(OPS.keys())[0],
@@ -207,7 +216,7 @@ def create_ui(
                                         scale=0,
                                         min_width=128,
                                     )
-                                    op_tag_dropdown = gr.Dropdown(
+                                    cap_op_op_tag_dropdown = gr.Dropdown(
                                         label='Tags',
                                         choices=[],
                                         value=None,
@@ -215,10 +224,10 @@ def create_ui(
                                         multiselect=True,
                                     )
 
-                                    caption_operation_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary')
+                                    operate_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary')
 
-                                with gr.Row():
-                                    condition_dropdown = gr.Dropdown(
+                                with gr.Row(variant='compact'):
+                                    cap_op_cond_dropdown = gr.Dropdown(
                                         label='If',
                                         choices=list(CONDITION.keys()),
                                         value=list(CONDITION.keys())[0],
@@ -228,7 +237,7 @@ def create_ui(
                                         min_width=128,
                                     )
 
-                                    cond_tag_dropdown = gr.Dropdown(
+                                    cap_op_cond_tag_dropdown = gr.Dropdown(
                                         label='Tags',
                                         choices=[],
                                         value=None,
@@ -236,7 +245,7 @@ def create_ui(
                                         multiselect=True,
                                     )
 
-                                    inclusion_relationship_dropdown = gr.Dropdown(
+                                    cap_op_incl_rel_dropdown = gr.Dropdown(
                                         label='Inclusion',
                                         choices=list(INCLUSION_RELATIONSHIP.keys()),
                                         value=list(INCLUSION_RELATIONSHIP.keys())[0],
@@ -263,7 +272,7 @@ def create_ui(
                                     )
 
                             with gr.Tab(label='WD14'):
-                                with gr.Row():
+                                with gr.Row(variant='compact'):
                                     wd14_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=80)
                                     wd14_general_threshold = gr.Slider(
                                         label='General Threshold',
@@ -279,10 +288,18 @@ def create_ui(
                                         maximum=1,
                                         step=0.01,
                                     )
+                                with gr.Row(variant='compact'):
+                                    wd14_os_mode = gr.Radio(
+                                        label='OS Mode',
+                                        choices=['overwrite', 'append', 'prepend', 'ignore'],
+                                        value='overwrite',
+                                        scale=0,
+                                        min_width=128,
+                                    )
 
                     with gr.Row():
-                        with gr.Column(scale=3):
-                            with gr.Row():
+                        with gr.Column(scale=4):
+                            with gr.Row(variant='compact'):
                                 image_path = gr.Textbox(
                                     label='Image Path',
                                     value=None,
@@ -293,8 +310,61 @@ def create_ui(
                                     interactive=False,
                                 )
                                 open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
-                        with gr.Column(scale=5):
-                            ...
+                            with gr.Row():
+                                resolution = gr.Textbox(
+                                    label='Resolution',
+                                    value=None,
+                                    container=True,
+                                    max_lines=2,
+                                    lines=1,
+                                    show_copy_button=True,
+                                    interactive=False,
+                                )
+
+                        with gr.Column(scale=4):
+                            with gr.Tab("Query"):
+                                with gr.Row(variant='compact'):
+                                    query_include_condition = gr.Dropdown(
+                                        label='If',
+                                        choices=list(CONDITION.keys()),
+                                        value=list(CONDITION.keys())[0],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=128,
+                                        scale=0,
+                                    )
+                                    query_include_tags = gr.Dropdown(
+                                        label='Include',
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+                                    query_joiner_dropdown = gr.Dropdown(
+                                        label='Joiner',
+                                        choices=list(JOINER.keys()),
+                                        value=list(JOINER.keys())[1],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=108,
+                                        scale=0,
+                                    )
+                                with gr.Row(variant='compact'):
+                                    query_exclude_condition = gr.Dropdown(
+                                        label='If',
+                                        choices=list(CONDITION.keys()),
+                                        value=list(CONDITION.keys())[0],
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=128,
+                                        scale=0,
+                                    )
+                                    query_exclude_tags = gr.Dropdown(
+                                        label='Excludes',
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+                                    query_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
 
                 with gr.Tab("Database") as database_tab:
                     database = gr.Dataframe(
@@ -303,13 +373,13 @@ def create_ui(
                         type='pandas',
                     )
 
-            with gr.Tab("Buffer") as buffer_tab:
-                buffer_df = gr.Dataframe(
-                    value=None,
-                    label='Buffer',
-                    type='pandas',
-                    row_count=(20, 'fixed'),
-                )
+                with gr.Tab("Buffer") as buffer_tab:
+                    buffer_df = gr.Dataframe(
+                        value=None,
+                        label='Buffer',
+                        type='pandas',
+                        row_count=(20, 'fixed'),
+                    )
 
         # ========================================= Functions ========================================= #
 
@@ -318,43 +388,13 @@ def create_ui(
                 return func(*args, **kwargs)
             return wrapper
 
-        # ========================================= Tab changing parser ========================================= #
-        activating_tab = gr.State(value='tagging')
+        def dataset_to_gallery(dset):
+            return [(v.image_path if v.image_path.is_file() else None, k) for k, v in dset.items()]
 
-        tagging_tab.select(
-            fn=lambda subset_key, chunk_index: ('tagging', *show_subset(subset_key, chunk_index).values()),
-            inputs=[subsets_selector, cur_chunk_index],
-            outputs=[activating_tab, showcase, cur_image_key, cur_chunk_index],
-        )
-
-        database_tab.select(
-            fn=lambda subset_key, chunk_index: ('database', *show_database(subset_key, chunk_index).values()),
-            inputs=[subsets_selector, cur_chunk_index],
-            outputs=[activating_tab, database, cur_chunk_index],
-        )
-
-        # ========================================= Subset changing parser ========================================= #
-
-        def change_subset(activating_tab, subset_key, chunk_index):
-            if activating_tab == 'tagging':
-                res = show_subset(subset_key, chunk_index)
-                return res
-            elif activating_tab == 'database':
-                res = show_database(subset_key, chunk_index)
-                return res
-
-        subset_change_inputs = [activating_tab, subsets_selector, cur_chunk_index]
-        subset_change_outputs = [showcase, cur_image_key, database, cur_chunk_index]
-
-        subsets_selector.input(
-            fn=change_subset,
-            inputs=subset_change_inputs,
-            outputs=subset_change_outputs,
-            show_progress=True,
-            trigger_mode='multiple',
-        )
-
-        def _get_new_select_img_key(dset):
+        def get_new_img_key(dset):
+            r"""
+            Get the image key that should be selected if the showing dataset is changed by `dset`. Doesn't depend on what the current dataset is.
+            """
             pre_idx = dataset.selected.index
             if pre_idx is not None and pre_idx < len(dset):
                 new_img_key = dset.keys()[pre_idx]
@@ -362,63 +402,131 @@ def create_ui(
                 new_img_key = None
             return new_img_key
 
-        def show_subset(subset_key, chunk_index):
-            if subset_key is None or subset_key == '':
-                return {
-                    showcase: gr.update(value=None, label='Showcase'),
-                    cur_image_key: None,
-                    cur_chunk_index: 0,
-                }
+        def correct_chunk_idx(dset: ChunkedDataset, chunk_index):
+            r"""
+            Correct the chunk index of `dset` to `chunk_index`
+            """
+            if chunk_index is None or chunk_index == 0:
+                chunk_index = 1
+            else:
+                chunk_index = min(max(chunk_index, 1), dset.num_chunks)
+            return chunk_index
 
-            subset = subsets[subset_key]
-            chunk_index = min(max(chunk_index, 1), subset.num_chunks)
-            subset_chunk = subset.chunk(chunk_index - 1)
+        def change_current_dataset(dset):
+            r"""
+            Change the current dataset to `dset`
+            """
+            nonlocal cur_dataset
+            cur_dataset = dset
 
-            new_select_img_key = _get_new_select_img_key(subset_chunk)
-
+        def show_dataset(dset=None, new_chunk_index=1):
+            r"""
+            Convert `dset` to gallery value and image key that should be selected
+            """
+            if isinstance(dset, ChunkedDataset):
+                new_chunk_index = correct_chunk_idx(dset, new_chunk_index)
+                chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, ChunkedDataset) else dset
+            elif isinstance(dset, Dataset):
+                chunk = dset
+                new_chunk_index = 1
+            new_img_key = get_new_img_key(chunk)
+            gallery = dataset_to_gallery(chunk)
             return {
-                showcase: gr.update(value=[(v.image_path, k) for k, v in subset_chunk.items()], label=f"Showcase  {subset_key}  {chunk_index}/{subset.num_chunks}"),
-                cur_image_key: new_select_img_key,
-                cur_chunk_index: chunk_index,
+                showcase: gallery,
+                cur_image_key: new_img_key,
+                cur_chunk_index: gr.update(value=new_chunk_index, label=f'Chunk {new_chunk_index}/{cur_dataset.num_chunks}')
             }
 
-        def show_database(subset_key, chunk_index):
-            if subset_key is None or subset_key == '':
-                return {
-                    database: gr.update(value=None, label='Database'),
-                    cur_chunk_index: 0,
-                }
-
-            subset = subsets[subset_key]
-            chunk_index = min(max(chunk_index, 1), subset.num_chunks)
-            subset_chunk = subset.chunk(chunk_index - 1)
-
+        def show_database(dset=None, new_chunk_index=1):
+            r"""
+            Convert `dset` to dataframe
+            """
+            new_chunk_index = correct_chunk_idx(dset, new_chunk_index)
+            chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, ChunkedDataset) else dset
+            df = chunk.df()
             return {
-                database: gr.update(value=subset_chunk.df(), label=f"Database  {subset_key}  {chunk_index}/{subset.num_chunks}"),
-                cur_chunk_index: chunk_index,
+                database: df,
+                cur_chunk_index: gr.update(value=new_chunk_index, label=f'Chunk {new_chunk_index}/{dset.num_chunks}'),
             }
 
-        def change_chunk_index(activating_tab, subset_key, chunk_index):
-            return change_subset(activating_tab, subset_key, chunk_index) if chunk_index != 0 else {cur_chunk_index: 0}
+        # ========================================= Tab changing parser ========================================= #
+        activating_tab_name = "tagging"
 
-        cur_chunk_index.input(
-            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index),
-            inputs=subset_change_inputs,
-            outputs=subset_change_outputs,
+        def change_activating_tab_name(tab_name):
+            r"""
+            Change the activating tab name to `tab_name`
+            """
+            nonlocal activating_tab_name
+            activating_tab_name = tab_name
+
+        # ========================================= Subset key selector ========================================= #
+
+        def change_to_dataset(dset: ChunkedDataset = None, new_chunk_index=1, new_activating_tab_name=activating_tab_name):
+            r"""
+            Change current dataset to another dataset `dset` and show its chunk
+            """
+            dset = dset or cur_dataset
+            change_activating_tab_name(new_activating_tab_name)
+            change_current_dataset(dset)
+            if new_activating_tab_name == 'tagging':
+                res = show_dataset(dset, new_chunk_index)
+            elif new_activating_tab_name == 'database':
+                res = show_database(dset, new_chunk_index)
+            return res
+
+        selector_change_outputs = [showcase, cur_image_key, database, cur_chunk_index]
+
+        subsets_selector.input(
+            fn=lambda subset_key: change_to_dataset(
+                dataset.make_subset(condition=lambda img_info: img_info.category == subset_key, chunk_size=args.chunk_size)  # subset of dataset, if subset key is provided
+                if subset_key is not None and subset_key != '' else ChunkedDataset(dataset, chunk_size=args.chunk_size),  # dataset itself, if subset key is not provided
+                new_chunk_index=1,  # reset chunk index
+            ),
+            inputs=[subsets_selector],
+            outputs=selector_change_outputs,
+            show_progress=True,
+            trigger_mode='multiple',
+        )
+
+        reload_subset_btn.click(  # same as above
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
+            show_progress=True,
+        )
+
+        tagging_tab.select(
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index, new_activating_tab_name='tagging'),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
+            show_progress=True,
+        )
+
+        database_tab.select(
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index, new_activating_tab_name='database'),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
+            show_progress=True,
+        )
+
+        cur_chunk_index.submit(
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
             show_progress=True,
         )
 
         load_pre_chunk_btn.click(
-            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index - 1),
-            inputs=subset_change_inputs,
-            outputs=subset_change_outputs,
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index - 1),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
             show_progress=True,
         )
 
         load_next_chunk_btn.click(
-            fn=lambda activating_tab, subset_key, chunk_index: change_chunk_index(activating_tab, subset_key, chunk_index + 1),
-            inputs=subset_change_inputs,
-            outputs=subset_change_outputs,
+            fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index + 1),
+            inputs=[cur_chunk_index],
+            outputs=selector_change_outputs,
             show_progress=True,
         )
 
@@ -436,20 +544,20 @@ def create_ui(
         )
 
         def track_image_key(image_key):
-            if image_key is None or image_key == '':
-                return None, gr.update(value=None, label='Caption')
+            if image_key is None or image_key == '':  # no image key selected
+                return None, gr.update(value=None, label='Caption'), None
             image_key = Path(image_key).stem
             image_info = dataset.get(image_key, None)
             if image_info is None:
                 raise ValueError(f"image key {image_key} not found in dataset")
             image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
             caption = str(image_info.caption) if image_info.caption is not None else None
-            return image_path, gr.update(value=caption, label=f"Caption: {image_key}")
+            return image_path, gr.update(value=caption, label=f"Caption: {image_key}"), f"{image_info.original_size[0]}x{image_info.original_size[1]}"
 
         cur_image_key.change(
             fn=track_image_key,
             inputs=[cur_image_key],
-            outputs=[image_path, caption],
+            outputs=[image_path, caption, resolution],
         )
 
         def track_caption(image_key):
@@ -472,51 +580,39 @@ def create_ui(
             trigger_mode='always_last',
         )
 
-        reload_subset_btn.click(
-            fn=show_subset,
-            inputs=[subsets_selector, cur_chunk_index],
-            outputs=[showcase, cur_image_key, cur_chunk_index],
-            show_progress=True,
-        )
-
         def remove_image(image_key, chunk_index):
             if image_key is None or image_key == '':
                 return {log_box: f"empty image key"}
-            subset_key = dataset[image_key].category
             dataset.remove(image_key)
-            res = show_subset(subset_key, chunk_index)
-            res.update({log_box: f"removed: {image_key}"})
-            return res
+            del cur_dataset[image_key]  # remove from current dataset
+            return change_to_dataset(new_chunk_index=chunk_index)
 
         remove_image_btn.click(
             fn=remove_image,
             inputs=[cur_image_key, cur_chunk_index],
-            outputs=subset_change_outputs + [log_box],
+            outputs=selector_change_outputs + [log_box],
         )
 
         # ========================================= Base Tagging Buttons ========================================= #
 
-        def random_sample(subset_key):
-            subset = subsets[subset_key] if subset_key is not None and subset_key != "" else dataset
+        def random_sample():
+            subset = cur_dataset
             if len(subset) == 0:
-                return {log_box: f"empty subset {subset_key}"}
+                return {log_box: f"empty dataset"}
             subset = subset.make_subset(condition=lambda x: x.key not in random_sample_history)
             if len(subset) == 0:
                 return {log_box: f"no more image to sample"}
             image_key = random.choice(list(subset.keys()))
             random_sample_history.add(image_key)
             image_info = dataset[image_key]
-            dataset.select(image_key)
-            return {
-                showcase: gr.update(value=[(image_info.image_path, image_key)], label=f"Showcase"),
-                cur_image_key: image_key,
-                cur_chunk_index: 1,
-            }
+            dataset.select((0, image_key))
+            res = show_dataset(Dataset({image_key: image_info}))
+            return res
 
         random_btn.click(
             fn=random_sample,
-            inputs=[subsets_selector],
-            outputs=[showcase, cur_image_key, cur_chunk_index, log_box],
+            inputs=[],
+            outputs=selector_change_outputs + [log_box],
         )
 
         def edit_caption_wrapper(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
@@ -527,32 +623,43 @@ def create_ui(
                 image_info = dataset[image_key]
                 proc_func_name = func.__name__
 
-                def edit(image_key, image_info, *args, **kwargs):
+                def edit(image_info, *args, **kwargs):
                     new_caption = func(image_info.copy(), *args, **kwargs)
                     if image_info.caption == new_caption:
-                        return False
+                        return None
                     new_img_info = image_info.copy()
                     new_img_info.caption = new_caption
-                    dataset.set(image_key, new_img_info)
-                    return True
+                    return new_img_info
 
-                res = []
+                results = []
                 if batch:
-                    subset_key = image_info.category
-                    subset = subsets[subset_key]
-                    for img_key, img_info in tqdm(subset.items(), desc=f'{proc_func_name} batch processing'):
-                        res.append(edit(img_key, img_info, *args, **kwargs))
+                    subset = cur_dataset
+                    for img_info in tqdm(subset.values(), desc=f'{proc_func_name} batch processing'):
+                        results.append(edit(img_info, *args, **kwargs))
                 else:
-                    res.append(edit(image_key, image_info, *args, **kwargs))
+                    results.append(edit(image_info, *args, **kwargs))
+
+                # write to dataset
+                for res in results:
+                    if res is not None:
+                        dataset.set(res.key, res)
 
                 new_img_info = dataset[image_key]
                 new_caption = new_img_info.caption
 
-                if any(res):
+                if any(results):
                     return str(new_caption) if new_caption else None, f"{proc_func_name.replace('_', ' ')}: {image_key}"
                 else:
                     return gr.update(), f"no change"
             return wrapper
+
+        def cancel_edit_caption():
+            return gr.update(), f"edit caption cancelled."
+
+        cancel_event = cancel_btn.click(
+            fn=cancel_edit_caption,
+            outputs=[caption, log_box]
+        )
 
         def write_caption(image_info, caption):
             return Caption(caption) if caption is not None and caption.strip() != '' else None
@@ -561,6 +668,7 @@ def create_ui(
             fn=edit_caption_wrapper(write_caption),
             inputs=[image_path, gr.State(False), caption],
             outputs=[caption, log_box],
+            cancels=cancel_event,
         )
 
         def undo(image_info):
@@ -619,7 +727,7 @@ def create_ui(
         )
 
         tagging_hate_btn.click(
-            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='hate')),
+            fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='worst')),
             inputs=[image_path, batch_proc],
             outputs=[caption, log_box],
         )
@@ -707,18 +815,18 @@ def create_ui(
             if do_condition and cond_tags and len(cond_tags) > 0:
                 cond_func = CONDITION[condition]
                 cond_tags = set(cond_tags)
-                inclusion_relationship_func = INCLUSION_RELATIONSHIP[inclusion_relationship]
+                incl_func = INCLUSION_RELATIONSHIP[inclusion_relationship]
 
-                if not cond_func(inclusion_relationship_func(caption, cond_tag) for cond_tag in cond_tags):
+                if not cond_func(incl_func(caption, cond_tag) for cond_tag in cond_tags):
                     return caption
 
             caption = op_func(caption, op_caption)
             # print(f"caption: {caption}")
             return caption
 
-        caption_operation_btn.click(
+        operate_caption_btn.click(
             fn=edit_caption_wrapper(caption_operation),
-            inputs=[image_path, batch_proc, op_dropdown, op_tag_dropdown, condition_dropdown, cond_tag_dropdown, inclusion_relationship_dropdown],
+            inputs=[image_path, batch_proc, cap_op_op_dropdown, cap_op_op_tag_dropdown, cap_op_cond_dropdown, cap_op_cond_tag_dropdown, cap_op_incl_rel_dropdown],
             outputs=[caption, log_box],
         )
 
@@ -775,18 +883,29 @@ def create_ui(
 
         # ========================================= WD14 ========================================= #
 
-        def wd14_tagging(image_info, general_threshold, character_threshold):
+        def wd14_tagging(image_info, general_threshold, character_threshold, os_mode):
             nonlocal wd14
+            old_caption = image_info.caption
+            if old_caption is not None and os_mode == 'ignore':
+                return old_caption
             if wd14 is None:
                 from modules.compoents import WaifuTagger
                 wd14 = WaifuTagger(verbose=True)
             image = Image.open(image_info.image_path)
-            caption = wd14(image, general_threshold=general_threshold, character_threshold=character_threshold)
+            wd14_caption = wd14(image, general_threshold=general_threshold, character_threshold=character_threshold)
+            if os_mode == 'overwrite' or os_mode == 'ignore':
+                caption = wd14_caption
+            elif os_mode == 'append':
+                caption = old_caption | wd14_caption
+            elif os_mode == 'prepend':
+                caption = wd14_caption | old_caption
+            else:
+                raise ValueError(f"invalid os_mode: {os_mode}")
             return caption
 
         wd14_run_btn.click(
             fn=edit_caption_wrapper(wd14_tagging),
-            inputs=[image_path, batch_proc, wd14_general_threshold, wd14_character_threshold],
+            inputs=[image_path, batch_proc, wd14_general_threshold, wd14_character_threshold, wd14_os_mode],
             outputs=[caption, log_box],
         )
 
@@ -806,6 +925,69 @@ def create_ui(
         buffer_tab.select(
             fn=show_buffer,
             outputs=[buffer_df],
+        )
+
+        # ========================================= Query ========================================= #
+
+        def query_tag_table(include_condition, include_tags, joiner, exclude_condition, exclude_tags, progress: gr.Progress = gr.Progress(track_tqdm=True)):
+            nonlocal tag_table
+            if tag_table is None:
+                dataset.init_tag_table()
+                tag_table = dataset.tag_table
+
+            incl_cond_func = CONDITION[include_condition]
+            excl_cond_func = CONDITION[exclude_condition]
+            joiner_func = JOINER[joiner]
+
+            # print(f"subset_key: {subset_key}")
+            # print(f"include_tags: {include_tags}")
+            # print(f"exclude_tags: {exclude_tags}")
+
+            subset = cur_dataset
+
+            incl_set = set()
+            for tag in tqdm(include_tags, desc='Including tags'):
+                if tag not in tag_table:
+                    continue
+                tag_set = tag_table[tag]
+                # filter by subset
+                if subset:
+                    tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                if len(tag_set) == 0:
+                    continue
+
+                if include_condition == 'any':
+                    incl_set.update(tag_set)
+                else:
+                    incl_set.intersection_update(tag_set)
+
+            excl_set = set()
+            for tag in tqdm(exclude_tags, desc='Excluding tags'):
+                if tag not in tag_table:
+                    continue
+                tag_set = tag_table[tag]
+                if subset:
+                    tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                if len(tag_set) == 0:
+                    continue
+
+                if exclude_condition == 'any':
+                    excl_set.update(tag_set)
+                else:
+                    excl_set.intersection_update(tag_set)
+
+            res_set = joiner_func(incl_set, excl_set)
+            res_lst = sorted(res_set)
+            res_dataset = ChunkedDataset({img_key: dataset[img_key] for img_key in res_lst}, chunk_size=args.chunk_size)
+            res = change_to_dataset(res_dataset)
+            res.update({log_box: f"querying matches {len(res_dataset)} images"})
+            return res
+
+        query_btn.click(
+            fn=query_tag_table,
+            inputs=[query_include_condition, query_include_tags, query_joiner_dropdown, query_exclude_condition, query_exclude_tags],
+            outputs=selector_change_outputs + [log_box],
+            show_progress=True,
         )
 
     return demo

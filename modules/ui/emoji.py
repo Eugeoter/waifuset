@@ -7,6 +7,7 @@ class Emoji:
     star = u'\u2b50\ufe0f'  # ⭐️
     black_heart = u"\U0001F5A4\ufe0f"
     cross = u'\u274c'  # ❌
+    no_entry = u'\u26d4\ufe0f'  # ⛔️
     question = u'\u2754\uf0ef'  # ❔
 
     link_symbol = u'\U0001f517'  # 🔗

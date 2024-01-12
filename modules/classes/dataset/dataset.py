@@ -113,7 +113,10 @@ class Dataset(_father_class):
                     for image_key, image_info in tqdm(src.items(), desc='Loading dict', smoothing=1, disable=not verbose):
                         if image_key in dic:
                             continue
-                        image_info = ImageInfo(**image_info)
+                        if isinstance(image_info, dict):
+                            image_info = ImageInfo(**image_info)
+                        elif isinstance(image_info, ImageInfo):
+                            pass
                         dic[image_key] = image_info
 
             elif src is None:
