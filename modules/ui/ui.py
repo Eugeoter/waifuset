@@ -94,7 +94,8 @@ def create_ui(
                 with gr.Row():
                     with gr.Column():
                         with gr.Row():
-                            subsets_selector = gr.Dropdown(
+                            reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
+                            category_selector = gr.Dropdown(
                                 label='Category',
                                 choices=[""] + dataset.categories,
                                 value="",
@@ -156,6 +157,7 @@ def create_ui(
 
                             with gr.Row():
                                 random_btn = cc.EmojiButton(Emoji.dice)
+                                set_category_btn = cc.EmojiButton(Emoji.top_left_arrow)
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
                                 redo_btn = cc.EmojiButton(Emoji.rightwards)
                                 save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
@@ -187,23 +189,36 @@ def create_ui(
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
                             with gr.Tab(label='Custom Tagging'):
+                                def custom_tagging_row():
+                                    with gr.Row(variant='compact'):
+                                        add_tag_btn = cc.EmojiButton(Emoji.plus, variant='primary')
+                                        tag_selector = gr.Dropdown(
+                                            choices=list(tagging.CUSTOM_TAGS),
+                                            value=None,
+                                            multiselect=True,
+                                            allow_custom_value=True,
+                                            show_label=False,
+                                            container=False,
+                                            min_width=96,
+                                        )
+                                        remove_tag_btn = cc.EmojiButton(Emoji.minus, variant='stop')
+                                    return add_tag_btn, tag_selector, remove_tag_btn
+
                                 add_tag_btns = []
                                 tag_selectors = []
                                 remove_tag_btns = []
                                 for r in range(3):
-                                    with gr.Row(variant='compact'):
-                                        for c in range(2):
-                                            add_tag_btns.append(cc.EmojiButton(Emoji.plus, variant='primary'))
-                                            tag_selectors.append(gr.Dropdown(
-                                                choices=list(tagging.CUSTOM_TAGS),
-                                                value=None,
-                                                multiselect=True,
-                                                allow_custom_value=True,
-                                                show_label=False,
-                                                container=False,
-                                                min_width=96,
-                                            ))
-                                            remove_tag_btns.append(cc.EmojiButton(Emoji.minus, variant='stop'))
+                                    add_tag_btn, tag_selector, remove_tag_btn = custom_tagging_row()
+                                    add_tag_btns.append(add_tag_btn)
+                                    tag_selectors.append(tag_selector)
+                                    remove_tag_btns.append(remove_tag_btn)
+
+                                with gr.Accordion(label='More', open=False):
+                                    for r in range(6):
+                                        add_tag_btn, tag_selector, remove_tag_btn = custom_tagging_row()
+                                        add_tag_btns.append(add_tag_btn)
+                                        tag_selectors.append(tag_selector)
+                                        remove_tag_btns.append(remove_tag_btn)
 
                             with gr.Tab(label='Operational Tagging'):
                                 with gr.Row(variant='compact'):
@@ -299,27 +314,28 @@ def create_ui(
 
                     with gr.Row():
                         with gr.Column(scale=4):
-                            with gr.Row(variant='compact'):
-                                image_path = gr.Textbox(
-                                    label='Image Path',
-                                    value=None,
-                                    container=True,
-                                    max_lines=2,
-                                    lines=1,
-                                    show_copy_button=True,
-                                    interactive=False,
-                                )
-                                open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
-                            with gr.Row():
-                                resolution = gr.Textbox(
-                                    label='Resolution',
-                                    value=None,
-                                    container=True,
-                                    max_lines=2,
-                                    lines=1,
-                                    show_copy_button=True,
-                                    interactive=False,
-                                )
+                            with gr.Tab("Info"):
+                                with gr.Row(variant='compact'):
+                                    image_path = gr.Textbox(
+                                        label='Image Path',
+                                        value=None,
+                                        container=True,
+                                        max_lines=2,
+                                        lines=1,
+                                        show_copy_button=True,
+                                        interactive=False,
+                                    )
+                                    open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
+                                with gr.Row(variant='compact'):
+                                    resolution = gr.Textbox(
+                                        label='Resolution',
+                                        value=None,
+                                        container=True,
+                                        max_lines=2,
+                                        lines=1,
+                                        show_copy_button=True,
+                                        interactive=False,
+                                    )
 
                         with gr.Column(scale=4):
                             with gr.Tab("Query"):
@@ -342,7 +358,7 @@ def create_ui(
                                     query_joiner_dropdown = gr.Dropdown(
                                         label='Joiner',
                                         choices=list(JOINER.keys()),
-                                        value=list(JOINER.keys())[1],
+                                        value=list(JOINER.keys())[0],
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=108,
@@ -465,7 +481,8 @@ def create_ui(
             r"""
             Change current dataset to another dataset `dset` and show its chunk
             """
-            dset = dset or cur_dataset
+            if dset is None:
+                dset = cur_dataset
             change_activating_tab_name(new_activating_tab_name)
             change_current_dataset(dset)
             if new_activating_tab_name == 'tagging':
@@ -474,16 +491,38 @@ def create_ui(
                 res = show_database(dset, new_chunk_index)
             return res
 
+        def change_to_category(category):
+            r"""
+            Change current dataset to another dataset with category `category` and show its chunk
+            """
+            if category is None or category == '':
+                dset = ChunkedDataset(dataset, chunk_size=args.chunk_size)
+            else:
+                dset = dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=args.chunk_size)
+            return change_to_dataset(dset, new_chunk_index=1)
+
         selector_change_outputs = [showcase, cur_image_key, database, cur_chunk_index]
 
-        subsets_selector.input(
-            fn=lambda subset_key: change_to_dataset(
-                dataset.make_subset(condition=lambda img_info: img_info.category == subset_key, chunk_size=args.chunk_size)  # subset of dataset, if subset key is provided
-                if subset_key is not None and subset_key != '' else ChunkedDataset(dataset, chunk_size=args.chunk_size),  # dataset itself, if subset key is not provided
-                new_chunk_index=1,  # reset chunk index
-            ),
-            inputs=[subsets_selector],
+        category_selector.input(
+            fn=change_to_category,
+            inputs=[category_selector],
             outputs=selector_change_outputs,
+            show_progress=True,
+            trigger_mode='multiple',
+        )
+
+        reload_category_btn.click(
+            fn=change_to_category,
+            inputs=[category_selector],
+            outputs=selector_change_outputs,
+            show_progress=True,
+            trigger_mode='multiple',
+        )
+
+        set_category_btn.click(
+            fn=lambda image_key: {**change_to_category(cur_dataset[image_key].category), category_selector: cur_dataset[image_key].category},
+            inputs=[cur_image_key],
+            outputs=selector_change_outputs + [category_selector],
             show_progress=True,
             trigger_mode='multiple',
         )
@@ -935,8 +974,6 @@ def create_ui(
                 dataset.init_tag_table()
                 tag_table = dataset.tag_table
 
-            incl_cond_func = CONDITION[include_condition]
-            excl_cond_func = CONDITION[exclude_condition]
             joiner_func = JOINER[joiner]
 
             # print(f"subset_key: {subset_key}")
@@ -946,7 +983,7 @@ def create_ui(
             subset = cur_dataset
 
             incl_set = set()
-            for tag in tqdm(include_tags, desc='Including tags'):
+            for tag in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags
                 if tag not in tag_table:
                     continue
                 tag_set = tag_table[tag]
@@ -962,7 +999,7 @@ def create_ui(
                     incl_set.intersection_update(tag_set)
 
             excl_set = set()
-            for tag in tqdm(exclude_tags, desc='Excluding tags'):
+            for tag in tqdm(exclude_tags, desc='Excluding tags'):  # calculate the union of all key(s), s ∈ exclude_tags
                 if tag not in tag_table:
                     continue
                 tag_set = tag_table[tag]
@@ -976,11 +1013,20 @@ def create_ui(
                 else:
                     excl_set.intersection_update(tag_set)
 
-            res_set = joiner_func(incl_set, excl_set)
+            excl_set = set(cur_dataset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
+            res_set = joiner_func(incl_set, excl_set)  # join
+
             res_lst = sorted(res_set)
             res_dataset = ChunkedDataset({img_key: dataset[img_key] for img_key in res_lst}, chunk_size=args.chunk_size)
+
+            # print(f"incl_set: {incl_set}")
+            # print(f"excl_set: {excl_set}")
+            # print(f"res_set: {res_set}")
+            # print(f"res_dataset: {res_dataset}")
+
+            search_range_size = len(cur_dataset)
             res = change_to_dataset(res_dataset)
-            res.update({log_box: f"querying matches {len(res_dataset)} images"})
+            res.update({log_box: f"querying matches {len(res_dataset)} images over {search_range_size} images"})
             return res
 
         query_btn.click(

@@ -158,6 +158,7 @@ class UIDataset(ChunkedDataset):
         self.selected = SelectData()
         self.history = History()
         self.buffer = Dataset()
+        self.subset = self
 
         # self.init_subsets()
 
@@ -230,9 +231,9 @@ class UIDataset(ChunkedDataset):
 
         super().__setitem__(key, value)
 
-        # # update subset
-        # subset = self.subsets[value.category]
-        # subset[key] = value
+        # update subset
+        if not self.subset is self:
+            self.subset[key] = value
 
         # update buffer
         self.buffer[key] = value
@@ -241,9 +242,9 @@ class UIDataset(ChunkedDataset):
     def pop(self, key, default=None):
         img_info = super().pop(key, default)
 
-        # # update subset
-        # subset = self.subsets[img_info.category]
-        # del subset[key]
+        # update subset
+        if not self.subset is self:
+            del self.subset[key]
 
         # update tag table
         if self.tag_table is not None:
@@ -267,7 +268,7 @@ class UIDataset(ChunkedDataset):
         self[key] = value
 
         # record
-        self.history.record(key, value)
+        self.history.record(key, value.copy())
 
     # delitem with updating history
     def remove(self, key):
