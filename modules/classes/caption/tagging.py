@@ -95,10 +95,6 @@ def init_priority_tags():
         [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
         # Style
         [PATTERN_STYLE_TAGS, PATTERN_STYLE],
-        # Artistic
-        ['|'.join(AESTHETIC_TAGS)],
-        # Quality
-        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
         # Subject
         ['portrait', 'scenery'],
         # Theme
@@ -137,7 +133,7 @@ def init_priority_tags():
         # Eyes
         [r'.*\beyes\b.*', 'heterochromia'],
         [r'.*\b(eyelashes|eyeshadow|eyebrow|eye|pupil)s?\b.*'],
-        [r'.*\b(eyepatch|glasses|sunglassess|eyewear|makeup)\b.*'],
+        [r'.*\b(eyepatch|glasses|sunglassess|eyewear|goggles|makeup)\b.*'],
 
         # Hair
         [r'[\w\-\s]+ hair'],
@@ -163,7 +159,7 @@ def init_priority_tags():
         [r'.*\b(barefoot)\b.*'],
 
         # Clothing
-        [r'.*\b(clothes|outfit|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*'],
+        [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*'],
         [r'.*\b(pelvic curtain|tassel|sleeve|necktie|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
 
         # Fingers
@@ -172,6 +168,11 @@ def init_priority_tags():
 
         # Items
         [r'.*\b(weapon|tool|katana|instrument|gadget|device|equipment|item|object|artifact|accessory|prop|earrings|necklace|bracelet|ring|watch|bag|backpack|purse|umbrella|parasol|cane|spear|sword|knife|gun|pistol|revolver|shotgun|rifle|gun|cannon|rocket launcher|grenade|bomb|shield|wing|hoove|antler)s?\b.*'],
+
+        # Artistic
+        ['|'.join(AESTHETIC_TAGS)],
+        # Quality
+        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
     ]
 
     PRIORITY_REGEX = [re.compile('|'.join(patterns)) for patterns in PRIORITY]

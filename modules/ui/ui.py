@@ -70,21 +70,20 @@ def create_ui(
     args,
 ):
     from ..classes import Dataset, ImageInfo, Caption
-    from .ui_dataset import ChunkedDataset
+    from .ui_dataset import UIChunkedDataset, UISampleHistory
     from .utils import open_file_folder
 
     # ========================================= Base variables ========================================= #
 
     dataset = prepare_dataset(args)
     database_path = Path(args.database_file) if args.database_file else None
-    # subsets = dataset.subsets
     buffer = dataset.buffer
+    sample_history = UISampleHistory()
     tag_table = None
 
     cur_dataset = dataset
     wd14 = None
     character_feature_table = None
-    random_sample_history = set()
 
     # ========================================= UI ========================================= #
 
@@ -133,8 +132,10 @@ def create_ui(
                                 )
                                 cur_image_key = gr.Textbox(value=None, visible=False, label='Image Key')
                             with gr.Row():
+                                pre_hist_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
                                 reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise)
                                 remove_image_btn = cc.EmojiButton(Emoji.trash_bin, variant='stop')
+                                next_hist_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
 
                         with gr.Column():
                             with gr.Row():
@@ -418,7 +419,7 @@ def create_ui(
                 new_img_key = None
             return new_img_key
 
-        def correct_chunk_idx(dset: ChunkedDataset, chunk_index):
+        def correct_chunk_idx(dset: UIChunkedDataset, chunk_index):
             r"""
             Correct the chunk index of `dset` to `chunk_index`
             """
@@ -439,9 +440,9 @@ def create_ui(
             r"""
             Convert `dset` to gallery value and image key that should be selected
             """
-            if isinstance(dset, ChunkedDataset):
+            if isinstance(dset, UIChunkedDataset):
                 new_chunk_index = correct_chunk_idx(dset, new_chunk_index)
-                chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, ChunkedDataset) else dset
+                chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, UIChunkedDataset) else dset
             elif isinstance(dset, Dataset):
                 chunk = dset
                 new_chunk_index = 1
@@ -458,7 +459,7 @@ def create_ui(
             Convert `dset` to dataframe
             """
             new_chunk_index = correct_chunk_idx(dset, new_chunk_index)
-            chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, ChunkedDataset) else dset
+            chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, UIChunkedDataset) else dset
             df = chunk.df()
             return {
                 database: df,
@@ -477,7 +478,7 @@ def create_ui(
 
         # ========================================= Subset key selector ========================================= #
 
-        def change_to_dataset(dset: ChunkedDataset = None, new_chunk_index=1, new_activating_tab_name=activating_tab_name):
+        def change_to_dataset(dset: UIChunkedDataset = None, new_chunk_index=1, new_activating_tab_name=activating_tab_name):
             r"""
             Change current dataset to another dataset `dset` and show its chunk
             """
@@ -496,12 +497,12 @@ def create_ui(
             Change current dataset to another dataset with category `category` and show its chunk
             """
             if category is None or category == '':
-                dset = ChunkedDataset(dataset, chunk_size=args.chunk_size)
+                dset = UIChunkedDataset(dataset, chunk_size=args.chunk_size)
             else:
                 dset = dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=args.chunk_size)
             return change_to_dataset(dset, new_chunk_index=1)
 
-        selector_change_outputs = [showcase, cur_image_key, database, cur_chunk_index]
+        selector_change_outputs = [showcase, cur_image_key, database, cur_chunk_index, category_selector, log_box]
 
         category_selector.input(
             fn=change_to_category,
@@ -522,7 +523,7 @@ def create_ui(
         set_category_btn.click(
             fn=lambda image_key: {**change_to_category(cur_dataset[image_key].category), category_selector: cur_dataset[image_key].category},
             inputs=[cur_image_key],
-            outputs=selector_change_outputs + [category_selector],
+            outputs=selector_change_outputs,
             show_progress=True,
             trigger_mode='multiple',
         )
@@ -629,29 +630,55 @@ def create_ui(
         remove_image_btn.click(
             fn=remove_image,
             inputs=[cur_image_key, cur_chunk_index],
-            outputs=selector_change_outputs + [log_box],
+            outputs=selector_change_outputs,
+        )
+
+        def show_i_th_sample(index):
+            if len(sample_history) == 0:
+                return {
+                    log_box: f"empty sample history",
+                }
+            new_img_key = sample_history.select(index)
+            return {
+                showcase: dataset_to_gallery(Dataset(dataset[new_img_key])),
+                cur_image_key: new_img_key,
+            }
+
+        pre_hist_btn.click(
+            fn=lambda: show_i_th_sample(sample_history.index - 1),
+            inputs=[],
+            outputs=selector_change_outputs,
+        )
+
+        next_hist_btn.click(
+            fn=lambda: show_i_th_sample(sample_history.index + 1),
+            inputs=[],
+            outputs=selector_change_outputs,
         )
 
         # ========================================= Base Tagging Buttons ========================================= #
 
-        def random_sample():
+        def random_sample(n=1):
             subset = cur_dataset
             if len(subset) == 0:
                 return {log_box: f"empty dataset"}
-            subset = subset.make_subset(condition=lambda x: x.key not in random_sample_history)
+            subset = subset.make_subset(condition=lambda x: x.key not in sample_history)
             if len(subset) == 0:
                 return {log_box: f"no more image to sample"}
-            image_key = random.choice(list(subset.keys()))
-            random_sample_history.add(image_key)
-            image_info = dataset[image_key]
-            dataset.select((0, image_key))
-            res = show_dataset(Dataset({image_key: image_info}))
-            return res
+            samples: Dataset = subset.sample(n=n, randomly=True)
+            for sample in samples.keys():
+                sample_history.add(sample)
+            new_img_key = sample_history.select(len(sample_history) - 1)
+            return {
+                showcase: dataset_to_gallery(Dataset(dataset[new_img_key])),
+                cur_image_key: new_img_key,
+                cur_chunk_index: gr.update(value=1, label=f'Chunk 1/{cur_dataset.num_chunks}'),
+            }
 
         random_btn.click(
             fn=random_sample,
             inputs=[],
-            outputs=selector_change_outputs + [log_box],
+            outputs=selector_change_outputs,
         )
 
         def edit_caption_wrapper(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
@@ -659,7 +686,6 @@ def create_ui(
                 if image_key is None or image_key == '':
                     return gr.update(), f"empty image key"
                 image_key = Path(image_key).stem
-                image_info = dataset[image_key]
                 proc_func_name = func.__name__
 
                 def edit(image_info, *args, **kwargs):
@@ -673,10 +699,10 @@ def create_ui(
                 results = []
                 if batch:
                     subset = cur_dataset
-                    for img_info in tqdm(subset.values(), desc=f'{proc_func_name} batch processing'):
-                        results.append(edit(img_info, *args, **kwargs))
+                    for image_info in tqdm(subset.values(), desc=f'{proc_func_name} batch processing'):
+                        results.append(edit(image_info, *args, **kwargs))
                 else:
-                    results.append(edit(image_info, *args, **kwargs))
+                    results.append(edit(dataset[image_key], *args, **kwargs))
 
                 # write to dataset
                 for res in results:
@@ -1017,7 +1043,7 @@ def create_ui(
             res_set = joiner_func(incl_set, excl_set)  # join
 
             res_lst = sorted(res_set)
-            res_dataset = ChunkedDataset({img_key: dataset[img_key] for img_key in res_lst}, chunk_size=args.chunk_size)
+            res_dataset = UIChunkedDataset({img_key: dataset[img_key] for img_key in res_lst}, chunk_size=args.chunk_size)
 
             # print(f"incl_set: {incl_set}")
             # print(f"excl_set: {excl_set}")
@@ -1032,7 +1058,7 @@ def create_ui(
         query_btn.click(
             fn=query_tag_table,
             inputs=[query_include_condition, query_include_tags, query_joiner_dropdown, query_exclude_condition, query_exclude_tags],
-            outputs=selector_change_outputs + [log_box],
+            outputs=selector_change_outputs,
             show_progress=True,
         )
 

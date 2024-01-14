@@ -3,6 +3,7 @@ import os
 import json
 import pickle
 import time
+import shutil
 import math
 import functools
 from pathlib import Path
@@ -12,7 +13,7 @@ from ..classes import Dataset, ImageInfo
 from ..utils import log_utils as logu
 
 
-class SelectData:
+class UISelectData:
     def __init__(self, index=None, image_key=None):
         self._index = index
         self._image_key = image_key
@@ -37,7 +38,7 @@ class SelectData:
 LAMBDA = -1
 
 
-class History:
+class UIEditHistory:
     def __init__(self):
         self._z = {}
         self._y = {}
@@ -86,7 +87,32 @@ class History:
         return len(self._z)
 
 
-class ChunkedDataset(Dataset):
+class UISampleHistory:
+    def __init__(self):
+        self._history = []
+        self.index = None
+
+    def add(self, image_key):
+        self._history.append(image_key)
+
+    def select(self, index, correct_index=True):
+        if len(self._history) == 0:
+            return None
+        if correct_index:
+            index = min(max(index, 0), len(self._history) - 1)
+        elif index < 0 or index >= len(self._history):
+            return None
+        self.index = index
+        return self._history[index]
+
+    def __contains__(self, image_key):
+        return image_key in self._history
+
+    def __len__(self):
+        return len(self._history)
+
+
+class UIChunkedDataset(Dataset):
     def __init__(self, source, *args, chunk_size=None, **kwargs):
         super().__init__(source, *args, **kwargs)
         self.chunk_size = chunk_size
@@ -103,7 +129,7 @@ class ChunkedDataset(Dataset):
         return math.ceil(len(self) / self.chunk_size) if self.chunk_size is not None else 1
 
 
-class TagTable:
+class UITagTable:
     def __init__(self):
         self._table: Dict[str, set] = {}
 
@@ -134,17 +160,18 @@ class TagTable:
         return self._table[tag]
 
 
-class UIDataset(ChunkedDataset):
-    selected: SelectData
-    history: History
+class UIDataset(UIChunkedDataset):
+    selected: UISelectData
+    edit_history: UIEditHistory
 
-    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, *args, **kwargs):
+    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, backup_dir=None, *args, **kwargs):
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
+        self.backup_dir = Path(backup_dir or './backups').absolute()
 
         if isinstance(source, (str, Path)) and source.endswith(".pkl"):
             with open(source, 'rb') as f:
@@ -155,8 +182,8 @@ class UIDataset(ChunkedDataset):
         # self.subsets = None
         self.categories = sorted(list(set(img_info.category for img_info in self.values()))) if len(self) > 0 else []
         self.tag_table = None
-        self.selected = SelectData()
-        self.history = History()
+        self.selected = UISelectData()
+        self.edit_history = UIEditHistory()
         self.buffer = Dataset()
         self.subset = self
 
@@ -176,7 +203,7 @@ class UIDataset(ChunkedDataset):
     def init_tag_table(self, subset_key=None):
         if self.tag_table is not None:
             return
-        self.tag_table = TagTable()
+        self.tag_table = UITagTable()
         for image_key, image_info in tqdm(self.items(), desc='initializing tag table'):
             if not image_info.caption:
                 continue
@@ -184,7 +211,7 @@ class UIDataset(ChunkedDataset):
                 self.tag_table.add(tag, image_key)
 
     def make_subset(self, condition: Callable[[ImageInfo], bool], chunk_size=None, *args, **kwargs):
-        return ChunkedDataset(self, chunk_size=chunk_size, *args, condition=condition, **kwargs)
+        return UIChunkedDataset(self, chunk_size=chunk_size, *args, condition=condition, **kwargs)
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):
@@ -199,7 +226,7 @@ class UIDataset(ChunkedDataset):
         return self.selected.image_key
 
     def undo(self, image_key):
-        image_info = self.history.undo(image_key)
+        image_info = self.edit_history.undo(image_key)
         if image_info is LAMBDA:  # empty history, return original
             return self[image_key]
         elif image_info is not None:  # undo
@@ -209,7 +236,7 @@ class UIDataset(ChunkedDataset):
         return image_info
 
     def redo(self, image_key):
-        image_info = self.history.redo(image_key)
+        image_info = self.edit_history.redo(image_key)
         if image_info is LAMBDA:  # empty history, return original
             return self[image_key]
         elif image_info:  # redo
@@ -261,14 +288,14 @@ class UIDataset(ChunkedDataset):
             return
 
         # init history if needed
-        if key not in self.history:
-            self.history.init(key, self.get(key))
+        if key not in self.edit_history:
+            self.edit_history.init(key, self.get(key))
 
         # update dataset
         self[key] = value
 
         # record
-        self.history.record(key, value.copy())
+        self.edit_history.record(key, value.copy())
 
     # delitem with updating history
     def remove(self, key):
@@ -276,9 +303,9 @@ class UIDataset(ChunkedDataset):
         img_info = self.pop(key)
 
         # record
-        if key not in self.history:
-            self.history.init(key, img_info)
-        self.history.record(key, None)
+        if key not in self.edit_history:
+            self.edit_history.init(key, img_info)
+        self.edit_history.record(key, None)
 
         return img_info
 
@@ -314,11 +341,7 @@ class UIDataset(ChunkedDataset):
                 if img_key in self:
                     img_info.write_caption()
                 else:
-                    img_path = img_info.image_path
-                    img_path.unlink()
-                    cap_path = img_info.with_suffix('.txt')
-                    if cap_path.is_file():
-                        cap_path.unlink()
+                    backup(img_info)
             if self.verbose:
                 toc = time.time()
                 time_cost2 = toc - tic
@@ -333,3 +356,22 @@ class UIDataset(ChunkedDataset):
                 logu.success(f'Write to database: saved to `{logu.yellow(self.database_file)}`: time_cost={time_cost1:.2f}s.')
             if self.write_to_txt:
                 logu.success(f'Write to txt: time_cost={time_cost2:.2f}s.')
+
+
+def backup(image_info):
+    img_path = image_info.image_path
+    cap_path = str(img_path.with_suffix('.txt'))
+    img_path = str(img_path)
+
+    img_bkup_path = img_path + '.bak'
+    cap_bkup_path = cap_path + '.bak'
+
+    if os.path.isfile(img_path):
+        if os.path.isfile(img_bkup_path):
+            os.remove(img_bkup_path)
+        os.rename(img_path, img_bkup_path)
+
+    if os.path.isfile(cap_path):
+        if os.path.isfile(cap_bkup_path):
+            os.remove(cap_bkup_path)
+        os.rename(cap_path, cap_bkup_path)

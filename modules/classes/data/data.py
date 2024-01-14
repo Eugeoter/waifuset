@@ -120,7 +120,7 @@ class ImageInfo:
     def __eq__(self, other):
         if not isinstance(other, ImageInfo):
             return False
-        return self is other or hash(self) == hash(other)
+        return hash(self) == hash(other)
 
     def __ne__(self, other):
         return not self == other

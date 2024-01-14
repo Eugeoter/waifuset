@@ -10,12 +10,12 @@ class Caption:
     Caption object supporting concise operations.
     """
 
-    tags: List[str]
+    _tags: List[str]
     _cached_properties = ('artist', 'quality', 'characters', 'styles')
 
     def __init__(self, caption_or_tags=None, sep=',', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
-            tags = caption_or_tags.tags
+            tags = caption_or_tags._tags
         elif isinstance(caption_or_tags, (str, list)):
             if fix_typos and isinstance(caption_or_tags, str):
                 caption_or_tags = caption_or_tags.replace('，', ',')
@@ -25,7 +25,7 @@ class Caption:
         else:
             raise TypeError(f"unsupported type for caption: {type(caption_or_tags).__name__}")
 
-        self.tags = [tag.strip() for tag in tags if tag.strip() != '']
+        self._tags = [tag.strip() for tag in tags if tag.strip() != '']
 
         # caches
         self._artist: str = EMPTY_CACHE
@@ -45,25 +45,34 @@ class Caption:
             setattr(self, f"_{attr}", EMPTY_CACHE)
 
     def copy(self):
-        caption = Caption(self.tags.copy())
+        caption = Caption(self._tags.copy())
         cache = {key: getattr(self, f"_{key}") for key in self._cached_properties}
         cache = {key: value.copy() if isinstance(value, list) else value for key, value in cache.items()}
         caption.load_cache(**cache)
         return caption
 
     @property
+    def tags(self):
+        return self._tags
+
+    @tags.setter
+    def tags(self, tags):
+        self._tags = tagify(tags)
+        self.clean_cache()
+
+    @property
     def caption(self):
-        return captionize(self.tags)
+        return captionize(self._tags)
 
     @caption.setter
     def caption(self, value):
-        self.tags = tagify(value)
+        self._tags = tagify(value)
 
     def unique(self):
         r"""
         Caption with deduplicated tags.
         """
-        return Caption(unique(self.tags))
+        return Caption(unique(self._tags))
 
     def unweighted(self):
         r"""
@@ -89,7 +98,7 @@ class Caption:
         """
         if isinstance(old, re.Pattern):
             return self.sub(old, new)
-        tags = self.tags.copy()
+        tags = self._tags.copy()
         for i, tag in enumerate(tags):
             tag = tag.replace(old, new)
             if count != 0 and tag != tags[i]:
@@ -105,7 +114,7 @@ class Caption:
         """
         if isinstance(pattern, str):
             regex = re.compile(pattern)
-        tags = self.tags.copy()
+        tags = self._tags.copy()
         for i, tag in enumerate(tags):
             tag = regex.sub(replacement, tag)
             if count != 0 and tag != tags[i]:
@@ -119,13 +128,13 @@ class Caption:
         r"""
         Caption with stripped tags.
         """
-        return Caption([tag.strip(chars) for tag in self.tags if tag.strip(chars) != ''])
+        return Caption([tag.strip(chars) for tag in self._tags if tag.strip(chars) != ''])
 
     def lower(self):
         r"""
         Caption with lowercased tags.
         """
-        return Caption([tag.lower() for tag in self.tags])
+        return Caption([tag.lower() for tag in self._tags])
 
     def underlined(self):
         return self.replace(' ', '_')
@@ -134,17 +143,17 @@ class Caption:
         return self.replace('_', ' ')
 
     def sort(self, key=None, reverse=False):
-        self.tags.sort(key=key, reverse=reverse)
+        self._tags.sort(key=key, reverse=reverse)
 
     def sorted(self, key=None, reverse=False):
-        return Caption(sorted(self.tags, key=key, reverse=reverse))
+        return Caption(sorted(self._tags, key=key, reverse=reverse))
 
     def deovlped(self):
         tagging.init_overlap_table()
         caption = self.unescaped().underlined()
         table = tagging.OVERLAP_TABLE
         tags_to_remove = set()
-        tag_set = set(caption.tags)
+        tag_set = set(caption._tags)
         for tag in tag_set:
             if tag in table and tag not in tags_to_remove:
                 parents, children = table[tag]
@@ -152,17 +161,17 @@ class Caption:
         return (caption - tags_to_remove).spaced().escaped()
 
     def copy(self):
-        return Caption(self.tags.copy())
+        return Caption(self._tags.copy())
 
     def formalized(self):
         caption = self.spaced().escaped()
         for i, tag in enumerate(caption):
             if tagging.REGEX_ARTIST_TAG.match(tag):
-                caption.tags[i] = f"artist: {tag[3:]}"
+                caption._tags[i] = f"artist: {tag[3:]}"
             elif tag in tagging.STYLE_TAGS:
-                caption.tags[i] = f"style: {tag}"
+                caption._tags[i] = f"style: {tag}"
             elif tagging.REGEX_CHARACTER_TAGS.match(tag):
-                caption.tags[i] = f"character: {tag}"
+                caption._tags[i] = f"character: {tag}"
         return Caption(caption)
 
     def defeatured(self, ref, threshold=0.3):
@@ -202,7 +211,7 @@ class Caption:
         if self.artist:
             self.caption = tagging.REGEX_ARTIST.sub(rf"\2{artist}" if artist else '', self.caption)
         else:
-            self.tags.insert(0, f'artist: {artist}')
+            self._tags.insert(0, f'artist: {artist}')
         self._artist = artist
 
     def with_artist(self, artist):
@@ -233,7 +242,7 @@ class Caption:
         if self.quality:
             self.caption = tagging.REGEX_QUALITY_TAG.sub(rf"{quality}\3" if quality else '', self.caption)
         else:
-            self.tags.insert(0, f"{quality} quality")
+            self._tags.insert(0, f"{quality} quality")
         self._quality = quality
 
     def with_quality(self, quality):
@@ -249,7 +258,7 @@ class Caption:
         matches = tagging.REGEX_CHARACTER.findall(caption)
         if matches:
             characters.extend([match[2] for match in matches])  # update cache
-        characters.extend([tag for tag in self.tags if tagging.REGEX_CHARACTER_TAGS.match(tag)])
+        characters.extend([tag for tag in self._tags if tagging.REGEX_CHARACTER_TAGS.match(tag)])
         if len(characters) == 0:
             characters = None
         self._characters = characters
@@ -268,9 +277,9 @@ class Caption:
         if self.characters:
             if characters == self.characters:
                 return
-            self.tags = [tag for tag in self.tags if not tag.startswith('character:')]
+            self._tags = [tag for tag in self._tags if not tag.startswith('character:')]
         for i in range(len(characters) - 1, -1, -1):
-            self.tags.insert(0, f'character: {characters[i]}')
+            self._tags.insert(0, f'character: {characters[i]}')
         self._characters = characters
 
     def with_characters(self, characters):
@@ -286,7 +295,7 @@ class Caption:
         matches = tagging.REGEX_STYLE.findall(caption)
         if matches:
             styles.extend([match[2] for match in matches])
-        styles.extend([tag.strip() for tag in self.tags if tag in tagging.STYLE_TAGS])
+        styles.extend([tag.strip() for tag in self._tags if tag in tagging.STYLE_TAGS])
         if len(styles) == 0:
             styles = None
         self._styles = styles
@@ -304,10 +313,10 @@ class Caption:
         if self.styles:
             if styles == self.styles:
                 return
-            self.tags = [tag for tag in self.tags if not tag.startswith('style:')]
+            self._tags = [tag for tag in self._tags if not tag.startswith('style:')]
         styles = tagify(styles)
         for i in range(len(styles) - 1, -1, -1):
-            self.tags.insert(0, f'style: {styles[i]}')
+            self._tags.insert(0, f'style: {styles[i]}')
         self._styles = styles
 
     def with_styles(self, styles):
@@ -322,10 +331,10 @@ class Caption:
         return self.__str__()
 
     def __add__(self, other):
-        return Caption(add_op(self.tags, preprocess(other)))
+        return Caption(add_op(self._tags, preprocess(other)))
 
     def __iadd__(self, other):
-        self.tags = (self + other).tags
+        self._tags = (self + other).tags
         self.clean_cache()
         return self
 
@@ -333,10 +342,10 @@ class Caption:
         return Caption(other) + self
 
     def __sub__(self, other):
-        return Caption(sub_op(self.tags, preprocess(other)))
+        return Caption(sub_op(self._tags, preprocess(other)))
 
     def __isub__(self, other):
-        self.tags = (self - other).tags
+        self._tags = (self - other).tags
         self.clean_cache()
         return self
 
@@ -344,10 +353,10 @@ class Caption:
         return Caption(other) - self
 
     def __and__(self, other):
-        return Caption(and_op(self.tags, preprocess(other)))
+        return Caption(and_op(self._tags, preprocess(other)))
 
     def __iand__(self, other):
-        self.tags = (self & other).tags
+        self._tags = (self & other).tags
         self.clean_cache()
         return self
 
@@ -355,10 +364,10 @@ class Caption:
         return Caption(other) & self
 
     def __or__(self, other):
-        return Caption(or_op(self.tags, preprocess(other)))
+        return Caption(or_op(self._tags, preprocess(other)))
 
     def __ior__(self, other):
-        self.tags = (self | other).tags
+        self._tags = (self | other).tags
         self.clean_cache()
         return self
 
@@ -366,46 +375,46 @@ class Caption:
         return Caption(other) | self
 
     def __matmul__(self, other):
-        return Caption(matmul_op(self.tags, tagify(other)))
+        return Caption(matmul_op(self._tags, tagify(other)))
 
     def __imatmul__(self, other):
-        self.tags = (self @ other).tags
+        self._tags = (self @ other).tags
         return self
 
     def __rmatmul__(self, other):
         return Caption(other) @ self
 
     def __contains__(self, pattern):
-        return any(match(pattern, t) for t in self.tags)
+        return any(match(pattern, t) for t in self._tags)
 
     def __len__(self):
-        return len(self.tags)
+        return len(self._tags)
 
     def __getitem__(self, index):
         if isinstance(index, int):
-            return self.tags[index]
+            return self._tags[index]
         elif isinstance(index, slice):
-            return Caption(self.tags[index])
+            return Caption(self._tags[index])
         else:
             raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(index).__name__}'")
 
     def __setitem__(self, index, value):
         if isinstance(index, int):
             if isinstance(value, str):
-                self.tags[index] = value
+                self._tags[index] = value
             elif isinstance(value, Caption) and len(value) == 1:
-                self.tags[index] = value.tags[0]
+                self._tags[index] = value._tags[0]
             else:
                 raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(value).__name__}'")
 
         elif isinstance(index, slice):
-            slice_len = len(self.tags[index])
+            slice_len = len(self._tags[index])
             if isinstance(value, list) and all(isinstance(tag, str) for tag in value) and len(value) == slice_len:
-                self.tags[index] = value
+                self._tags[index] = value
             elif isinstance(value, str) and len(value.split(', ')) == slice_len:
-                self.tags[index] = value.split(', ')
+                self._tags[index] = value.split(', ')
             elif isinstance(value, Caption) and len(value) == slice_len:
-                self.tags[index] = value.tags
+                self._tags[index] = value._tags
             else:
                 raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(value).__name__}'")
 
@@ -413,25 +422,25 @@ class Caption:
 
     def __delitem__(self, index):
         if isinstance(index, int):
-            del self.tags[index]
+            del self._tags[index]
         elif isinstance(index, slice):
-            del self.tags[index]
+            del self._tags[index]
         else:
             raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(index).__name__}'")
 
         self.clean_cache()
 
     def __iter__(self):
-        return iter(self.tags)
+        return iter(self._tags)
 
     def __reversed__(self):
-        return reversed(self.tags)
+        return reversed(self._tags)
 
     def __eq__(self, other):
         if isinstance(other, Caption):
-            return self.tags == other.tags
+            return self._tags == other._tags
         elif isinstance(other, (str, list)):
-            return self.tags == tagify(other)
+            return self._tags == tagify(other)
         else:
             return False
 
@@ -448,7 +457,7 @@ def tagify(caption_or_tags, sep=','):
     elif isinstance(caption_or_tags, str):
         return [tag.strip() for tag in caption_or_tags.split(sep)]
     elif isinstance(caption_or_tags, Caption):
-        return caption_or_tags.tags
+        return caption_or_tags._tags
     elif caption_or_tags is None:
         return []
     else:
@@ -461,7 +470,7 @@ def captionize(caption_or_tags, sep=', '):
     elif isinstance(caption_or_tags, str):
         return caption_or_tags
     elif isinstance(caption_or_tags, Caption):
-        return sep.join(caption_or_tags.tags)
+        return sep.join(caption_or_tags._tags)
     elif caption_or_tags is None:
         return ''
     else:

@@ -3,7 +3,7 @@ import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
 from pathlib import Path
-from typing import Dict, Callable
+from typing import List, Dict, Callable
 from ..data import ImageInfo
 from ...utils.file_utils import listdir, smart_name
 from ...const import IMAGE_EXTS
@@ -237,6 +237,18 @@ class Dataset(_father_class):
             if not image_info.image_path.is_file():
                 counter['missing_image_file'].append(image_key)
         return counter
+
+    def sample(self, condition=None, n=1, randomly=False, random_seed=None) -> 'Dataset':
+        if condition is None:
+            def condition(x): return True
+        if randomly:
+            import random
+            if random_seed is not None:
+                random.seed(random_seed)
+            samples = random.sample([image_info for image_info in self.values() if condition(image_info)], n)
+        else:
+            samples = [image_info for image_info in self.values() if condition(image_info)][:n]
+        return Dataset(samples)
 
     def __iter__(self):
         return iter(self._data)
