@@ -250,7 +250,7 @@ class UIDataset(UIChunkedDataset):
         img_info = self.get(key)
 
         # update tag table
-        if img_info and self.tag_table:
+        if img_info is not None and self.tag_table:
             for tag in value.caption - img_info.caption:  # introduce new tags
                 self.tag_table.add(tag, key)
             for tag in img_info.caption - value.caption:  # remove old tags

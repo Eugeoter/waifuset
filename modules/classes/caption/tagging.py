@@ -96,7 +96,7 @@ def init_priority_tags():
         # Style
         [PATTERN_STYLE_TAGS, PATTERN_STYLE],
         # Subject
-        ['portrait', 'scenery'],
+        ['portrait', 'scenery', 'out-of-frame'],
         # Theme
         [r'.*\b(theme)\b.*', 'science fiction', 'fantasy'],
         # Character
@@ -116,8 +116,8 @@ def init_priority_tags():
         [r'.*\b(out of frame)\b.*'],
 
         # Actions
-        [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|leaning|looking|kissing|sex|sewing|facing|carrying|licking|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
-         'flying', 'falling', 'diving', 'holding', "jack-o' challenge"],
+        [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|bespectacled|leaning|looking|kissing|sex|sewing|facing|carrying|licking|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
+         'flying', 'falling', 'diving', 'holding', "jack-o' challenge", 'hands up', 'arm up'],
         ['on back', 'on stomach'],
 
         # Emotions
@@ -151,7 +151,7 @@ def init_priority_tags():
 
         # Pussy
         [r'.*\bpussy\b.*'],
-        [r'.*\b(uncensored|censored)\b.*'],
+        [r'.*\b(uncensor|censor)(ed|ing)?\b.*'],
 
         # Bodies
         [r'.*\b(mole|tattoo|scar|bandaid|bandage|blood|sweat|tear)s?\b.*', 'freckles', 'body freckles', 'collarbone', 'navel', 'belly button', 'piercing', 'birthmark', 'wound', 'bruise'],
@@ -159,8 +159,9 @@ def init_priority_tags():
         [r'.*\b(barefoot)\b.*'],
 
         # Clothing
-        [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*'],
-        [r'.*\b(pelvic curtain|tassel|sleeve|necktie|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
+        [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*',
+         'bottomless', 'topless'],
+        [r'.*\b(pelvic curtain|tassel|sleeve|necktie|neckline|gown|halterneck|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
 
         # Fingers
         [r'.*\b(finger|toe)s?\b.*', 'v', r'.*\b(gesture)\b.*'],
