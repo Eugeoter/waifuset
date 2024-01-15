@@ -14,7 +14,6 @@ from ..utils import log_utils as logu
 OPS = {
     'add': lambda x, y: y | x,
     'remove': lambda x, y: x - y,
-    'replace': lambda x, y: x.replace(y),
 }
 
 CONDITION = {
@@ -707,7 +706,10 @@ def create_ui(
                 # write to dataset
                 for res in results:
                     if res is not None:
-                        dataset.set(res.key, res)
+                        img_key = res.key
+                        dataset.set(img_key, res)
+                        if cur_dataset is not dataset and img_key in cur_dataset:
+                            cur_dataset[img_key] = res
 
                 new_img_info = dataset[image_key]
                 new_caption = new_img_info.caption

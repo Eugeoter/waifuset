@@ -294,7 +294,7 @@ class UIDataset(UIChunkedDataset):
         # update dataset
         self[key] = value
 
-        # record
+        # record history
         self.edit_history.record(key, value.copy())
 
     # delitem with updating history
