@@ -55,3 +55,6 @@ class Emoji:
     card_file_box = u'\U0001F5C3'  # 🗃️ (no effect)
     file_cabinet = u'\U0001F5C4'  # 🗄️
     right_pointing_magnifying_glass = u'\U0001F50E'  # 🔎
+
+    plus_sign = u'\U00002795'  # ➕
+    minus_sign = u'\U00002796'  # ➖

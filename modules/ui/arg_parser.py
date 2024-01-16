@@ -16,6 +16,7 @@ def parse_args():
     parser.add_argument('--chunk_size', type=int, default=80, help='Chunk size when making subsets / 制作子集时的块大小')
 
     parser.add_argument('--share', action='store_true', help='Whether to share the API / 是否共享API')
+    parser.add_argument('--port', type=int, help='Port to run the API / 运行API的端口')
 
     args = parser.parse_args()
     return args

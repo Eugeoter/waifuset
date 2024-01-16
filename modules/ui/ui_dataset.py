@@ -89,27 +89,29 @@ class UIEditHistory:
 
 class UISampleHistory:
     def __init__(self):
-        self._history = []
+        self._lst = []
+        self._set = set()
         self.index = None
 
     def add(self, image_key):
-        self._history.append(image_key)
+        self._lst.append(image_key)
+        self._set.add(image_key)
 
     def select(self, index, correct_index=True):
-        if len(self._history) == 0:
+        if len(self._lst) == 0:
             return None
         if correct_index:
-            index = min(max(index, 0), len(self._history) - 1)
-        elif index < 0 or index >= len(self._history):
+            index = min(max(index, 0), len(self._lst) - 1)
+        elif index < 0 or index >= len(self._lst):
             return None
         self.index = index
-        return self._history[index]
+        return self._lst[index]
 
     def __contains__(self, image_key):
-        return image_key in self._history
+        return image_key in self._set
 
     def __len__(self):
-        return len(self._history)
+        return len(self._lst)
 
 
 class UIChunkedDataset(Dataset):

@@ -5,7 +5,7 @@ from modules.ui.arg_parser import parse_args
 
 def api(args):
     ui: gr.Blocks = create_ui(args)
-    ui.launch(share=args.share)
+    ui.launch(share=args.share, server_port=args.port)
 
 
 if __name__ == '__main__':

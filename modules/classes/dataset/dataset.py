@@ -81,6 +81,8 @@ class Dataset(_father_class):
                             cap_path = file.with_suffix('.txt')
                             if cap_path.is_file():
                                 caption = cap_path.read_text(encoding='utf-8') if not lazy_reading else ImageInfo.LAZY_READING
+                            else:
+                                caption = None
                         else:
                             caption = None
                         image_info = ImageInfo(file, caption=caption)

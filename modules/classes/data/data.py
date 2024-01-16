@@ -52,7 +52,7 @@ class ImageInfo:
 
     @caption.setter
     def caption(self, value):
-        self._caption = Caption(value) if value else None
+        self._caption = Caption(value) if value is not None else None
 
     # @property
     # def image_size(self):
