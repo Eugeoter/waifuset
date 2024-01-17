@@ -18,13 +18,13 @@
 
 #### 用法 1
 
-`python api.py --source 'path/to/folder' --write_to_txt`
+`python api.py --source 'path/to/folder' --write_to_txt --language cn`
 
 其中，`--source` 参数指定了数据集的根目录，`--write_to_txt` 参数指定了是否将标注结果写入到图像文件同名的 txt 文件中，这是常见的标注方式。
 
 #### 用法 2
 
-`python api.py --source 'path/to/folder_or_database' --write_to_database --database_file 'path/to/database.json'`
+`python api.py --source 'path/to/folder_or_database' --write_to_database --database_file 'path/to/database.json' --language cn`
 
 其中，`--source` 参数指定了数据集的根目录**或者**数据库文件，`--write_to_database` 参数指定了是否将标注结果写入到数据库文件中，而 `--database_file` 指定了数据库文件的输出/保存位置，这是一种更加灵活的标注方式。
 
@@ -37,6 +37,10 @@
 `--chunk_size`: 每页显示的图像数量，默认为 80。太高可能会导致加载缓慢。
 
 `--share`: 是否共享 Gradio 网页。
+
+`--port`: Gradio 网页的端口。
+
+`--language`: 界面语言，默认为英文。从 `en` 和 `cn` 中选择。注意：无论选择何种语言，日志信息均为英文。
 
 ### 3.1.2. 界面操作
 

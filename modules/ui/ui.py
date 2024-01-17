@@ -1,10 +1,12 @@
 import gradio as gr
 import random
+import re
 import pandas
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 from typing import Callable, Any, Tuple, Dict, List, Union
+from concurrent.futures import ThreadPoolExecutor, wait
 from . import custom_components as cc
 from ..import tagging
 from .emoji import Emoji
@@ -75,9 +77,9 @@ def create_ui(
 
             from ..classes import Dataset, ImageInfo, Caption
             from .ui_dataset import UIChunkedDataset, UISampleHistory
-            from .utils import open_file_folder
+            from .utils import open_file_folder, translate
 
-            with gr.Tab("Main") as main_tab:
+            with gr.Tab(translate('Main', args.language)) as main_tab:
                 # ========================================= Base variables ========================================= #
 
                 dataset = prepare_dataset(args)
@@ -95,17 +97,17 @@ def create_ui(
                         with gr.Row():
                             reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
                             category_selector = gr.Dropdown(
-                                label='Category',
+                                label=translate('Category', args.language),
                                 choices=[""] + dataset.categories,
                                 value="",
                                 multiselect=False,
                                 allow_custom_value=False,
                                 min_width=256,
                             )
-                            cur_chunk_index = gr.Number(label=f'Chunk {1}/{cur_dataset.num_chunks}', value=1, min_width=128, precision=0, scale=0)
+                            cur_chunk_index = gr.Number(label=f"{translate('Chunk', args.language)} {1}/{cur_dataset.num_chunks}", value=1, min_width=128, precision=0, scale=0)
                     with gr.Column():
                         log_box = gr.TextArea(
-                            label='Log',
+                            label=translate('Log', args.language),
                             lines=1,
                             max_lines=1,
                         )
@@ -119,12 +121,12 @@ def create_ui(
                     with gr.Column():
                         ...
 
-                with gr.Tab("Dataset") as tagging_tab:
+                with gr.Tab(translate('Dataset', args.language)) as tagging_tab:
                     with gr.Row():
                         with gr.Column():
                             with gr.Row():
                                 showcase = gr.Gallery(
-                                    label='Showcase',
+                                    label=translate('Showcase', args.language),
                                     value=[(v.image_path, k) for k, v in cur_dataset.chunk(0).items()],
                                     rows=4,
                                     columns=4,
@@ -132,7 +134,7 @@ def create_ui(
                                     object_fit='scale-down',
                                     height=512,
                                 )
-                                cur_image_key = gr.Textbox(value=None, visible=False, label='Image Key')
+                                cur_image_key = gr.Textbox(value=None, visible=False, label=translate('Image Key', args.language))
                             with gr.Row():
                                 pre_hist_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
                                 reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise)
@@ -141,19 +143,19 @@ def create_ui(
 
                         with gr.Column():
                             with gr.Row():
-                                with gr.Tab("Caption"):
+                                with gr.Tab(translate('Caption', args.language)):
                                     caption = gr.Textbox(
-                                        label='Caption',
+                                        label=translate('Caption', args.language),
                                         value=None,
                                         container=True,
                                         show_copy_button=True,
                                         lines=6,
                                         max_lines=6,
                                     )
-                                with gr.Tab("Metadata"):
+                                with gr.Tab(translate('Metadata', args.language)):
                                     metadata_df = gr.Dataframe(
                                         value=None,
-                                        label='Metadata',
+                                        label=translate('Metadata', args.language),
                                         type='pandas',
                                         row_count=(1, 'fixed'),
                                     )
@@ -164,34 +166,34 @@ def create_ui(
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
                                 redo_btn = cc.EmojiButton(Emoji.rightwards)
                                 save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
-                                cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop')
+                                cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=args.max_workers == 1)
                             with gr.Row():
                                 batch_proc = gr.Checkbox(
-                                    label='Batch',
+                                    label=translate('Batch', args.language),
                                     value=False,
                                     container=False,
                                     scale=0,
                                     min_width=144
                                 )
 
-                            with gr.Tab("Quick Tagging"):
+                            with gr.Tab(translate('Quick Tagging', args.language)):
                                 with gr.Row(variant='compact'):
                                     tagging_best_quality_btn = cc.EmojiButton(Emoji.love_emotion, variant='primary', scale=1)
                                     tagging_high_quality_btn = cc.EmojiButton(Emoji.heart, scale=1)
                                     tagging_low_quality_btn = cc.EmojiButton(Emoji.broken_heart, scale=1)
                                     tagging_hate_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
                                 with gr.Row(variant='compact'):
-                                    tagging_color_btn = cc.EmojiButton(value='Color', scale=1, variant='primary')
-                                    tagging_detailed_btn = cc.EmojiButton(value='Detail', scale=1, variant='primary')
-                                    tagging_lowres_btn = cc.EmojiButton(value='Lowres', scale=1, variant='stop')
-                                    tagging_messy_btn = cc.EmojiButton(value='Messy', scale=1, variant='stop')
+                                    tagging_color_btn = cc.EmojiButton(value=translate('Color', args.language), scale=1, variant='primary')
+                                    tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', args.language), scale=1, variant='primary')
+                                    tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', args.language), scale=1, variant='stop')
+                                    tagging_messy_btn = cc.EmojiButton(value=translate('Messy', args.language), scale=1, variant='stop')
                                 with gr.Row(variant='compact'):
-                                    tagging_aesthetic_btn = cc.EmojiButton(value='Aesthetic', scale=1, variant='primary')
-                                    tagging_beautiful_btn = cc.EmojiButton(value='Beautiful', scale=1, variant='primary')
+                                    tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', args.language), scale=1, variant='primary')
+                                    tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', args.language), scale=1, variant='primary')
                                     tagging_x_btn = cc.EmojiButton(value='X', scale=1, variant='stop', visible=False)
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
-                            with gr.Tab(label='Custom Tagging'):
+                            with gr.Tab(label=translate('Custom Tagging', args.language)):
                                 def custom_tagging_row():
                                     with gr.Row(variant='compact'):
                                         add_tag_btn = cc.EmojiButton(Emoji.plus, variant='primary')
@@ -216,26 +218,26 @@ def create_ui(
                                     tag_selectors.append(tag_selector)
                                     remove_tag_btns.append(remove_tag_btn)
 
-                                with gr.Accordion(label='More', open=False):
+                                with gr.Accordion(label=translate('More', args.language), open=False):
                                     for r in range(6):
                                         add_tag_btn, tag_selector, remove_tag_btn = custom_tagging_row()
                                         add_tag_btns.append(add_tag_btn)
                                         tag_selectors.append(tag_selector)
                                         remove_tag_btns.append(remove_tag_btn)
 
-                            with gr.Tab(label='Operational Tagging'):
+                            with gr.Tab(label=translate('Operational Tagging', args.language)):
                                 with gr.Row(variant='compact'):
                                     cap_op_op_dropdown = gr.Dropdown(
-                                        label='Op',
-                                        choices=list(OPS.keys()),
-                                        value=list(OPS.keys())[0],
+                                        label=translate('Op', args.language),
+                                        choices=translate(list(OPS.keys()), args.language),
+                                        value=translate(list(OPS.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         scale=0,
                                         min_width=128,
                                     )
                                     cap_op_op_tag_dropdown = gr.Dropdown(
-                                        label='Tags',
+                                        label=translate('Tags', args.language),
                                         choices=[],
                                         value=None,
                                         allow_custom_value=True,
@@ -246,9 +248,9 @@ def create_ui(
 
                                 with gr.Row(variant='compact'):
                                     cap_op_cond_dropdown = gr.Dropdown(
-                                        label='If',
-                                        choices=list(CONDITION.keys()),
-                                        value=list(CONDITION.keys())[0],
+                                        label=translate('If', args.language),
+                                        choices=translate(list(CONDITION.keys()), args.language),
+                                        value=translate(list(CONDITION.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         scale=0,
@@ -256,7 +258,7 @@ def create_ui(
                                     )
 
                                     cap_op_cond_tag_dropdown = gr.Dropdown(
-                                        label='Tags',
+                                        label=translate('Tags', args.language),
                                         choices=[],
                                         value=None,
                                         allow_custom_value=True,
@@ -264,25 +266,25 @@ def create_ui(
                                     )
 
                                     cap_op_incl_rel_dropdown = gr.Dropdown(
-                                        label='Inclusion',
-                                        choices=list(INCLUSION_RELATIONSHIP.keys()),
-                                        value=list(INCLUSION_RELATIONSHIP.keys())[0],
+                                        label=translate('Inclusion', args.language),
+                                        choices=translate(list(INCLUSION_RELATIONSHIP.keys()), args.language),
+                                        value=translate(list(INCLUSION_RELATIONSHIP.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         scale=0,
                                         min_width=144,
                                     )
 
-                            with gr.Tab(label="Optimizers"):
+                            with gr.Tab(label=translate('Optimizers', args.language)):
                                 with gr.Row(variant='compact'):
-                                    formalize_caption_btn = cc.EmojiButton("Formalize", scale=1, min_width=116)
-                                    sort_caption_btn = cc.EmojiButton("Sort", scale=1, min_width=116)
-                                    deduplicate_caption_btn = cc.EmojiButton("Deduplicate", scale=1, min_width=116)
-                                    deoverlap_caption_btn = cc.EmojiButton("De-Overlap", scale=1, min_width=116)
+                                    formalize_caption_btn = cc.EmojiButton(translate('Formalize', args.language), scale=1, min_width=116)
+                                    sort_caption_btn = cc.EmojiButton(translate('Sort', args.language), scale=1, min_width=116)
+                                    deduplicate_caption_btn = cc.EmojiButton(translate('Deduplicate', args.language), scale=1, min_width=116)
+                                    deoverlap_caption_btn = cc.EmojiButton(translate('De-Overlap', args.language), scale=1, min_width=116)
                                 with gr.Row(variant='compact'):
-                                    defeature_caption_btn = cc.EmojiButton("De-Feature", scale=0, min_width=116)
+                                    defeature_caption_btn = cc.EmojiButton(translate('De-Feature', args.language), scale=0, min_width=116)
                                     defeature_caption_threshold = gr.Slider(
-                                        label='Threshold',
+                                        label=translate('Threshold', args.language),
                                         value=0.3,
                                         minimum=0,
                                         maximum=1,
@@ -293,14 +295,14 @@ def create_ui(
                                 with gr.Row(variant='compact'):
                                     wd14_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=80)
                                     wd14_general_threshold = gr.Slider(
-                                        label='General Threshold',
+                                        label=translate('General Threshold', args.language),
                                         value=0.35,
                                         minimum=0,
                                         maximum=1,
                                         step=0.01,
                                     )
                                     wd14_character_threshold = gr.Slider(
-                                        label='Character Threshold',
+                                        label=translate('Character Threshold', args.language),
                                         value=0.35,
                                         minimum=0,
                                         maximum=1,
@@ -308,19 +310,19 @@ def create_ui(
                                     )
                                 with gr.Row(variant='compact'):
                                     wd14_os_mode = gr.Radio(
-                                        label='OS Mode',
-                                        choices=['overwrite', 'append', 'prepend', 'ignore'],
-                                        value='overwrite',
+                                        label=translate('OS Mode', args.language),
+                                        choices=translate(['overwrite', 'append', 'prepend', 'ignore'], args.language),
+                                        value=translate('overwrite', args.language),
                                         scale=0,
                                         min_width=128,
                                     )
 
                     with gr.Row():
                         with gr.Column(scale=4):
-                            with gr.Tab("Info"):
+                            with gr.Tab(translate('Info', args.language)):
                                 with gr.Row(variant='compact'):
                                     image_path = gr.Textbox(
-                                        label='Image Path',
+                                        label=translate('Image Path', args.language),
                                         value=None,
                                         container=True,
                                         max_lines=2,
@@ -331,7 +333,7 @@ def create_ui(
                                     open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
                                 with gr.Row(variant='compact'):
                                     resolution = gr.Textbox(
-                                        label='Resolution',
+                                        label=translate('Resolution', args.language),
                                         value=None,
                                         container=True,
                                         max_lines=2,
@@ -341,27 +343,37 @@ def create_ui(
                                     )
 
                         with gr.Column(scale=4):
-                            with gr.Tab("Query"):
+                            with gr.Tab(translate('Query', args.language)):
+                                with gr.Row(variant='compact'):
+                                    query_refresh_tag_list_btn = cc.EmojiButton(Emoji.anticlockwise)
+                                    query_unload_tag_list_btn = cc.EmojiButton(Emoji.no_entry)
+                                    query_use_regex = gr.Checkbox(
+                                        label=translate('Regex', args.language),
+                                        value=False,
+                                        container=False,
+                                        scale=0,
+                                        min_width=128,
+                                    )
                                 with gr.Row(variant='compact'):
                                     query_include_condition = gr.Dropdown(
-                                        label='If',
-                                        choices=list(CONDITION.keys()),
-                                        value=list(CONDITION.keys())[0],
+                                        label=translate('If', args.language),
+                                        choices=translate(list(CONDITION.keys()), args.language),
+                                        value=translate(list(CONDITION.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=128,
                                         scale=0,
                                     )
                                     query_include_tags = gr.Dropdown(
-                                        label='Include',
+                                        label=translate('Include', args.language),
                                         choices=None,
                                         allow_custom_value=True,
                                         multiselect=True,
                                     )
                                     query_joiner_dropdown = gr.Dropdown(
-                                        label='Joiner',
-                                        choices=list(JOINER.keys()),
-                                        value=list(JOINER.keys())[0],
+                                        label=translate('Joiner', args.language),
+                                        choices=translate(list(JOINER.keys()), args.language),
+                                        value=translate(list(JOINER.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=108,
@@ -369,33 +381,33 @@ def create_ui(
                                     )
                                 with gr.Row(variant='compact'):
                                     query_exclude_condition = gr.Dropdown(
-                                        label='If',
-                                        choices=list(CONDITION.keys()),
-                                        value=list(CONDITION.keys())[0],
+                                        label=translate('If', args.language),
+                                        choices=translate(list(CONDITION.keys()), args.language),
+                                        value=translate(list(CONDITION.keys())[0], args.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=128,
                                         scale=0,
                                     )
                                     query_exclude_tags = gr.Dropdown(
-                                        label='Excludes',
+                                        label=translate('Exclude', args.language),
                                         choices=None,
                                         allow_custom_value=True,
                                         multiselect=True,
                                     )
                                     query_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
 
-                with gr.Tab("Database") as database_tab:
+                with gr.Tab(translate('Database', args.language)) as database_tab:
                     database = gr.Dataframe(
                         value=None,
-                        label='Database',
+                        label=translate('Database', args.language),
                         type='pandas',
                     )
 
-                with gr.Tab("Buffer") as buffer_tab:
+                with gr.Tab(translate('Buffer', args.language)) as buffer_tab:
                     buffer_df = gr.Dataframe(
                         value=None,
-                        label='Buffer',
+                        label=translate('Buffer', args.language),
                         type='pandas',
                         row_count=(20, 'fixed'),
                     )
@@ -453,7 +465,7 @@ def create_ui(
                 return {
                     showcase: gallery,
                     cur_image_key: new_img_key,
-                    cur_chunk_index: gr.update(value=new_chunk_index, label=f'Chunk {new_chunk_index}/{cur_dataset.num_chunks}')
+                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', args.language)} {new_chunk_index}/{cur_dataset.num_chunks}")
                 }
 
             def show_database(dset=None, new_chunk_index=1):
@@ -465,7 +477,7 @@ def create_ui(
                 df = chunk.df()
                 return {
                     database: df,
-                    cur_chunk_index: gr.update(value=new_chunk_index, label=f'Chunk {new_chunk_index}/{dset.num_chunks}'),
+                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', args.language)} {new_chunk_index}/{dset.num_chunks}"),
                 }
 
             # ========================================= Tab changing parser ========================================= #
@@ -597,14 +609,14 @@ def create_ui(
 
             def track_image_key(image_key):
                 if image_key is None or image_key == '':  # no image key selected
-                    return None, gr.update(value=None, label='Caption'), None
+                    return None, gr.update(value=None, label=translate('Caption', args.language)), None
                 image_key = Path(image_key).stem
                 image_info = dataset.get(image_key, None)
                 if image_info is None:
                     raise ValueError(f"image key {image_key} not found in dataset")
                 image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
                 caption = str(image_info.caption) if image_info.caption is not None else None
-                return image_path, gr.update(value=caption, label=f"Caption: {image_key}"), f"{image_info.original_size[0]}x{image_info.original_size[1]}"
+                return image_path, gr.update(value=caption, label=f"{translate('Caption', args.language)}: {image_key}"), f"{image_info.original_size[0]}x{image_info.original_size[1]}"
 
             cur_image_key.change(
                 fn=track_image_key,
@@ -622,9 +634,10 @@ def create_ui(
                 quality = info_dict.get('quality', None)
                 styles = info_dict.get('styles', None)
                 characters = info_dict.get('characters', None)
-                data = [{'Artist': artist, 'Quality': quality, 'Styles': styles, 'Characters': characters}]
+                data = [{translate('Artist', args.language): artist, translate('Quality', args.language): quality,
+                         translate('Styles', args.language): styles, translate('Character', args.language): characters}]
                 df = pandas.DataFrame(data=data, columns=list(data[0].keys()))
-                return gr.update(value=df, label=f"Metadata: {image_key}")
+                return gr.update(value=df, label=f"{translate('Metadata', args.language)}: {image_key}")
 
             caption.change(
                 fn=track_caption,
@@ -689,7 +702,7 @@ def create_ui(
                 return {
                     showcase: dataset_to_gallery(Dataset(dataset[new_img_key])),
                     cur_image_key: new_img_key,
-                    cur_chunk_index: gr.update(value=1, label=f'Chunk 1/{cur_dataset.num_chunks}'),
+                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', args.language)} 1/{cur_dataset.num_chunks}"),
                 }
 
             random_btn.click(
@@ -701,6 +714,7 @@ def create_ui(
 
             def edit_caption_wrapper(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
                 proc_func_name = func.__name__
+                max_workers = args.max_workers
 
                 def wrapper(image_key, batch, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
                     if image_key is None or image_key == '':
@@ -720,8 +734,23 @@ def create_ui(
                     results = []
                     if batch:
                         subset = cur_dataset
-                        for image_info in tqdm(subset.values(), desc=f'{proc_func_name} batch processing'):
-                            results.append(edit(image_info.copy(), *args, **kwargs))
+                        pbar = tqdm(total=len(subset), desc=f'{proc_func_name} batch processing')
+                        edit = logu.track_tqdm(pbar)(edit)
+                        if max_workers == 1:
+                            for image_info in subset.values():
+                                results.append(edit(image_info.copy(), *args, **kwargs))
+                        else:
+                            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                                futures = [executor.submit(edit, image_info.copy(), *args, **kwargs) for image_info in subset.values()]
+                                try:
+                                    wait(futures)
+                                    for future in futures:
+                                        results.append(future.result())
+                                except (gr.CancelledError, KeyboardInterrupt):
+                                    for future in futures:
+                                        future.cancel()
+                                    raise
+
                     else:
                         results.append(edit(dataset[image_key].copy(), *args, **kwargs))
 
@@ -913,6 +942,10 @@ def create_ui(
             # ========================================= Caption Operation ========================================= #
 
             def caption_operation(image_info, op, op_tags, condition, cond_tags, inclusion_relationship):
+                if args.language != 'en':
+                    op = translate(op, 'en')
+                    condition = translate(condition, 'en')
+                    inclusion_relationship = translate(inclusion_relationship, 'en')
                 # print(f"op: {op} | op_tags: {op_tags} | condition: {condition} | cond_tags: {cond_tags} | inclusion_relationship: {inclusion_relationship}")
                 caption = image_info.caption or Caption()
                 if op_tags is None or len(op_tags) == 0:
@@ -998,6 +1031,8 @@ def create_ui(
             # ========================================= WD14 ========================================= #
 
             def wd14_tagging(image_info, general_threshold, character_threshold, os_mode):
+                if args.language != 'en':
+                    os_mode = translate(os_mode, 'en')
                 nonlocal wd14
                 old_caption = image_info.caption
                 if old_caption is not None and os_mode == 'ignore':
@@ -1046,7 +1081,13 @@ def create_ui(
 
             # ========================================= Query ========================================= #
 
-            def query_tag_table(include_condition, include_tags, joiner, exclude_condition, exclude_tags, progress: gr.Progress = gr.Progress(track_tqdm=True)):
+            def query_tag_table(include_condition, include_tags, joiner, exclude_condition, exclude_tags, enable_regex, progress: gr.Progress = gr.Progress(track_tqdm=True)):
+                # translate
+                if args.language != 'en':
+                    include_condition = translate(include_condition, 'en')
+                    exclude_condition = translate(exclude_condition, 'en')
+                    joiner = translate(joiner, 'en')
+
                 nonlocal tag_table
                 if tag_table is None:
                     dataset.init_tag_table()
@@ -1061,35 +1102,49 @@ def create_ui(
                 subset = cur_dataset
 
                 incl_set = set()
-                for tag in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags
-                    if tag not in tag_table:
-                        continue
-                    tag_set = tag_table[tag]
-                    # filter by subset
-                    if subset:
-                        tag_set = set(img_key for img_key in tag_set if img_key in subset)
-                    if len(tag_set) == 0:
-                        continue
-
-                    if include_condition == 'any':
-                        incl_set.update(tag_set)
+                for pattern in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags
+                    if enable_regex:
+                        regex = re.compile(pattern)
+                        tags = [tag for tag in tag_table.keys() if regex.match(tag)]
                     else:
-                        incl_set.intersection_update(tag_set)
+                        if pattern not in tag_table:
+                            continue
+                        tags = [pattern]
+
+                    for tag in tags:
+                        tag_set = tag_table[tag]
+                        # filter by subset
+                        if subset:
+                            tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                        if len(tag_set) == 0:
+                            continue
+
+                        if include_condition == 'any':
+                            incl_set.update(tag_set)
+                        else:
+                            incl_set.intersection_update(tag_set)
 
                 excl_set = set()
-                for tag in tqdm(exclude_tags, desc='Excluding tags'):  # calculate the union of all key(s), s ∈ exclude_tags
-                    if tag not in tag_table:
-                        continue
-                    tag_set = tag_table[tag]
-                    if subset:
-                        tag_set = set(img_key for img_key in tag_set if img_key in subset)
-                    if len(tag_set) == 0:
-                        continue
-
-                    if exclude_condition == 'any':
-                        excl_set.update(tag_set)
+                for pattern in tqdm(exclude_tags, desc='Excluding tags'):  # calculate the union of all key(s), s ∈ exclude_tags
+                    if enable_regex:
+                        regex = re.compile(pattern)
+                        tags = [tag for tag in tag_table.keys() if regex.match(tag)]
                     else:
-                        excl_set.intersection_update(tag_set)
+                        if pattern not in tag_table:
+                            continue
+                        tags = [pattern]
+
+                    for tag in tags:
+                        tag_set = tag_table[tag]
+                        if subset:
+                            tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                        if len(tag_set) == 0:
+                            continue
+
+                        if exclude_condition == 'any':
+                            excl_set.update(tag_set)
+                        else:
+                            excl_set.intersection_update(tag_set)
 
                 excl_set = set(cur_dataset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
                 res_set = joiner_func(incl_set, excl_set)  # join
@@ -1109,9 +1164,33 @@ def create_ui(
 
             query_btn.click(
                 fn=query_tag_table,
-                inputs=[query_include_condition, query_include_tags, query_joiner_dropdown, query_exclude_condition, query_exclude_tags],
+                inputs=[query_include_condition, query_include_tags, query_joiner_dropdown, query_exclude_condition, query_exclude_tags, query_use_regex],
                 outputs=selector_change_outputs,
                 show_progress=True,
+                concurrency_limit=1,
+            )
+
+            def refresh_tag_list(progress: gr.Progress = gr.Progress(track_tqdm=True)):
+                nonlocal tag_table
+                if tag_table is None:
+                    dataset.init_tag_table()
+                    tag_table = dataset.tag_table
+
+                tag_list = sorted(tag_table.keys(), key=lambda x: len(tag_table[x]), reverse=True)
+                return gr.update(choices=tag_list), gr.update(choices=tag_list)
+
+            query_refresh_tag_list_btn.click(
+                fn=refresh_tag_list,
+                outputs=[query_include_tags, query_exclude_tags],
+                concurrency_limit=1,
+            )
+
+            def unload_tag_list():
+                return gr.update(choices=None), gr.update(choices=None)
+
+            query_unload_tag_list_btn.click(
+                fn=unload_tag_list,
+                outputs=[query_include_tags, query_exclude_tags],
                 concurrency_limit=1,
             )
 

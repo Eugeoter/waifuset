@@ -161,6 +161,15 @@ class UITagTable:
     def __getitem__(self, tag):
         return self._table[tag]
 
+    def keys(self):
+        return self._table.keys()
+
+    def items(self):
+        return self._table.items()
+
+    def values(self):
+        return self._table.values()
+
 
 class UIDataset(UIChunkedDataset):
     selected: UISelectData

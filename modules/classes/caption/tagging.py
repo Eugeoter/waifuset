@@ -26,14 +26,18 @@ REGEX_ARTIST = re.compile(PATTERN_ARTIST)
 REGEX_STYLE = re.compile(PATTERN_STYLE)
 
 
-def _read_custom_tags(custom_tag_path):
+def read_custom_tags(custom_tag_path):
     import json
     with open(custom_tag_path, 'r') as f:
         custom_tags = json.load(f)
     return custom_tags
 
 
-CUSTOM_TAGS = _read_custom_tags(CUSTOM_TAG_PATH)
+try:
+    CUSTOM_TAGS = read_custom_tags(CUSTOM_TAG_PATH)
+except FileNotFoundError:
+    CUSTOM_TAGS = {}
+    print('Custom tag json file not found.')
 
 QUALITY_TAGS = set(CUSTOM_TAGS.get('quality', []))
 AESTHETIC_TAGS = set(CUSTOM_TAGS.get('aesthetic', []))
@@ -104,11 +108,11 @@ def init_priority_tags():
         [PATTERN_CHARACTER_TAGS, PATTERN_CHARACTER, 'cosplay'],
         # Figure
         [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
-        [r'(furry|fox|pig|horse|cat|dog|cow|animal|maid|sheep|bear|monster) (female|male|girl|boy)s?',
-         'maid', 'nun', 'androgynous', 'demon', 'giant', 'loli', 'angel', 'monster'],
+        [r'(furry|fox|pig|horse|cat|dog|oni|cow|animal|maid|sheep|bear|monster) (female|male|girl|boy)s?',
+         'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
         ['solo'],
         # Environment
-        ['nature'],
+        ['nature', 'indoors', 'outdoors', ''],
         # Background
         [r'.*\bbackground\b.*'],
         # Angle
@@ -116,19 +120,19 @@ def init_priority_tags():
         [r'.*\b(out of frame)\b.*'],
 
         # Actions
-        [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|bespectacled|leaning|looking|kissing|sex|sewing|facing|carrying|licking|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
-         'flying', 'falling', 'diving', 'holding', "jack-o' challenge", 'hands up', 'arm up'],
+        [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|stretching|bespectacled|leaning|looking|kissing|sex|sewing|facing|carrying|licking|floating|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
+         'flying', 'falling', 'diving', 'holding', "jack-o' challenge", r'(hand|arm|keg|thigh)s? (up|down)', 'heart hands', 'cowgirl position', 'lifted by self', 'hetero', 'paw pose'],
         ['on back', 'on stomach'],
 
         # Emotions
-        [r'.*\b(happy|sad|angry|grin|surprised|scared|embarrassed|shy|smiling|smile|frowning|crying|laughing|blushing|sweating|blush)\b.*'],
+        [r'.*\b(happy|sad|angry|grin|surprised|scared|embarrassed|shy|smiling|smile|frowning|crying|laughing|blushing|sweating|blush|:3|:o)\b.*'],
         [r'.*\b(expression|expressionless)s?\b.*'],
 
         # Skin
-        [r'[\w\-]+ skin', r'dark-skinned (?:female|male)', 'tan'],
+        [r'[\w\-]+ skin', r'dark-skinned (?:female|male)', r'.*\b(tan|figure)\b.*'],
 
         # Features
-        [r'.*\b(ear|horn|tail|mouth|lip|teeth|tongue)s?\b.*'],
+        [r'.*\b(ear|horn|tail|mouth|lip|teeth|tongue|fang|saliva|kemonomimi mode|mustache|beard|sweatdrop)s?\b.*'],
 
         # Eyes
         [r'.*\beyes\b.*', 'heterochromia'],
@@ -150,7 +154,7 @@ def init_priority_tags():
         [r'.*\b(nipple|areola|areolae)s?\b.*'],
 
         # Pussy
-        [r'.*\bpussy\b.*'],
+        [r'.*\b(pussy|vaginal|penis)\b.*'],
         [r'.*\b(uncensor|censor)(ed|ing)?\b.*'],
 
         # Bodies
@@ -158,10 +162,13 @@ def init_priority_tags():
         [r'.*\b(ass|butt|booty|rear|navel|groin|armpit|hip|thigh|leg|feet|foot)s?\b.*'],
         [r'.*\b(barefoot)\b.*'],
 
+        # Suit
+        [r'.*\b(enmaided)\b.*'],
         # Clothing
         [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*',
-         'bottomless', 'topless'],
-        [r'.*\b(pelvic curtain|tassel|sleeve|necktie|neckline|gown|halterneck|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
+         'bottomless', 'topless', 'official alternate costume', r'.*\bnaked.*\b'],
+        # Clothing Features
+        [r'.*\b(pelvic curtain|high heels|choker|zettai ryouiki|tassel|bow|sleeve|necktie|neckline|skindentation|highleg|gown|halterneck|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
 
         # Fingers
         [r'.*\b(finger|toe)s?\b.*', 'v', r'.*\b(gesture)\b.*'],
