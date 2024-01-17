@@ -119,9 +119,9 @@ aesthetic, beautiful
 
 1. 格式化：将标签格式化为以下形式：
 
-- 替换下换线为空格：`x_y_z` -> `x y z`，x, y, z 为任意字符串；
-- 为括号添加转移符：`x (y)` -> `x \(y\)`，x, y 为任意字符串；
-- 自动提取艺术家、角色和风格标签，并添加注释：` by xxx` -> `artist: xxx`，`ganyu \(genshin impact\)` -> `character: ganyu \(genshin impact\)`，`realistic` -> `style: realistic`；
+   - 替换下换线为空格：`x_y_z` -> `x y z`，x, y, z 为任意字符串；
+   - 为括号添加转移符：`x (y)` -> `x \(y\)`，x, y 为任意字符串；
+   - 自动提取艺术家、角色和风格标签，并添加注释：` by xxx` -> `artist: xxx`，`ganyu \(genshin impact\)` -> `character: ganyu \(genshin impact\)`，`realistic` -> `style: realistic`；
 
 2. 排序：按照 NovelAI V3.0 的排序方案对标注中的标签排序；
 
@@ -130,15 +130,21 @@ aesthetic, beautiful
 4. 去重叠：去除标注中具有重叠语义的标签，并保留语义最丰富的一者。例如，`white shirt` 和 `shirt` 同时存在时，将会删除 `shirt` 而保留 `white shirt`；
 
 5. 去特征：对于标注中包含角色标签的标注，去除该标注中所有与人物特征有关，而且是该角色的核心标签的标签。角色核心标签将由以下方式确定：
+
    统计整个大数据集中，所有标注中的角色标签的词频表，将出现次数多的标签作为该角色的核心标签。例如，数据集中由 100 个带有 `ganyu \(genshin impact\)` 的数据，其中 `blue hair` 出现了 100 次，`horns` 出现了 50 次，`red hair` 出现了 10 次，那么对于甘雨这个角色来说，`blue hair` 的词频为 1.0，`horns` 为 0.5，`red hair` 为 0.1。
+
    之后，删除所有这些包含 `ganyu \(genshin impact\)` 的数据中，词频大于等于某个值的标签。界面中的阈值滑条用于控制去除词频大于等于该阈值的标签。例如，将阈值设置为 0.5，那么 `blue hair` 和 `horns` 将会被去除，而 `red hair` 将会被保留。
+
    另外注意，当数据集中的数据量较少时，该功能可能会失效，因为词频统计的样本量太少，无法准确得知哪些标签是核心标签。
 
 ##### WD14 界面
 
 ![Alt text](/help/7.png)
 
-WD14 界面用于快速为选中的数据使用 WD14 标注模型打标。默认使用的模型是 wd14 swinv2（https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2）。
+WD14 界面用于快速为选中的数据使用 WD14 标注模型打标。默认使用的模型是 wd14 swinv2：https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2
+
+若要使用该功能，需要先安装四个额外的包：
+`pip install torch torchvision onnxruntime-gpu opencv-python`
 
 该界面中，阈值和角色阈值滑条分别指定了一般标签和角色标签的最低置信度，低于该值的标签将会被去除。
 覆盖模式指定了处理已有标注数据的方式，“覆盖”将直接覆盖已有标注，而“追加”和“前置”将在已有标注的基础上追加新的标注；分别位于已有标注的后面和前面；“忽略”将会仅对没有标注的数据进行标注，而不会对已有标注的数据进行处理。
