@@ -1,6 +1,7 @@
 import gradio as gr
 import random
 import re
+import os
 import pandas
 from PIL import Image
 from tqdm import tqdm
@@ -31,6 +32,11 @@ INCLUSION_RELATIONSHIP = {
 JOINER = {
     'and': lambda x, y: x & y,
     'or': lambda x, y: x | y,
+}
+
+FORMAT = {
+    'space': lambda x: x.spaced(),
+    'underline': lambda x: x.underlined(),
 }
 
 
@@ -72,18 +78,47 @@ def create_ui(
 ):
     # ========================================= UI ========================================= #
 
+    from ..classes import Dataset, ImageInfo, Caption
+    from .ui_dataset import UIChunkedDataset, UISampleHistory, UITagPriorityManager, TagPriority
+    from .utils import open_file_folder, translate
+
+    # args validation
+    if args.language not in ['en', 'cn']:
+        print(f"language {args.language} not supported, using `en` instead")
+        args.language = 'en'
+    args.max_workers = max(1, min(args.max_workers, os.cpu_count() - 1))
+    args.chunk_size = max(1, args.chunk_size)
+    if not args.write_to_database and not args.write_to_txt:
+        print("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
+
+    # import priority config
+    tagging.init_priority_tags()
+    tag_priority_manager = None
+
+    def import_priority_config():
+        import json
+        nonlocal tag_priority_manager
+        with open(args.tag_priority_config_path, 'r') as f:
+            config = json.load(f)
+        for name, patterns in tagging.PRIORITY.items():
+            if name in config:
+                config[name].extend(patterns)
+        tag_priority_manager = UITagPriorityManager(config)
+        return f"priority config loaded"
+
+    try:
+        import_priority_config()
+    except Exception as e:
+        print(f"failed to load priority config: {e}")
+        tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
+
+    # demo
     with gr.Blocks() as demo:
-        with gr.Tab(label='Dataset') as dataset_tab:
-
-            from ..classes import Dataset, ImageInfo, Caption
-            from .ui_dataset import UIChunkedDataset, UISampleHistory
-            from .utils import open_file_folder, translate
-
+        with gr.Tab(label=translate('Dataset', args.language)) as dataset_tab:
             with gr.Tab(translate('Main', args.language)) as main_tab:
                 # ========================================= Base variables ========================================= #
 
                 dataset = prepare_dataset(args)
-                database_path = Path(args.database_file) if args.database_file else None
                 buffer = dataset.buffer
                 sample_history = UISampleHistory()
                 tag_table = None
@@ -95,12 +130,11 @@ def create_ui(
                 with gr.Row():
                     with gr.Column():
                         with gr.Row():
-                            reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
                             category_selector = gr.Dropdown(
                                 label=translate('Category', args.language),
                                 choices=[""] + dataset.categories,
-                                value="",
-                                multiselect=False,
+                                value=None,
+                                multiselect=True,
                                 allow_custom_value=False,
                                 min_width=256,
                             )
@@ -115,8 +149,7 @@ def create_ui(
                 with gr.Row():
                     with gr.Column():
                         with gr.Row():
-                            load_pre_chunk_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
-                            load_next_chunk_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
+                            reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
 
                     with gr.Column():
                         ...
@@ -136,10 +169,12 @@ def create_ui(
                                 )
                                 cur_image_key = gr.Textbox(value=None, visible=False, label=translate('Image Key', args.language))
                             with gr.Row():
-                                pre_hist_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
+                                load_pre_chunk_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
+                                load_pre_hist_btn = cc.EmojiButton(Emoji.black_left_pointing_triangle, scale=1)
                                 reload_subset_btn = cc.EmojiButton(Emoji.anticlockwise)
                                 remove_image_btn = cc.EmojiButton(Emoji.trash_bin, variant='stop')
-                                next_hist_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
+                                load_next_hist_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, scale=1)
+                                load_next_chunk_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
 
                         with gr.Column():
                             with gr.Row():
@@ -165,11 +200,18 @@ def create_ui(
                                 set_category_btn = cc.EmojiButton(Emoji.top_left_arrow)
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
                                 redo_btn = cc.EmojiButton(Emoji.rightwards)
-                                save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary')
+                                save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary', visible=args.write_to_database or args.write_to_txt)
                                 cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=args.max_workers == 1)
                             with gr.Row():
-                                batch_proc = gr.Checkbox(
+                                batch_proc_checkbox = gr.Checkbox(
                                     label=translate('Batch', args.language),
+                                    value=False,
+                                    container=False,
+                                    scale=0,
+                                    min_width=144
+                                )
+                                append_tag_checkbox = gr.Checkbox(
+                                    label=translate('Append', args.language),
                                     value=False,
                                     container=False,
                                     scale=0,
@@ -276,6 +318,17 @@ def create_ui(
                                     )
 
                             with gr.Tab(label=translate('Optimizers', args.language)):
+                                with gr.Row(variant='compact'):
+                                    format_dropdown = gr.Dropdown(
+                                        label=translate('Format', args.language),
+                                        choices=translate(list(FORMAT.keys()), args.language),
+                                        value=translate(list(FORMAT.keys())[0], args.language),
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        scale=0,
+                                        min_width=128,
+                                    )
+
                                 with gr.Row(variant='compact'):
                                     formalize_caption_btn = cc.EmojiButton(translate('Formalize', args.language), scale=1, min_width=116)
                                     sort_caption_btn = cc.EmojiButton(translate('Sort', args.language), scale=1, min_width=116)
@@ -412,6 +465,33 @@ def create_ui(
                         row_count=(20, 'fixed'),
                     )
 
+            with gr.Tab(translate('Config', args.language)) as config_tab:
+                with gr.Row():
+                    cfg_log_box = gr.TextArea(
+                        label=translate('Log', args.language),
+                        lines=1,
+                        max_lines=1,
+                    )
+
+                with gr.Tab(translate('Tag Order', args.language)):
+                    with gr.Row():
+                        export_tag_priority_config_btn = cc.EmojiButton(Emoji.floppy_disk)
+                        import_priority_config_btn = cc.EmojiButton(Emoji.inbox_tray)
+
+                    tag_priority_comps = []
+                    for i, name in enumerate(tag_priority_manager.keys()):
+                        with gr.Row(variant='compact'):
+                            tag_priority_level = gr.Number(label=translate(name.replace('_', ' ').title(), args.language), value=i, precision=0, scale=0, min_width=144)
+                            tag_priority_custom_tags = gr.Dropdown(
+                                label=translate('Tags', args.language),
+                                choices=None,
+                                value=None,
+                                multiselect=True,
+                                allow_custom_value=True,
+                                scale=1,
+                            )
+                            tag_priority_comps.append((tag_priority_level, tag_priority_custom_tags))
+
             # ========================================= Functions ========================================= #
 
             def kwargs_setter(func, **kwargs):
@@ -506,26 +586,31 @@ def create_ui(
                     res = show_database(dset, new_chunk_index)
                 return res
 
-            def change_to_category(category):
+            def change_to_category(categories, progress=gr.Progress(track_tqdm=True)):
                 r"""
                 Change current dataset to another dataset with category `category` and show its chunk
                 """
-                if category is None or category == '':
-                    dset = UIChunkedDataset(dataset, chunk_size=args.chunk_size)
+                if categories is None or len(categories) == 0:
+                    dset = dataset
                 else:
-                    dset = dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=args.chunk_size)
+                    dset = UIChunkedDataset(chunk_size=args.chunk_size)
+                    for category in tqdm(sorted(categories), desc='loading subset'):
+                        if category not in dataset.categories:
+                            logu.warn(f"missing category `{category}`")
+                            continue
+                        dset.update(dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=args.chunk_size))
                 return change_to_dataset(dset, new_chunk_index=1)
 
             selector_change_outputs = [showcase, cur_image_key, database, cur_chunk_index, category_selector, log_box]
 
-            category_selector.input(
-                fn=change_to_category,
-                inputs=[category_selector],
-                outputs=selector_change_outputs,
-                show_progress=True,
-                trigger_mode='multiple',
-                concurrency_limit=1,
-            )
+            # category_selector.blur(
+            #     fn=change_to_category,
+            #     inputs=[category_selector],
+            #     outputs=selector_change_outputs,
+            #     show_progress=True,
+            #     trigger_mode='multiple',
+            #     concurrency_limit=1,
+            # )
 
             reload_category_btn.click(
                 fn=change_to_category,
@@ -537,11 +622,11 @@ def create_ui(
             )
 
             set_category_btn.click(
-                fn=lambda image_key: {**change_to_category(cur_dataset[image_key].category), category_selector: cur_dataset[image_key].category},
+                fn=lambda image_key: {**change_to_category([cur_dataset[image_key].category]), category_selector: [cur_dataset[image_key].category]},
                 inputs=[cur_image_key],
                 outputs=selector_change_outputs,
                 show_progress=True,
-                trigger_mode='multiple',
+                trigger_mode='always_last',
                 concurrency_limit=1,
             )
 
@@ -672,15 +757,15 @@ def create_ui(
                     cur_image_key: new_img_key,
                 }
 
-            pre_hist_btn.click(
-                fn=lambda: show_i_th_sample(sample_history.index - 1),
+            load_pre_hist_btn.click(
+                fn=lambda: show_i_th_sample(sample_history.index - 1) if sample_history.index is not None else {log_box: f"empty sample history"},
                 inputs=[],
                 outputs=selector_change_outputs,
                 concurrency_limit=1,
             )
 
-            next_hist_btn.click(
-                fn=lambda: show_i_th_sample(sample_history.index + 1),
+            load_next_hist_btn.click(
+                fn=lambda: show_i_th_sample(sample_history.index + 1) if sample_history.index is not None else {log_box: f"empty sample history"},
                 inputs=[],
                 outputs=selector_change_outputs,
                 concurrency_limit=1,
@@ -798,7 +883,7 @@ def create_ui(
 
             undo_btn.click(
                 fn=edit_caption_wrapper(undo),
-                inputs=[cur_image_key, batch_proc],
+                inputs=[cur_image_key, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -810,7 +895,7 @@ def create_ui(
 
             redo_btn.click(
                 fn=edit_caption_wrapper(redo),
-                inputs=[cur_image_key, batch_proc],
+                inputs=[cur_image_key, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -833,92 +918,117 @@ def create_ui(
 
             tagging_best_quality_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='best')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_high_quality_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='high')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_low_quality_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='low')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_hate_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='worst')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
-            def add_tags(image_info, tags):
-                caption = tags | image_info.caption
+            def format_tag(image_info, tag):
+                r"""
+                %dir%: category (directory) name
+                %cat%: same as %dirname%
+                %stem%: filename
+                """
+                tag = tag.replace('%dir%', image_info.category)
+                tag = tag.replace('%dirname%', image_info.category)
+                tag = tag.replace('%cat%', image_info.category)
+                tag = tag.replace('%category%', image_info.category)
+                tag = tag.replace('%stem%', image_info.image_path.stem)
+                tag = tag.replace('%filename%', image_info.image_path.stem)
+                if re.search(r'%.*%', tag):
+                    raise gr.Error(f"invalid tag format: {tag}")
+                return tag
+
+            def add_tags(image_info, append, tags):
+                if isinstance(tags, str):
+                    tags = [tags]
+                tags = [format_tag(image_info, tag) for tag in tags]
+                if append:
+                    caption = image_info.caption | tags
+                else:
+                    caption = tags | image_info.caption
                 return caption
 
             def remove_tags(image_info, tags):
+                if isinstance(tags, str):
+                    tags = [tags]
+                tags = [format_tag(image_info, tag) for tag in tags]
                 caption = image_info.caption - tags
                 return caption
 
             tagging_color_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful color')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_detailed_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='detailed')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_lowres_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='lowres')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_messy_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='messy')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_aesthetic_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='aesthetic')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_beautiful_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_x_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='x')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_y_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='y')),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -928,13 +1038,13 @@ def create_ui(
             for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
                 add_tag_btn.click(
                     fn=edit_caption_wrapper(add_tags),
-                    inputs=[image_path, batch_proc, tag_selector],
+                    inputs=[image_path, batch_proc_checkbox, append_tag_checkbox, tag_selector],
                     outputs=[caption, log_box],
                     concurrency_limit=1,
                 )
                 remove_tag_btn.click(
                     fn=edit_caption_wrapper(remove_tags),
-                    inputs=[image_path, batch_proc, tag_selector],
+                    inputs=[image_path, batch_proc_checkbox, append_tag_checkbox, tag_selector],
                     outputs=[caption, log_box],
                     concurrency_limit=1,
                 )
@@ -950,9 +1060,11 @@ def create_ui(
                 caption = image_info.caption or Caption()
                 if op_tags is None or len(op_tags) == 0:
                     return caption
+                op_tags = [format_tag(image_info, tag) for tag in op_tags]
                 op_func = OPS[op]
                 op_caption = Caption(op_tags)
                 do_condition = condition is not None and condition != ''
+                cond_tags = [format_tag(image_info, tag) for tag in cond_tags]
                 if do_condition and cond_tags and len(cond_tags) > 0:
                     cond_func = CONDITION[condition]
                     cond_tags = set(cond_tags)
@@ -967,29 +1079,40 @@ def create_ui(
 
             operate_caption_btn.click(
                 fn=edit_caption_wrapper(caption_operation),
-                inputs=[image_path, batch_proc, cap_op_op_dropdown, cap_op_op_tag_dropdown, cap_op_cond_dropdown, cap_op_cond_tag_dropdown, cap_op_incl_rel_dropdown],
+                inputs=[image_path, batch_proc_checkbox, cap_op_op_dropdown, cap_op_op_tag_dropdown, cap_op_cond_dropdown, cap_op_cond_tag_dropdown, cap_op_incl_rel_dropdown],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             # ========================================= Optimizers ========================================= #
             def sort_caption(image_info):
+                nonlocal tag_priority_manager
                 tagging.init_priority_tags()
-                return image_info.caption @ tagging.PRIORITY_REGEX
+                return image_info.caption @ tag_priority_manager.priority_regex
 
             sort_caption_btn.click(
                 fn=edit_caption_wrapper(sort_caption),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
-            def formalize_caption(image_info):
+            def format_caption(image_info, format):
+                return FORMAT[format](image_info.caption)
+
+            format_dropdown.change(
+                fn=edit_caption_wrapper(format_caption),
+                inputs=[image_path, batch_proc_checkbox, format_dropdown],
+                outputs=[caption, log_box],
+                concurrency_limit=1,
+            )
+
+            def formalize_caption(image_info: ImageInfo):
                 return image_info.caption.formalized()
 
             formalize_caption_btn.click(
                 fn=edit_caption_wrapper(formalize_caption),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -999,7 +1122,7 @@ def create_ui(
 
             deduplicate_caption_btn.click(
                 fn=edit_caption_wrapper(deduplicate_caption),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1009,7 +1132,7 @@ def create_ui(
 
             deoverlap_caption_btn.click(
                 fn=edit_caption_wrapper(deoverlap_caption),
-                inputs=[image_path, batch_proc],
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1023,7 +1146,7 @@ def create_ui(
 
             defeature_caption_btn.click(
                 fn=edit_caption_wrapper(defeature_caption),
-                inputs=[image_path, batch_proc, defeature_caption_threshold],
+                inputs=[image_path, batch_proc_checkbox, defeature_caption_threshold],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1054,7 +1177,7 @@ def create_ui(
 
             wd14_run_btn.click(
                 fn=edit_caption_wrapper(wd14_tagging),
-                inputs=[image_path, batch_proc, wd14_general_threshold, wd14_character_threshold, wd14_os_mode],
+                inputs=[image_path, batch_proc_checkbox, wd14_general_threshold, wd14_character_threshold, wd14_os_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1192,6 +1315,45 @@ def create_ui(
                 fn=unload_tag_list,
                 outputs=[query_include_tags, query_exclude_tags],
                 concurrency_limit=1,
+            )
+
+            # ========================================= Config ========================================= #
+
+            def update_tag_priority(name):
+                def wrapper(level, tags):
+                    nonlocal tag_priority_manager
+                    patterns = tagging.PRIORITY.get(name, [])
+                    patterns.extend(tags)
+                    tp = TagPriority(name, patterns, level)
+                    tag_priority_manager[name] = tp
+                    return f"priority {name} updated"
+                return wrapper
+
+            for tag_priority_level, tag_priority_custom_tags in tag_priority_comps:
+                params = dict(
+                    fn=update_tag_priority(name),
+                    inputs=[tag_priority_level, tag_priority_custom_tags],
+                    outputs=[cfg_log_box],
+                )
+                tag_priority_level.change(**params)
+                tag_priority_custom_tags.change(**params)
+
+            def export_tag_priority_config():
+                import json
+                nonlocal tag_priority_manager
+                config = tag_priority_manager.config
+                with open(args.tag_priority_config_path, 'w') as f:
+                    json.dump(config, f, indent=4)
+                return f"priority config saved"
+
+            export_tag_priority_config_btn.click(
+                fn=export_tag_priority_config,
+                outputs=[cfg_log_box],
+            )
+
+            import_priority_config_btn.click(
+                fn=import_priority_config,
+                outputs=[cfg_log_box],
             )
 
     return demo

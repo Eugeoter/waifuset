@@ -15,6 +15,8 @@ def parse_args():
     parser.add_argument('--new_source', type=str, help='New image source / 新的图像来源')
     parser.add_argument('--chunk_size', type=int, default=80, help='Chunk size when making subsets / 制作子集时的块大小')
 
+    parser.add_argument('--tag_priority_config_path', type=str, default='./json/custom_priority_config.json', help='Tag priority config path / 标签优先级配置路径')
+
     parser.add_argument('--share', action='store_true', help='Whether to share the API / 是否共享API')
     parser.add_argument('--port', type=int, help='Port to run the API / 运行API的端口')
 

@@ -1,5 +1,6 @@
 import gradio as gr
 import os
+import re
 import json
 import pickle
 import time
@@ -114,8 +115,86 @@ class UISampleHistory:
         return len(self._lst)
 
 
+class TagPriority:
+    def __init__(self, name, patterns: List[str], priority: int):
+        assert isinstance(name, str), f"name must be str, but got {type(name)}."
+        assert isinstance(patterns, list), f"patterns must be list, but got {type(patterns)}."
+        assert isinstance(priority, int), f"priority must be int, but got {type(priority)}."
+        self._name = name
+        self._patterns = patterns
+        self._priority = priority
+
+        # cache
+        self._pattern = None
+        self._regex = None
+
+    def clean_cache(self):
+        self._pattern = None
+        self._regex = None
+
+    @property
+    def patterns(self) -> List[str]:
+        return self._patterns
+
+    @property
+    def priority(self) -> int:
+        return self._priority
+
+    @property
+    def pattern(self) -> str:
+        if self._pattern is None:
+            self._pattern = '|'.join(self._patterns).replace(' ', r'[\s_]')
+        return self._pattern
+
+    @property
+    def regex(self) -> re.Pattern:
+        if self._regex is None:
+            self._regex = re.compile(self.pattern)
+        return self._regex
+
+
+class UITagPriorityManager:
+    def __init__(self, priority: Dict[str, TagPriority] = {}):
+        self._priority = {name: tp if isinstance(tp, TagPriority) else TagPriority(name, tp, i) for i, (name, tp) in enumerate(priority.items())}
+        self._priority_regex = None
+
+    @property
+    def priority_regex(self) -> List[re.Pattern]:
+        if self._priority_regex is None:
+            sorted_tps = sorted([tp for tp in self._priority.values()], key=lambda tp: tp.priority)
+            self._priority_regex = [tp.regex for tp in sorted_tps]
+        return self._priority_regex
+
+    @property
+    def config(self):
+        from .. import tagging
+        return {name: [pattern for pattern in tp.patterns if pattern not in tagging.PRIORITY[name]] for name, tp in self._priority.items()}
+
+    def __getitem__(self, name):
+        return self._priority[name]
+
+    def __setitem__(self, name, value):
+        self._priority[name] = value
+        self._priority_regex = None
+
+    def __contains__(self, name):
+        return name in self._priority
+
+    def __len__(self):
+        return len(self._priority)
+
+    def keys(self):
+        return self._priority.keys()
+
+    def values(self):
+        return self._priority.values()
+
+    def items(self):
+        return self._priority.items()
+
+
 class UIChunkedDataset(Dataset):
-    def __init__(self, source, *args, chunk_size=None, **kwargs):
+    def __init__(self, source=None, *args, chunk_size=None, **kwargs):
         super().__init__(source, *args, **kwargs)
         self.chunk_size = chunk_size
 

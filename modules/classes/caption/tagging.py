@@ -94,96 +94,92 @@ def init_priority_tags():
         return
 
     # ! spacing captions only.
-    PRIORITY = [
+    PRIORITY = {
         # Artist
-        [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
-        # Style
-        [PATTERN_STYLE_TAGS, PATTERN_STYLE],
-        # Subject
-        ['portrait', 'scenery', 'out-of-frame'],
-        # Theme
-        [r'.*\b(theme)\b.*', 'science fiction', 'fantasy'],
+        'artist': [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
+        # Role
+        'role': [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
         # Character
-        ['|'.join(GAME_TAGS)],
-        [PATTERN_CHARACTER_TAGS, PATTERN_CHARACTER, 'cosplay'],
-        # Figure
-        [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
-        [r'(furry|fox|pig|horse|cat|dog|oni|cow|animal|maid|sheep|bear|monster) (female|male|girl|boy)s?',
-         'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
-        ['solo'],
+        'copyright': ['|'.join(GAME_TAGS)],
+        'character': [PATTERN_CHARACTER_TAGS, PATTERN_CHARACTER, 'cosplay'],
+        'race': [r'(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling) (female|male|girl|boy)s?',
+                 'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
+        'solo': ['solo'],
+        # Subject
+        'subject': ['portrait', 'scenery', 'out-of-frame'],
+        # Style
+        'style': [PATTERN_STYLE_TAGS, PATTERN_STYLE],
+        # Theme
+        'theme': [r'.*\b(theme)\b.*', 'science fiction', 'fantasy'],
         # Environment
-        ['nature', 'indoors', 'outdoors', ''],
+        'environment': ['nature', 'indoors', 'outdoors'],
         # Background
-        [r'.*\bbackground\b.*'],
+        'background': [r'.*\bbackground\b.*'],
         # Angle
-        [r'from (side|behind|above|below)', r'(full|upper|lower) body', r'.*\b(focus)\b.*', 'cowboy shot', 'close-up', 'dutch angle', 'wide shot', 'multiple views'],
-        [r'.*\b(out of frame)\b.*'],
+        'angle': [r'from (side|behind|above|below)', r'(full|upper|lower) body', r'.*\b(focus)\b.*', 'cowboy shot', 'close-up', 'dutch angle', 'wide shot', 'multiple views', r'.*\b(out of frame)\b.*'],
 
         # Actions
-        [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|stretching|bespectacled|leaning|looking|kissing|sex|sewing|facing|carrying|licking|floating|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
-         'flying', 'falling', 'diving', 'holding', "jack-o' challenge", r'(hand|arm|keg|thigh)s? (up|down)', 'heart hands', 'cowgirl position', 'lifted by self', 'hetero', 'paw pose'],
-        ['on back', 'on stomach'],
+        'action': [r'.*\b(sitting|lying|soaked|outstretched|standing|masturbation|kneeling|crouching|squatting|stretching|bespectacled|leaning|looking|kissing|sex|sewing|facing|carrying|licking|floating|wading|aiming|reaching|drinking|drawing|fidgeting|covering|tying|walking|running|jumping|protecting|fighting|inkling|grabing|eating|trembling|sleeping|crying|straddling|pointing|drooling)\b.*',
+                   'flying', 'falling', 'diving', 'holding', "jack-o' challenge", r'(hand|arm|keg|thigh)s? (up|down)', 'heart hands', 'cowgirl position', 'lifted by self', 'hetero', 'paw pose'],
+        'additional_action': ['on back', 'on stomach'],
 
-        # Emotions
-        [r'.*\b(happy|sad|angry|grin|surprised|scared|embarrassed|shy|smiling|smile|frowning|crying|laughing|blushing|sweating|blush|:3|:o)\b.*'],
-        [r'.*\b(expression|expressionless)s?\b.*'],
+        # Expressions
+        'expression': [r'.*\b(happy|sad|angry|grin|surprised|scared|embarrassed|shy|smiling|smile|frowning|crying|laughing|blushing|sweating|blush|:3|:o|expression|expressionless)\b.*'],
 
         # Skin
-        [r'[\w\-]+ skin', r'dark-skinned (?:female|male)', r'.*\b(tan|figure)\b.*'],
+        'skin': [r'[\w\-]+ skin', r'dark-skinned (?:female|male)', r'.*\b(tan|figure)\b.*'],
 
         # Features
-        [r'.*\b(ear|horn|tail|mouth|lip|teeth|tongue|fang|saliva|kemonomimi mode|mustache|beard|sweatdrop)s?\b.*'],
+        'face_feature': [r'.*\b(ear|horn|tail|mouth|lip|teeth|tongue|fang|saliva|kemonomimi mode|mustache|beard|sweatdrop)s?\b.*'],
 
         # Eyes
-        [r'.*\beyes\b.*', 'heterochromia'],
-        [r'.*\b(eyelashes|eyeshadow|eyebrow|eye|pupil)s?\b.*'],
-        [r'.*\b(eyepatch|glasses|sunglassess|eyewear|goggles|makeup)\b.*'],
+        'eye': [r'.*\beyes\b.*', 'heterochromia'],
+        'eye_feature': [r'.*\b(eyelashes|eyeshadow|eyebrow|eye|pupil)s?\b.*'],
+        'eye_accessory': [r'.*\b(eyepatch|glasses|sunglassess|eyewear|goggles|makeup)\b.*'],
 
         # Hair
-        [r'[\w\-\s]+ hair'],
-        [r'.*\b(hair|ponytail|twintail|hairbun|bun|bob cut|braid|bang|ahoge)s?\b.*', 'ringlets', 'sidelocks', 'fringe', 'forelock', 'two side up'],
+        'hair': [r'[\w\-\s]+ hair'],
+        'hairstyle': [r'.*\b(hair|ponytail|twintail|hairbun|bun|bob cut|braid|bang|ahoge)s?\b.*', 'ringlets', 'sidelocks', 'fringe', 'forelock', 'two side up'],
         # Hair ornaments
-        [r'.*\b(hairclip|haircut|hairband|hair ornament)s?\b.*'],
+        'hair_ornament': [r'.*\b(hairclip|haircut|hairband|hair ornament)s?\b.*'],
 
-        ['plump',],
+        'figure': ['plump',],
 
         # Breast
-        [r'.*\b(huge|large|medium|small|flat) (breasts|chest)\b'],
-        [r'.*\b(breast|chest)s?\b.*'],
-        [r'(side|inner|under)boob', 'cleavage'],
-        [r'.*\b(nipple|areola|areolae)s?\b.*'],
+        'breast': [r'.*\b(huge|large|medium|small|flat) (breasts|chest)\b'],
+        'breast_feature': [r'.*\b(breast|chest)s?\b.*', r'(side|inner|under)boob', 'cleavage'],
+        'nipple': [r'.*\b(nipple|areola|areolae)s?\b.*'],
 
         # Pussy
-        [r'.*\b(pussy|vaginal|penis)\b.*'],
-        [r'.*\b(uncensor|censor)(ed|ing)?\b.*'],
+        'pussy': [r'.*\b(pussy|vaginal|penis)\b.*'],
+        'mosaic': [r'.*\b(uncensor|censor)(ed|ing)?\b.*'],
 
         # Bodies
-        [r'.*\b(mole|tattoo|scar|bandaid|bandage|blood|sweat|tear)s?\b.*', 'freckles', 'body freckles', 'collarbone', 'navel', 'belly button', 'piercing', 'birthmark', 'wound', 'bruise'],
-        [r'.*\b(ass|butt|booty|rear|navel|groin|armpit|hip|thigh|leg|feet|foot)s?\b.*'],
-        [r'.*\b(barefoot)\b.*'],
+        'body': [r'.*\b(ass|butt|booty|rear|navel|groin|armpit|hip|thigh|leg|feet|foot)s?\b.*', 'barefoot'],
+        'body_feature': [r'.*\b(mole|tattoo|scar|bandaid|bandage|blood|sweat|tear)s?\b.*', 'freckles', 'body freckles', 'collarbone', 'navel', 'belly button', 'piercing', 'birthmark', 'wound', 'bruise'],
 
         # Suit
-        [r'.*\b(enmaided)\b.*'],
+        'suit': [r'.*\b(enmaided)\b.*'],
         # Clothing
-        [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*',
-         'bottomless', 'topless', 'official alternate costume', r'.*\bnaked.*\b'],
+        'clothes': [r'.*\b(clothes|outfit|capelet|headwear|maid|apron|vest|cloak|kneehighs|petticoat|legwear|serafuku|dress|sweater|nude|hoodie|uniform|armor|veil|footwear|thighhigh|clothing|garment|attire|robe|kimono|shirt|skirt|pants|shorts|shoes|boots|gloves|socks|stockings|pantyhose|bra|panties|underwear|lingerie|swimsuit|bikini|bodysuit|leotard|tights|coat|jacket|cape|scarf|hat|cap|glasses|sunglasses|mask|helmet|headphones)s?\b.*',
+                    'bottomless', 'topless', 'official alternate costume', r'.*\bnaked.*\b'],
         # Clothing Features
-        [r'.*\b(pelvic curtain|high heels|choker|zettai ryouiki|tassel|bow|sleeve|necktie|neckline|skindentation|highleg|gown|halterneck|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
+        'clothes_accessory': [r'.*\b(pelvic curtain|high heels|choker|zettai ryouiki|tassel|bow|sleeve|necktie|neckline|skindentation|highleg|gown|halterneck|turtleneck|collar|bowtie|fishnets|cutout|ribbon|sleeveless|crossdressing|hood|shoulder|belt|frills|halo|jewelry)s?\b.*'],
 
         # Fingers
-        [r'.*\b(finger|toe)s?\b.*', 'v', r'.*\b(gesture)\b.*'],
-        [r'.*\b(fingernail|toenail|nail)s?\b.*'],
+        'digit': [r'.*\b(digit|finger|toe)s?\b.*', 'v', r'.*\b(gesture)\b.*'],
+        'nail': [r'.*\b(fingernail|toenail|nail)s?\b.*'],
 
         # Items
-        [r'.*\b(weapon|tool|katana|instrument|gadget|device|equipment|item|object|artifact|accessory|prop|earrings|necklace|bracelet|ring|watch|bag|backpack|purse|umbrella|parasol|cane|spear|sword|knife|gun|pistol|revolver|shotgun|rifle|gun|cannon|rocket launcher|grenade|bomb|shield|wing|hoove|antler)s?\b.*'],
+        'item': [r'.*\b(weapon|tool|katana|instrument|gadget|device|equipment|item|object|artifact|accessory|prop|earrings|necklace|bracelet|ring|watch|bag|backpack|purse|umbrella|parasol|cane|spear|sword|knife|gun|pistol|revolver|shotgun|rifle|gun|cannon|rocket launcher|grenade|bomb|shield|wing|hoove|antler)s?\b.*'],
 
         # Artistic
-        ['|'.join(AESTHETIC_TAGS)],
+        'aesthetic': ['|'.join(AESTHETIC_TAGS)],
         # Quality
-        [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
-    ]
+        'quality': [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
+    }
 
-    PRIORITY_REGEX = [re.compile('|'.join(patterns)) for patterns in PRIORITY]
+    PRIORITY_REGEX = [re.compile('|'.join(patterns).replace(' ', r'[\s_]')) for patterns in PRIORITY.values()]
 
 
 PRIORITY, PRIORITY_REGEX = None, None
@@ -191,7 +187,7 @@ PRIORITY, PRIORITY_REGEX = None, None
 
 PATTERN_CHARACTER_FEATURES = [
     r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyeliner|eyebrow|pupil|tongue|lip|mole|ear|horn|tail|wing|breast|skin)s?\b.*",
-    r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes)\b.*",
-    r".*\b(furry|fox|pig|wolf|horse|cat|dog|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature)([\s_](girl|boy|other|male|female))?\b.*"
+    r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes|halo)\b.*",
+    r".*\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling)([\s_](girl|boy|other|male|female))?\b.*"
 ]
-REGEX_CHARACTER_FEATURES = [re.compile(pattern) for pattern in PATTERN_CHARACTER_FEATURES]
+REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for pattern in PATTERN_CHARACTER_FEATURES]
