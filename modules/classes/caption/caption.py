@@ -187,8 +187,8 @@ class Caption:
 
     def defeatured(self, ref, threshold=0.3):
         caption = self.copy().spaced().escaped()
-        if self.characters and len(self.characters) > 0:
-            for char_tag in self.characters:
+        if caption.characters and len(caption.characters) > 0:
+            for char_tag in caption.characters:
                 freq_table = ref[char_tag]
                 for tag, freq in freq_table.items():
                     if freq >= threshold:
