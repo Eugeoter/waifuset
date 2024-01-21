@@ -174,8 +174,19 @@ class Caption:
                 caption._tags[i] = f"character: {tag}"
         return Caption(caption)
 
+    def deformalized(self):
+        caption = self.spaced().escaped()
+        for i, tag in enumerate(caption):
+            if tagging.REGEX_ARTIST.match(tag):
+                caption._tags[i] = f"by {tag[7:]}"
+            elif tagging.REGEX_STYLE.match(tag):
+                caption._tags[i] = tag[6:]
+            elif tagging.REGEX_CHARACTER.match(tag):
+                caption._tags[i] = tag[11:]
+        return Caption(caption)
+
     def defeatured(self, ref, threshold=0.3):
-        caption = self.copy()
+        caption = self.copy().spaced().escaped()
         if self.characters and len(self.characters) > 0:
             for char_tag in self.characters:
                 freq_table = ref[char_tag]

@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('--port', type=int, help='Port to run the API / 运行API的端口')
 
     parser.add_argument('--language', type=str, default='en', help='Language of the UI / UI的语言，从 `en` 和 `cn` 中选择')
-    parser.add_argument('--max_workers', type=int, default=4, help='Max workers when processing captions / 处理标注时的最大工作线程数')
+    parser.add_argument('--max_workers', type=int, default=1, help='Max workers when processing captions / 处理标注时的最大工作线程数')
 
     args = parser.parse_args()
     return args

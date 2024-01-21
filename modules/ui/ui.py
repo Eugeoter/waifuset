@@ -37,6 +37,10 @@ JOINER = {
 FORMAT = {
     'space': lambda x: x.spaced(),
     'underline': lambda x: x.underlined(),
+    'escape': lambda x: x.escaped(),
+    'unescape': lambda x: x.unescaped(),
+    'analytical': lambda x: x.formalized(),
+    'standard': lambda x: x.deformalized(),
 }
 
 
@@ -210,13 +214,6 @@ def create_ui(
                                     scale=0,
                                     min_width=144
                                 )
-                                append_tag_checkbox = gr.Checkbox(
-                                    label=translate('Append', args.language),
-                                    value=False,
-                                    container=False,
-                                    scale=0,
-                                    min_width=144
-                                )
 
                             with gr.Tab(translate('Quick Tagging', args.language)):
                                 with gr.Row(variant='compact'):
@@ -230,9 +227,9 @@ def create_ui(
                                     tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', args.language), scale=1, variant='stop')
                                     tagging_messy_btn = cc.EmojiButton(value=translate('Messy', args.language), scale=1, variant='stop')
                                 with gr.Row(variant='compact'):
+                                    tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing'), scale=1, variant='primary')
                                     tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', args.language), scale=1, variant='primary')
                                     tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', args.language), scale=1, variant='primary')
-                                    tagging_x_btn = cc.EmojiButton(value='X', scale=1, variant='stop', visible=False)
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
                             with gr.Tab(label=translate('Custom Tagging', args.language)):
@@ -319,18 +316,6 @@ def create_ui(
 
                             with gr.Tab(label=translate('Optimizers', args.language)):
                                 with gr.Row(variant='compact'):
-                                    format_dropdown = gr.Dropdown(
-                                        label=translate('Format', args.language),
-                                        choices=translate(list(FORMAT.keys()), args.language),
-                                        value=translate(list(FORMAT.keys())[0], args.language),
-                                        multiselect=False,
-                                        allow_custom_value=False,
-                                        scale=0,
-                                        min_width=128,
-                                    )
-
-                                with gr.Row(variant='compact'):
-                                    formalize_caption_btn = cc.EmojiButton(translate('Formalize', args.language), scale=1, min_width=116)
                                     sort_caption_btn = cc.EmojiButton(translate('Sort', args.language), scale=1, min_width=116)
                                     deduplicate_caption_btn = cc.EmojiButton(translate('Deduplicate', args.language), scale=1, min_width=116)
                                     deoverlap_caption_btn = cc.EmojiButton(translate('De-Overlap', args.language), scale=1, min_width=116)
@@ -342,6 +327,16 @@ def create_ui(
                                         minimum=0,
                                         maximum=1,
                                         step=0.01,
+                                    )
+                                with gr.Row(variant='compact'):
+                                    formalize_caption_btn = cc.EmojiButton(translate('Formalize', args.language), scale=0, min_width=116)
+                                    caption_formats_dropdown = gr.Dropdown(
+                                        label=translate('Format', args.language),
+                                        choices=translate(list(FORMAT.keys()), args.language),
+                                        value=None,
+                                        multiselect=True,
+                                        allow_custom_value=False,
+                                        scale=1,
                                     )
 
                             with gr.Tab(label='WD14'):
@@ -362,11 +357,20 @@ def create_ui(
                                         step=0.01,
                                     )
                                 with gr.Row(variant='compact'):
-                                    wd14_os_mode = gr.Radio(
-                                        label=translate('OS Mode', args.language),
+                                    wd14_caption_proc_mode = gr.Radio(
+                                        label=translate('Caption Process Mode', args.language),
                                         choices=translate(['overwrite', 'append', 'prepend', 'ignore'], args.language),
                                         value=translate('overwrite', args.language),
-                                        scale=0,
+                                        scale=1,
+                                        min_width=128,
+                                    )
+                            with gr.Tab(label=translate('Setting', args.language)):
+                                with gr.Row():
+                                    caption_proc_mode = gr.Radio(
+                                        label=translate('Caption Process Mode', args.language),
+                                        choices=translate(['prepend', 'append'], args.language),
+                                        value=translate('prepend', args.language),
+                                        scale=1,
                                         min_width=128,
                                     )
 
@@ -698,7 +702,7 @@ def create_ui(
                 image_key = Path(image_key).stem
                 image_info = dataset.get(image_key, None)
                 if image_info is None:
-                    raise ValueError(f"image key {image_key} not found in dataset")
+                    raise ValueError(f"image key `{image_key}` not found in dataset")
                 image_path = str(image_info.image_path) if image_info.image_path.is_file() else None
                 caption = str(image_info.caption) if image_info.caption is not None else None
                 return image_path, gr.update(value=caption, label=f"{translate('Caption', args.language)}: {image_key}"), f"{image_info.original_size[0]}x{image_info.original_size[1]}"
@@ -960,13 +964,15 @@ def create_ui(
                     raise gr.Error(f"invalid tag format: {tag}")
                 return tag
 
-            def add_tags(image_info, append, tags):
+            def add_tags(image_info, proc_mode, tags):
+                if args.language != 'en':
+                    proc_mode = translate(proc_mode, 'en')
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
-                if append:
+                if proc_mode == 'append':
                     caption = image_info.caption | tags
-                else:
+                elif proc_mode == 'prepend':
                     caption = tags | image_info.caption
                 return caption
 
@@ -979,56 +985,56 @@ def create_ui(
 
             tagging_color_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful color')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_detailed_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='detailed')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_lowres_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='lowres')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_messy_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='messy')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_aesthetic_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='aesthetic')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_beautiful_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='beautiful')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
-            tagging_x_btn.click(
-                fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='x')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+            tagging_amazing_quality_btn.click(
+                fn=edit_caption_wrapper(kwargs_setter(change_quality, quality='amazing')),
+                inputs=[image_path, batch_proc_checkbox],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
 
             tagging_y_btn.click(
                 fn=edit_caption_wrapper(kwargs_setter(add_tags, tags='y')),
-                inputs=[image_path, batch_proc_checkbox, append_tag_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1038,13 +1044,13 @@ def create_ui(
             for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
                 add_tag_btn.click(
                     fn=edit_caption_wrapper(add_tags),
-                    inputs=[image_path, batch_proc_checkbox, append_tag_checkbox, tag_selector],
+                    inputs=[image_path, batch_proc_checkbox, caption_proc_mode, tag_selector],
                     outputs=[caption, log_box],
                     concurrency_limit=1,
                 )
                 remove_tag_btn.click(
                     fn=edit_caption_wrapper(remove_tags),
-                    inputs=[image_path, batch_proc_checkbox, append_tag_checkbox, tag_selector],
+                    inputs=[image_path, batch_proc_checkbox, tag_selector],
                     outputs=[caption, log_box],
                     concurrency_limit=1,
                 )
@@ -1097,22 +1103,19 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def format_caption(image_info, format):
-                return FORMAT[format](image_info.caption)
-
-            format_dropdown.change(
-                fn=edit_caption_wrapper(format_caption),
-                inputs=[image_path, batch_proc_checkbox, format_dropdown],
-                outputs=[caption, log_box],
-                concurrency_limit=1,
-            )
-
-            def formalize_caption(image_info: ImageInfo):
-                return image_info.caption.formalized()
+            def formalize_caption(image_info: ImageInfo, formats):
+                if isinstance(formats, str):
+                    formats = [formats]
+                if args.language != 'en':
+                    formats = [translate(fmt, 'en') for fmt in formats]
+                caption = image_info.caption
+                for fmt in formats:
+                    caption = FORMAT[fmt](caption)
+                return caption
 
             formalize_caption_btn.click(
                 fn=edit_caption_wrapper(formalize_caption),
-                inputs=[image_path, batch_proc_checkbox],
+                inputs=[image_path, batch_proc_checkbox, caption_formats_dropdown],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
@@ -1137,7 +1140,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def defeature_caption(image_info, threshold):
+            def defeature_caption(image_info: ImageInfo, threshold):
                 nonlocal character_feature_table
                 if character_feature_table is None:
                     from ..tools import make_character_feature_table
@@ -1177,7 +1180,7 @@ def create_ui(
 
             wd14_run_btn.click(
                 fn=edit_caption_wrapper(wd14_tagging),
-                inputs=[image_path, batch_proc_checkbox, wd14_general_threshold, wd14_character_threshold, wd14_os_mode],
+                inputs=[image_path, batch_proc_checkbox, wd14_general_threshold, wd14_character_threshold, wd14_caption_proc_mode],
                 outputs=[caption, log_box],
                 concurrency_limit=1,
             )
