@@ -45,3 +45,38 @@ def cvt2rgb(image: np.ndarray):
         return cv2.merge((gray_channel, gray_channel, gray_channel))
     else:
         raise ValueError(f"Invalid image shape {image.shape}.")
+
+
+def parse_gen_info(metadata):
+    gen_info = {}
+    try:
+        if 'parameters' in metadata:  # webui style
+            params: str = metadata['parameters']
+            if 'Negative prompt: ' in params:
+                positive_prompt, params = params.split('Negative prompt: ', 1)
+                negative_prompt, params = params.split('Steps: ', 1)
+            else:
+                positive_prompt, params = params.split('Steps: ', 1)
+                negative_prompt = ''
+            params = 'Steps: ' + params
+            params = params.split(', ')
+            params = [param.split(': ') for param in params]
+            params = {param[0]: param[1] for param in params}
+
+            gen_info['Positive prompt'] = positive_prompt
+            gen_info['Negative prompt'] = negative_prompt
+            gen_info.update(params)
+        elif 'Title' in metadata:  # nai style
+            gen_info.update(metadata)
+            del gen_info['Comment']
+            params = gen_info['Comment']
+            params = {k.capitalize(): v for k, v in params}
+            gen_info.update(params)
+        else:
+            if len(metadata) != 0:
+                # print(f"unknown metadata: {metadata}")
+                ...
+    except ValueError:
+        print(f"unknown metadata: {metadata}")
+        raise
+    return gen_info

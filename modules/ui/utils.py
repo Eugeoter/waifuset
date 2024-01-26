@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Iterable
 from ..utils import log_utils as logu
 
 
@@ -54,7 +55,9 @@ def translate(text, language='en'):
         'cn': en2cn,
     }
     translator = translator.get(language, cn2en)
-    if isinstance(text, list):
-        return [translator(t) for t in text]
+    if isinstance(text, str):
+        return translator(text.replace('_', ' '))
+    elif isinstance(text, Iterable):
+        return [translator(t.replace('_', ' ')) for t in text]
     else:
-        return translator(text)
+        raise TypeError(f'Unsupported type: {type(text)}')

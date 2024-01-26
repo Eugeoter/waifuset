@@ -1,2 +1,2 @@
 from .classes.caption import tagging
-from .classes.dataset import mapping
+from .classes.dataset import mapping, sorting

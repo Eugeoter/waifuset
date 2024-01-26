@@ -54,14 +54,33 @@ class UIEditHistory:
             raise ValueError(f"img_key={img_key} not in history. You should init by `init(img_key, img_info)` first.")
         self._z[img_key].append(img_info.copy() if img_info else None)
         self._y[img_key] = []
-        # print(f"history[{img_key}]: \n{[f'{i.key}: {i.caption}' if i is not None else None for i in self._z[img_key]]}\n{[f'{i.key}: {i.caption}' if i is not None else None for i in self._y[img_key]]}")
+
+        # DEBUG
+        # print(f"history[{img_key}]:")
+        # print(f"  [Z]:")
+        # for i, img_info in enumerate(self._z[img_key]):
+        #     info_dict = img_info.dict() if img_info is not None else None
+        #     info_dict = '\n'.join([f'    {k}: {v}' for k, v in info_dict.items()]) if info_dict is not None else None
+        #     print(f"    [{i}]: {info_dict}")
+
+        # print(f"  [Y]:")
+        # for i, img_info in enumerate(self._y[img_key]):
+        #     info_dict = img_info.dict() if img_info is not None else None
+        #     info_dict = '\n'.join([f'    {k}: {v}' for k, v in info_dict.items()]) if info_dict is not None else None
+        #     print(f"    [{i}]: {info_dict}")
 
     def undo(self, img_key):
         if img_key not in self._z or len(self._z[img_key]) <= 1:
             return LAMBDA
         self._y[img_key].append(self._z[img_key].pop())
         img_info = self._z[img_key][-1]
-        # print(f"undo return: {f'{img_info.key}: {img_info.caption}' if img_info is not None else None}")
+
+        # DEBUG
+        # print(f"undo return:")
+        # info_dict = img_info.dict() if img_info is not None else None
+        # info_dict = '\n'.join([f'    {k}: {v}' for k, v in info_dict.items()]) if info_dict is not None else None
+        # print(f"  {info_dict}")
+
         return img_info
 
     def redo(self, img_key):
@@ -69,7 +88,13 @@ class UIEditHistory:
             return LAMBDA
         img_info = self._y[img_key].pop()
         self._z[img_key].append(img_info)
-        # print(f"redo return: {f'{img_info.key}: {img_info.caption}' if img_info is not None else None}")
+
+        # DEBUG
+        # print(f"redo return:")
+        # info_dict = img_info.dict() if img_info is not None else None
+        # info_dict = '\n'.join([f'    {k}: {v}' for k, v in info_dict.items()]) if info_dict is not None else None
+        # print(f"  {info_dict}")
+
         return img_info
 
     def items(self):
@@ -210,6 +235,19 @@ class UIChunkedDataset(Dataset):
         return math.ceil(len(self) / self.chunk_size) if self.chunk_size is not None else 1
 
 
+class UITab:
+    def __init__(self, tab: gr.Tab):
+        self._tab = tab
+
+    @property
+    def tab(self):
+        return self._tab
+
+    @tab.setter
+    def tab(self, value):
+        self._tab = value
+
+
 class UITagTable:
     def __init__(self):
         self._table: Dict[str, set] = {}
@@ -306,12 +344,17 @@ class UIDataset(UIChunkedDataset):
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):
             self.selected.index = selected.index
-            image_key = os.path.basename(os.path.splitext(selected.value['image']['orig_name'])[0])
+            image_filename = selected.value['image']['orig_name']
+            image_key = os.path.basename(os.path.splitext(image_filename)[0])
             self.selected.image_key = image_key
         elif isinstance(selected, tuple):
             self.selected.index, self.selected.image_key = selected
+        elif selected is None:
+            self.selected.index, self.selected.image_key = None, None
         else:
             raise NotImplementedError
+
+        # print(f"selected: {self.selected.index}, {self.selected.image_key}")
 
         return self.selected.image_key
 

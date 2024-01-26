@@ -2,6 +2,9 @@ pandas
 tqdm
 numpy
 pillow
+imagehash
 gradio==4.13.0
-onnxruntime-gpu
+# onnxruntime-gpu
+# torch
+# torchvision
 # onnxruntime

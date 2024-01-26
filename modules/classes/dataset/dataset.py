@@ -252,6 +252,9 @@ class Dataset(_father_class):
             samples = [image_info for image_info in self.values() if condition(image_info)][:n]
         return Dataset(samples)
 
+    def sort(self, key, reverse=False):
+        self._data = dict(sorted(self._data.items(), key=key, reverse=reverse))
+
     def __iter__(self):
         return iter(self._data)
 
