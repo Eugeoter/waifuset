@@ -136,5 +136,7 @@
     "has gen info": "具有生成信息",
     "random": "随机",
     "tools": "工具",
-    "hasher": "哈希器"
+    "hasher": "哈希器",
+    "min": "最小值",
+    "max": "最大值"
 }
