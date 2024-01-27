@@ -923,7 +923,6 @@ def create_ui(
                 if img_key != dataset.selected.image_key:  # fix
                     dataset.select((dataset.selected.index, img_key))
 
-                img_key = Path(img_key).stem
                 img_info = dataset.get(img_key)
                 img_path = img_info.image_path
                 if not img_path.is_file():
@@ -1153,12 +1152,12 @@ def create_ui(
                         return {log_box: f"{proc_func_log_name}: no change"}
                 return wrapper
 
-            def cancel_edit_caption():
-                return gr.update(), f"edit caption cancelled."
+            def cancel():
+                return {log_box: "cancelled."}
 
             cancel_event = cancel_btn.click(
-                fn=cancel_edit_caption,
-                outputs=[caption, log_box],
+                fn=cancel,
+                outputs=[log_box],
                 concurrency_limit=1,
             )
 
@@ -1515,6 +1514,7 @@ def create_ui(
                 inputs=[cur_image_key, proc_opts, waifu_scorer_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
+                cancels=cancel_event,
             )
 
             def aesthetic_score_to_quality(score):

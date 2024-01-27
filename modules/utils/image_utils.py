@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import json
 from PIL import Image
 
 
@@ -68,9 +69,12 @@ def parse_gen_info(metadata):
             gen_info.update(params)
         elif 'Title' in metadata:  # nai style
             gen_info.update(metadata)
+            params = gen_info['Comment']  # str
+            params = json.loads(params)  # dict
             del gen_info['Comment']
-            params = gen_info['Comment']
-            params = {k.capitalize(): v for k, v in params}
+            params = {k.capitalize(): v for k, v in params.items()}
+            params['Positive prompt'] = params.pop('Prompt')
+            params['Negative prompt'] = params.pop('Uc')
             gen_info.update(params)
         else:
             if len(metadata) != 0:
