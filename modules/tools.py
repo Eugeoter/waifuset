@@ -170,7 +170,7 @@ def track_modification(
 
 def make_character_feature_table(
     source,
-    threshold=0.3,
+    # threshold=0.3,
     verbose=True,
 ):
     from . import tagging
@@ -197,10 +197,10 @@ def make_character_feature_table(
         # freq_table = dict(sorted(freq_table.items(), key=lambda x: x[1], reverse=True))
         total_n = total_n_dic[char_tag]
         for feature_tag in freq_table:
-            freq_table[feature_tag] /= total_n
+            freq_table[feature_tag] = (freq_table[feature_tag], freq_table[feature_tag] / total_n)
 
-        if threshold is not None:
-            freq_table = {k: v for k, v in freq_table.items() if v >= threshold}
+        # if threshold is not None:
+        #     freq_table = {k: v for k, v in freq_table.items() if v[1] >= threshold}
 
         tag_freq_stat[char_tag] = freq_table
 
@@ -209,15 +209,18 @@ def make_character_feature_table(
 
 def remove_character_feature_tags(
     source,
-    threshold=0.3,
+    freq_thres=0.3,
+    count_thres=1,
     verbose=True,
 ):
     dataset = Dataset(source, verbose=verbose)
-    feature_table = make_character_feature_table(dataset, threshold=threshold, verbose=verbose)
+    feature_table = make_character_feature_table(dataset, verbose=verbose)
 
     # 3. remove tags from captions
     for image_key, image_info in tqdm(dataset.items(), desc='Removing', disable=not verbose):
-        dataset[image_key].caption = image_info.caption.defeatured(ref=feature_table, threshold=threshold) if image_info.caption else None
+        caption: Caption = image_info.caption
+        if caption is not None:
+            dataset[image_key].caption = caption.defeatured(ref=feature_table, freq_thres=freq_thres, count_thres=count_thres)
 
     if verbose:
         logu.success('Done.')

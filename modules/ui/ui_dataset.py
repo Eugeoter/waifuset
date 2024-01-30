@@ -10,8 +10,10 @@ import functools
 from pathlib import Path
 from tqdm import tqdm
 from typing import List, Iterable, Dict, Any, Callable, Union, Tuple
-from ..classes import Dataset, ImageInfo
+from ..classes import Dataset, ImageInfo, Caption
+from ..classes.caption.caption import preprocess_tag
 from ..utils import log_utils as logu
+from .. import tagging
 
 
 class UISelectData:
@@ -260,23 +262,34 @@ class UITagTable:
             if key in key_set:
                 key_set.remove(key)
 
-    def add(self, tag, key):
+    def add(self, tag, key, preprocess=True):
+        if preprocess:
+            tag = preprocess_tag(tag)
         if tag not in self._table:
             self._table[tag] = set()
         self._table[tag].add(key)
+        # if 'jinx' in tag:
+        #     print(f"table[{tag}] += {key}")
 
-    def remove(self, tag, key):
+    def remove(self, tag, key, preprocess=True):
+        if preprocess:
+            tag = preprocess_tag(tag)
         if tag not in self._table:
             return
         self._table[tag].remove(key)
         if len(self._table[tag]) == 0:
             del self._table[tag]
+        # if 'jinx' in tag:
+        #     print(f"table[{tag}] -= {key}")
 
     def __contains__(self, tag):
         return tag in self._table
 
     def __getitem__(self, tag):
         return self._table[tag]
+
+    def __len__(self):
+        return len(self._table)
 
     def keys(self):
         return self._table.keys()
@@ -328,14 +341,15 @@ class UIDataset(UIChunkedDataset):
     #         subsets[v.category][k] = v
     #     self.subsets = subsets
 
-    def init_tag_table(self, subset_key=None):
+    def init_tag_table(self):
         if self.tag_table is not None:
             return
         self.tag_table = UITagTable()
         for image_key, image_info in tqdm(self.items(), desc='initializing tag table'):
-            if not image_info.caption:
+            caption = image_info.caption
+            if caption is None:
                 continue
-            for tag in image_info.caption:
+            for tag in caption:
                 self.tag_table.add(tag, image_key)
 
     def make_subset(self, condition: Callable[[ImageInfo], bool], chunk_size=None, *args, **kwargs):
@@ -381,13 +395,20 @@ class UIDataset(UIChunkedDataset):
     # core setitem method
     def __setitem__(self, key, value):
         img_info = self.get(key)
+        # print(f"setitem {key} from {img_info.caption} to {value.caption}")
 
         # update tag table
-        if img_info is not None and self.tag_table:
-            for tag in value.caption - img_info.caption:  # introduce new tags
-                self.tag_table.add(tag, key)
-            for tag in img_info.caption - value.caption:  # remove old tags
-                self.tag_table.remove(tag, key)
+        if self.tag_table is not None:
+            orig_caption = Caption() if img_info is None or img_info.caption is None else img_info.caption
+            new_caption = Caption() if value is None or value.caption is None else value.caption
+            orig_caption.tags = [preprocess_tag(tag) for tag in orig_caption.tags]
+            new_caption.tags = [preprocess_tag(tag) for tag in new_caption.tags]
+            # print(f"add tags: {new_caption - orig_caption}")
+            for tag in new_caption - orig_caption:  # introduce new tags
+                self.tag_table.add(tag, key, preprocess=False)
+            # print(f"remove tags: {orig_caption - new_caption}")
+            for tag in orig_caption - new_caption:  # remove old tags
+                self.tag_table.remove(tag, key, preprocess=False)
 
         super().__setitem__(key, value)
 
@@ -417,6 +438,7 @@ class UIDataset(UIChunkedDataset):
 
     # setitem with updating history
     def set(self, key, value):
+        # print(f"set {key}")
         if self[key] == value:
             return
 

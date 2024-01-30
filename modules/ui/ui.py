@@ -103,6 +103,7 @@ def create_ui(
     # ========================================= UI ========================================= #
 
     from ..classes import Dataset, ImageInfo, Caption
+    from ..classes.caption.caption import preprocess_tag
     from .ui_dataset import UIChunkedDataset, UISampleHistory, UITagPriorityManager, TagPriority, UITab
     from .utils import open_file_folder, translate
 
@@ -161,11 +162,11 @@ def create_ui(
                 buffer = dataset.buffer
                 sample_history = UISampleHistory()
                 tag_table = None
+                tag_feature_table = {}
 
                 cur_dataset = dataset
                 wd14 = None
                 waifu_scorer = None
-                character_feature_table = None
 
                 with gr.Row():
                     with gr.Column():
@@ -314,7 +315,7 @@ def create_ui(
                                     tagging_best_quality_btn = cc.EmojiButton(Emoji.love_emotion, variant='primary', scale=1)
                                     tagging_high_quality_btn = cc.EmojiButton(Emoji.heart, scale=1)
                                     tagging_low_quality_btn = cc.EmojiButton(Emoji.broken_heart, scale=1)
-                                    tagging_hate_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
+                                    tagging_worst_quality_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
                                 with gr.Row(variant='compact'):
                                     tagging_color_btn = cc.EmojiButton(value=translate('Color', global_args.language), scale=1, variant='primary')
                                     tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', global_args.language), scale=1, variant='primary')
@@ -410,31 +411,53 @@ def create_ui(
                             #         )
 
                             with gr.Tab(label=translate('Optimizers', global_args.language)):
-                                with gr.Row(variant='compact'):
-                                    sort_caption_btn = cc.EmojiButton(translate('Sort', global_args.language), scale=1, min_width=116, variant='primary')
-                                    deduplicate_caption_btn = cc.EmojiButton(translate('Deduplicate', global_args.language), scale=1, min_width=116, variant='primary')
-                                    deoverlap_caption_btn = cc.EmojiButton(translate('De-Overlap', global_args.language), scale=1, min_width=116, variant='primary')
-                                with gr.Row(variant='compact'):
-                                    defeature_caption_btn = cc.EmojiButton(translate('De-Feature', global_args.language), scale=0, min_width=116, variant='primary')
-                                    defeature_caption_threshold = gr.Slider(
-                                        label=translate('Threshold', global_args.language),
-                                        container=False,
-                                        value=0.3,
-                                        minimum=0,
-                                        maximum=1,
-                                        step=0.01,
-                                    )
-                                with gr.Row(variant='compact'):
-                                    formalize_caption_btn = cc.EmojiButton(translate('Formalize', global_args.language), scale=0, min_width=116, variant='primary')
-                                    formalize_caption_dropdown = gr.Dropdown(
-                                        label=translate('Format', global_args.language),
-                                        choices=translate(list(FORMAT.keys()), global_args.language),
-                                        container=False,
-                                        value=None,
-                                        multiselect=True,
-                                        allow_custom_value=False,
-                                        scale=1,
-                                    )
+                                with gr.Tab(translate('Sort', global_args.language)):
+                                    with gr.Row(variant='compact'):
+                                        sort_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                with gr.Tab(translate('Deduplicate', global_args.language)):
+                                    with gr.Row(variant='compact'):
+                                        deduplicate_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                with gr.Tab(translate('Deoverlap', global_args.language)):
+                                    with gr.Row(variant='compact'):
+                                        deoverlap_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                with gr.Tab(translate('Defeature', global_args.language)):
+                                    with gr.Row(variant='compact'):
+                                        defeature_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                    with gr.Row(variant='compact'):
+                                        defeature_freq_thres = gr.Slider(
+                                            label=translate('Frequency Threshold', global_args.language),
+                                            value=0.3,
+                                            minimum=0,
+                                            maximum=1,
+                                            step=0.01,
+                                        )
+                                        defeature_count_thres = gr.Slider(
+                                            label=translate('Counting Threshold', global_args.language),
+                                            value=1,
+                                            minimum=1,
+                                            maximum=1000,
+                                            step=1,
+                                        )
+                                        defeature_least_sample_size = gr.Slider(
+                                            label=translate('Least Sample Size', global_args.language),
+                                            value=1,
+                                            minimum=1,
+                                            maximum=1000,
+                                            step=1,
+                                        )
+                                with gr.Tab(translate('Formalize', global_args.language)):
+                                    with gr.Row(variant='compact'):
+                                        formalize_caption_btn = cc.EmojiButton(translate('Formalize', global_args.language), scale=0, min_width=116, variant='primary')
+                                    with gr.Row(variant='compact'):
+                                        formalize_caption_dropdown = gr.Dropdown(
+                                            label=translate('Format', global_args.language),
+                                            choices=translate(list(FORMAT.keys()), global_args.language),
+                                            container=False,
+                                            value=None,
+                                            multiselect=True,
+                                            allow_custom_value=False,
+                                            scale=1,
+                                        )
 
                             with gr.Tab(label=translate('Tools', global_args.language)):
 
@@ -1234,7 +1257,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            tagging_hate_btn.click(
+            tagging_worst_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='worst')),
                 inputs=[image_path, proc_opts],
                 outputs=cur_image_key_change_listeners,
@@ -1442,17 +1465,43 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def defeature_caption(image_info: ImageInfo, threshold):
-                nonlocal character_feature_table
-                if character_feature_table is None:
-                    from ..tools import make_character_feature_table
-                    character_feature_table = make_character_feature_table(dataset, threshold=None, verbose=True)
-                image_info.caption = image_info.caption.defeatured(ref=character_feature_table, threshold=threshold)
+            def defeature_caption(image_info: ImageInfo, freq_thres, count_thres, least_sample_size, ref):
+                # make feature table using tag table
+                nonlocal tag_table, tag_feature_table
+                if tag_table is None:
+                    dataset.init_tag_table()
+                    tag_table = dataset.tag_table
+
+                caption: Caption = image_info.caption
+                if caption is None:
+                    return image_info
+                characters = caption.characters
+                if characters is None or len(characters) == 0:
+                    return image_info
+                for character in characters:
+                    character = preprocess_tag(character)
+                    if character not in ref:
+                        # print(f"making ref: `{character}`")
+                        ref[character] = {}
+                        img_keys = tag_table[character]
+                        img_infos = [dataset[key] for key in img_keys]
+                        if len(img_infos) < least_sample_size:
+                            continue
+                        for img_info in img_infos:
+                            cap = img_info.caption
+                            for tag in cap & tagging.REGEX_CHARACTER_FEATURES:
+                                tag = preprocess_tag(tag)
+                                if tag not in ref[character]:
+                                    ref[character][tag] = 0
+                                ref[character][tag] += 1
+                        ref[character] = {tag: (count, count / len(img_infos)) for tag, count in ref[character].items()}
+
+                image_info.caption = caption.defeatured(ref=ref, freq_thres=freq_thres, count_thres=count_thres)
                 return image_info
 
             defeature_caption_btn.click(
-                fn=data_edition_handler(defeature_caption),
-                inputs=[image_path, proc_opts, defeature_caption_threshold],
+                fn=lambda *args: data_edition_handler(defeature_caption)(*args, ref={}),
+                inputs=[image_path, proc_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )

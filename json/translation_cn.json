@@ -32,8 +32,8 @@
     "formalize": "格式化",
     "sort": "标签排序",
     "deduplicate": "一般去重",
-    "de-overlap": "语义去重",
-    "de-feature": "去除特征",
+    "deoverlap": "语义去重",
+    "defeature": "去除特征",
     "general threshold": "一般阈值",
     "character threshold": "角色阈值",
     "os mode": "覆盖模式",
@@ -138,5 +138,8 @@
     "tools": "工具",
     "hasher": "哈希器",
     "min": "最小值",
-    "max": "最大值"
+    "max": "最大值",
+    "frequency threshold": "词频阈值",
+    "counting threshold": "计数阈值",
+    "least sample size": "最小样本尺寸"
 }

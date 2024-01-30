@@ -185,13 +185,14 @@ class Caption:
                 caption._tags[i] = tag[11:]
         return Caption(caption)
 
-    def defeatured(self, ref, threshold=0.3):
-        caption = self.copy().spaced().escaped()
+    def defeatured(self, ref, freq_thres=0.3, count_thres=1):
+        caption = self.copy()
         if caption.characters and len(caption.characters) > 0:
             for char_tag in caption.characters:
+                char_tag = preprocess_tag(char_tag)
                 freq_table = ref[char_tag]
-                for tag, freq in freq_table.items():
-                    if freq >= threshold:
+                for tag, (count, freq) in freq_table.items():
+                    if freq >= freq_thres and count >= count_thres:
                         caption -= tag
         return caption
 
@@ -486,6 +487,20 @@ def captionize(caption_or_tags, sep=', '):
         return ''
     else:
         raise TypeError(f"cannot convert type `{type(caption_or_tags).__name__}` to caption")
+
+
+def preprocess_tag(tag):
+    tag = tag.lower().replace('_', ' ').strip()
+    if '(' in tag and ')' in tag:
+        tag = tagging.REGEX_UNESCAPED_BRACKET.sub(r'\\\1', tag)
+    if ':' in tag:
+        if tag.startswith('character:'):
+            tag = tag[10:].strip()
+        elif tag.startswith('artist:'):
+            tag = tag[7:].strip()
+        elif tag.startswith('style:'):
+            tag = tag[6:].strip()
+    return tag
 
 
 def preprocess(caption):
