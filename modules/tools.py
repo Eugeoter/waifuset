@@ -180,7 +180,10 @@ def make_character_feature_table(
     tag_freq_stat = {}
     total_n_dic = Counter()
     for image_info in tqdm(dataset.values(), desc='Stage 1/2: querying', disable=not verbose):
-        caption: Caption = image_info.caption.spaced().escaped()
+        caption: Caption = image_info.caption
+        if caption is None:
+            continue
+        caption = caption.spaced().escaped()
         if caption is not None and caption.characters is not None and len(caption.characters) > 0:
             if isinstance(caption.characters, str):
                 caption.characters = [caption.characters]

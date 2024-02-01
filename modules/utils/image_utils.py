@@ -65,32 +65,6 @@ def cvt2gray(image: np.ndarray):
         raise ValueError(f"Invalid image shape {image.shape}.")
 
 
-def phash(image: np.ndarray, hash_size=8, highfreq_factor=4):
-    # type: (Image.Image, int, int) -> ImageHash
-    """
-    Perceptual Hash computation.
-
-    Implementation follows http://www.hackerfactor.com/blog/index.php?/archives/432-Looks-Like-It.html
-
-    @image must be a PIL instance.
-    """
-    if hash_size < 2:
-        raise ValueError('Hash size must be greater than or equal to 2')
-
-    import scipy.fftpack
-    from imagehash import ImageHash
-
-    img_size = hash_size * highfreq_factor
-    # convert to grayscale
-    image = cvt2gray(image)
-    image = cv2.resize(image, (img_size, img_size), interpolation=cv2.INTER_AREA)
-    dct = scipy.fftpack.dct(scipy.fftpack.dct(image, axis=0), axis=1)
-    dctlowfreq = dct[:hash_size, :hash_size]
-    med = np.median(dctlowfreq)
-    diff = dctlowfreq > med
-    return ImageHash(diff)
-
-
 def parse_gen_info(metadata):
     gen_info = {}
     try:
