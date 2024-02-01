@@ -1,5 +1,6 @@
 import gradio as gr
 import random
+import cv2
 import numpy as np
 import re
 import os
@@ -1233,7 +1234,9 @@ def create_ui(
             # ========================================= Quick Tagging ========================================= #
 
             def change_quality(image_info: ImageInfo, quality):
-                image_info.caption.quality = quality
+                caption = image_info.caption or Caption()
+                caption.quality = quality
+                image_info.caption = caption
                 return image_info
 
             tagging_best_quality_btn.click(
@@ -1281,17 +1284,21 @@ def create_ui(
                 return tag
 
             def add_tags(image_info, tags, append):
+                caption = image_info.caption or Caption()
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
                 if append:
-                    caption = (image_info.caption - tags) | tags
+                    caption = (caption - tags) | tags
                 else:
-                    caption = tags | image_info.caption
+                    caption = tags | caption
                 image_info.caption = caption
                 return image_info
 
             def remove_tags(image_info, tags, regex):
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
@@ -1413,9 +1420,12 @@ def create_ui(
 
             # ========================================= Optimizers ========================================= #
             def sort_caption(image_info):
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
                 nonlocal tag_priority_manager
                 tagging.init_priority_tags()
-                image_info.caption = image_info.caption @ tag_priority_manager.priority_regex
+                image_info.caption = caption @ tag_priority_manager.priority_regex
                 return image_info
 
             sort_caption_btn.click(
@@ -1426,11 +1436,13 @@ def create_ui(
             )
 
             def formalize_caption(image_info: ImageInfo, formats):
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
                 if isinstance(formats, str):
                     formats = [formats]
                 if global_args.language != 'en':
                     formats = [translate(fmt, 'en') for fmt in formats]
-                caption = image_info.caption
                 for fmt in formats:
                     caption = FORMAT[fmt](caption)
                 image_info.caption = caption
@@ -1444,7 +1456,10 @@ def create_ui(
             )
 
             def deduplicate_caption(image_info):
-                image_info.caption = image_info.caption.unique()
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
+                image_info.caption = caption.unique()
                 return image_info
 
             deduplicate_caption_btn.click(
@@ -1455,7 +1470,10 @@ def create_ui(
             )
 
             def deoverlap_caption(image_info):
-                image_info.caption = image_info.caption.deovlped()
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
+                image_info.caption = caption.deovlped()
                 return image_info
 
             deoverlap_caption_btn.click(
@@ -1585,10 +1603,10 @@ def create_ui(
                     return 'horrible'
 
             def change_quality_according_to_aesthetic_score(image_info: ImageInfo, os_mode):
+                caption = image_info.caption
+                orig_quality = caption.quality if caption is not None else None
                 if global_args.language != 'en':
                     os_mode = translate(os_mode, 'en')
-
-                orig_quality = image_info.caption.quality
                 if orig_quality is not None and os_mode == 'ignore':
                     return image_info
                 score = image_info.aesthetic_score
@@ -1625,10 +1643,10 @@ def create_ui(
                 except ImportError:
                     raise gr.Error("imagehash package is not installed!")
 
-                image = Image.open(image_info.image_path)
                 orig_p_hash = image_info.perceptual_hash
                 if orig_p_hash is not None and os_mode == 'ignore':
                     return image_info
+                image = Image.open(image_info.image_path)
                 p_hash = imagehash.phash(image)
                 image_info.perceptual_hash = p_hash
                 return image_info
