@@ -365,15 +365,19 @@ def create_ui(
                                         with gr.Row(variant='compact'):
                                             replace_tag_btn = cc.EmojiButton(Emoji.clockwise_downwards_and_upwards_open_circle_arrows, variant='primary')
                                             old_tag_selector = gr.Dropdown(
+                                                # label=translate('Replacer', global_args.language),
                                                 choices=list(tagging.CUSTOM_TAGS),
-                                                value='Old',
+                                                value=None,
+                                                container=False,
                                                 multiselect=False,
                                                 allow_custom_value=True,
                                                 min_width=96,
                                             )
                                             new_tag_selector = gr.Dropdown(
+                                                # label=translate('Replacement', global_args.language),
                                                 choices=list(tagging.CUSTOM_TAGS),
-                                                value='New',
+                                                value=None,
+                                                container=False,
                                                 multiselect=False,
                                                 allow_custom_value=True,
                                                 min_width=96,
@@ -484,12 +488,11 @@ def create_ui(
                                         )
                                 with gr.Tab(translate('Formalize', global_args.language)):
                                     with gr.Row(variant='compact'):
-                                        formalize_caption_btn = cc.EmojiButton(translate('Formalize', global_args.language), scale=0, min_width=116, variant='primary')
+                                        formalize_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, scale=0, min_width=40, variant='primary')
                                     with gr.Row(variant='compact'):
                                         formalize_caption_dropdown = gr.Dropdown(
                                             label=translate('Format', global_args.language),
                                             choices=translate(list(FORMAT.keys()), global_args.language),
-                                            container=False,
                                             value=None,
                                             multiselect=True,
                                             allow_custom_value=False,

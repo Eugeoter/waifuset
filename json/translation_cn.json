@@ -143,5 +143,8 @@
     "counting threshold": "计数阈值",
     "least sample size": "最小样本尺寸",
     "replace": "替换",
-    "add/remove": "添加/移除"
+    "add/remove": "添加/移除",
+    "reverse": "倒序",
+    "replacer": "被替换项",
+    "replacement": "替换项"
 }
