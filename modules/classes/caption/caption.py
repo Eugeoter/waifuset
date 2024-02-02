@@ -114,6 +114,8 @@ class Caption:
         """
         if isinstance(pattern, str):
             regex = re.compile(pattern)
+        else:
+            regex = pattern
         tags = self._tags.copy()
         for i, tag in enumerate(tags):
             tag = regex.sub(replacement, tag)

@@ -329,36 +329,72 @@ def create_ui(
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
                             with gr.Tab(label=translate('Custom Tagging', global_args.language)):
-                                def custom_tagging_row():
-                                    with gr.Row(variant='compact'):
-                                        add_tag_btn = cc.EmojiButton(Emoji.plus, variant='primary')
-                                        tag_selector = gr.Dropdown(
-                                            choices=list(tagging.CUSTOM_TAGS),
-                                            value=None,
-                                            multiselect=True,
-                                            allow_custom_value=True,
-                                            show_label=False,
-                                            container=False,
-                                            min_width=96,
-                                        )
-                                        remove_tag_btn = cc.EmojiButton(Emoji.minus, variant='stop')
-                                    return add_tag_btn, tag_selector, remove_tag_btn
+                                with gr.Tab(translate("Add/Remove", global_args.language)) as add_remove_tab:
+                                    def custom_add_rem_tagging_row():
+                                        with gr.Row(variant='compact'):
+                                            add_tag_btn = cc.EmojiButton(Emoji.plus, variant='primary')
+                                            tag_selector = gr.Dropdown(
+                                                choices=list(tagging.CUSTOM_TAGS),
+                                                value=None,
+                                                multiselect=True,
+                                                allow_custom_value=True,
+                                                show_label=False,
+                                                container=False,
+                                                min_width=96,
+                                            )
+                                            remove_tag_btn = cc.EmojiButton(Emoji.minus, variant='stop')
+                                        return add_tag_btn, tag_selector, remove_tag_btn
 
-                                add_tag_btns = []
-                                tag_selectors = []
-                                remove_tag_btns = []
-                                for r in range(3):
-                                    add_tag_btn, tag_selector, remove_tag_btn = custom_tagging_row()
-                                    add_tag_btns.append(add_tag_btn)
-                                    tag_selectors.append(tag_selector)
-                                    remove_tag_btns.append(remove_tag_btn)
-
-                                with gr.Accordion(label=translate('More', global_args.language), open=False):
-                                    for r in range(6):
-                                        add_tag_btn, tag_selector, remove_tag_btn = custom_tagging_row()
+                                    add_tag_btns = []
+                                    tag_selectors = []
+                                    remove_tag_btns = []
+                                    for r in range(3):
+                                        add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
                                         add_tag_btns.append(add_tag_btn)
                                         tag_selectors.append(tag_selector)
                                         remove_tag_btns.append(remove_tag_btn)
+
+                                    with gr.Accordion(label=translate('More', global_args.language), open=False):
+                                        for r in range(6):
+                                            add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
+                                            add_tag_btns.append(add_tag_btn)
+                                            tag_selectors.append(tag_selector)
+                                            remove_tag_btns.append(remove_tag_btn)
+                                with gr.Tab(translate("Replace", global_args.language)) as replace_tab:
+                                    def custom_replace_tagging_row():
+                                        with gr.Row(variant='compact'):
+                                            replace_tag_btn = cc.EmojiButton(Emoji.clockwise_downwards_and_upwards_open_circle_arrows, variant='primary')
+                                            old_tag_selector = gr.Dropdown(
+                                                choices=list(tagging.CUSTOM_TAGS),
+                                                value='Old',
+                                                multiselect=False,
+                                                allow_custom_value=True,
+                                                min_width=96,
+                                            )
+                                            new_tag_selector = gr.Dropdown(
+                                                choices=list(tagging.CUSTOM_TAGS),
+                                                value='New',
+                                                multiselect=False,
+                                                allow_custom_value=True,
+                                                min_width=96,
+                                            )
+                                        return replace_tag_btn, old_tag_selector, new_tag_selector
+
+                                    replace_tag_btns = []
+                                    old_tag_selectors = []
+                                    new_tag_selectors = []
+                                    for r in range(3):
+                                        replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
+                                        replace_tag_btns.append(replace_tag_btn)
+                                        old_tag_selectors.append(old_tag_selector)
+                                        new_tag_selectors.append(new_tag_selector)
+
+                                    with gr.Accordion(label=translate('More', global_args.language), open=False):
+                                        for r in range(6):
+                                            replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
+                                            replace_tag_btns.append(replace_tag_btn)
+                                            old_tag_selectors.append(old_tag_selector)
+                                            new_tag_selectors.append(new_tag_selector)
 
                             # ! Deprecated
                             # with gr.Tab(label=translate('Operational Tagging', global_args.language)):
@@ -1379,6 +1415,32 @@ def create_ui(
                 remove_tag_btn.click(
                     fn=data_edition_handler(remove_tags),
                     inputs=[image_path, proc_opts, tag_selector],
+                    outputs=cur_image_key_change_listeners,
+                    concurrency_limit=1,
+                )
+
+            def replace_tag(image_info, old, new, regex):
+                caption = image_info.caption
+                if caption is None:
+                    return image_info
+                if regex:
+                    try:
+                        old = re.compile(old)
+                    except re.error as e:
+                        raise gr.Error(f"invalid regex `{old}`: {e}")
+                    try:
+                        caption = caption.sub(old, new)
+                    except re.error as e:
+                        raise gr.Error(f"regex error: {e}")
+                else:
+                    caption = caption.replace(old, new)
+                image_info.caption = caption
+                return image_info
+
+            for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
+                replace_tag_btn.click(
+                    fn=data_edition_handler(replace_tag),
+                    inputs=[image_path, proc_opts, old_tag_selector, new_tag_selector],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )

@@ -141,5 +141,7 @@
     "max": "最大值",
     "frequency threshold": "词频阈值",
     "counting threshold": "计数阈值",
-    "least sample size": "最小样本尺寸"
+    "least sample size": "最小样本尺寸",
+    "replace": "替换",
+    "add/remove": "添加/移除"
 }
