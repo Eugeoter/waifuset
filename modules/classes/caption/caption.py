@@ -180,11 +180,11 @@ class Caption:
         caption = self.spaced().escaped()
         for i, tag in enumerate(caption):
             if tagging.REGEX_ARTIST.match(tag):
-                caption._tags[i] = f"by {tag[7:]}"
+                caption._tags[i] = f"by {tag[7:].strip()}"
             elif tagging.REGEX_STYLE.match(tag):
-                caption._tags[i] = tag[6:]
+                caption._tags[i] = tag[6:].strip()
             elif tagging.REGEX_CHARACTER.match(tag):
-                caption._tags[i] = tag[11:]
+                caption._tags[i] = tag[11:].strip()
         return Caption(caption)
 
     def defeatured(self, ref, freq_thres=0.3, count_thres=1):

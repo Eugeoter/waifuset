@@ -4,7 +4,10 @@ numpy
 pillow
 imagehash
 gradio==4.13.0
+# huggingface-hub
 # onnxruntime-gpu
 # torch
 # torchvision
 # onnxruntime
+# pytorch-lightning
+# git+https://github.com/openai/CLIP.git

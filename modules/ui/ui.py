@@ -72,7 +72,7 @@ def prepare_dataset(
 
     dataset = UIDataset(
         args.source,
-        formalize_caption=args.formalize_caption,
+        formalize_caption=False,
         write_to_database=args.write_to_database,
         write_to_txt=args.write_to_txt,
         database_file=args.database_file,
