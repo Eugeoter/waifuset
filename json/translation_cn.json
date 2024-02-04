@@ -30,7 +30,7 @@
     "image path": "图像路径",
     "info": "数据信息",
     "formalize": "格式化",
-    "sort": "标签排序",
+    "sort": "排序",
     "deduplicate": "一般去重",
     "deoverlap": "语义去重",
     "defeature": "去除特征",
@@ -146,5 +146,6 @@
     "add/remove": "添加/移除",
     "reverse": "倒序",
     "replacer": "被替换项",
-    "replacement": "替换项"
+    "replacement": "替换项",
+    "source": "数据源"
 }

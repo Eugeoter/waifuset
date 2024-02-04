@@ -108,36 +108,6 @@ def create_ui(
     from .ui_dataset import UIChunkedDataset, UISampleHistory, UITagPriorityManager, TagPriority, UITab
     from .utils import open_file_folder, translate
 
-    # args validation
-    if global_args.language not in ['en', 'cn']:
-        print(f"language {global_args.language} not supported, using `en` instead")
-        global_args.language = 'en'
-    global_args.max_workers = max(1, min(global_args.max_workers, os.cpu_count() - 1))
-    global_args.chunk_size = max(1, global_args.chunk_size)
-    if not global_args.write_to_database and not global_args.write_to_txt:
-        print("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
-
-    # import priority config
-    tagging.init_priority_tags()
-    tag_priority_manager = None
-
-    def import_priority_config():
-        import json
-        nonlocal tag_priority_manager
-        with open(global_args.tag_priority_config_path, 'r') as f:
-            config = json.load(f)
-        for name, patterns in tagging.PRIORITY.items():
-            if name in config:
-                config[name].extend(patterns)
-        tag_priority_manager = UITagPriorityManager(config)
-        return f"priority config loaded"
-
-    try:
-        import_priority_config()
-    except Exception as e:
-        print(f"failed to load priority config: {e}")
-        tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
-
     def dataset_to_metadata_df(dset):
         num_images = len(dset)
         cats = sorted(list(set(img_info.category for img_info in dset.values()))) if len(dset) > 0 else []
@@ -153,63 +123,201 @@ def create_ui(
         )
         return df
 
+    def import_priority_config():
+        import json
+        nonlocal tag_priority_manager
+        with open(global_args.tag_priority_config_path, 'r') as f:
+            config = json.load(f)
+        for name, patterns in tagging.PRIORITY.items():
+            if name in config:
+                config[name].extend(patterns)
+        tag_priority_manager = UITagPriorityManager(config)
+        return f"priority config loaded"
+
+    def init_everything():
+        # args validation
+        if global_args.language not in ['en', 'cn']:
+            print(f"language {global_args.language} not supported, using `en` instead")
+            global_args.language = 'en'
+        global_args.max_workers = max(1, min(global_args.max_workers, os.cpu_count() - 1))
+        global_args.chunk_size = max(1, global_args.chunk_size)
+        if not global_args.write_to_database and not global_args.write_to_txt:
+            print("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
+
+        # import priority config
+        tagging.init_priority_tags()
+        tag_priority_manager = None
+
+        try:
+            import_priority_config()
+            assert tag_priority_manager is not None
+        except Exception as e:
+            print(f"failed to load priority config: {e}")
+            tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
+
+        # init dataset
+        main_dataset = prepare_dataset(global_args)
+        cur_dataset = main_dataset
+        buffer = main_dataset.buffer
+        sample_history = UISampleHistory()
+        tag_table = None
+        tag_feature_table = {}
+
+        waifu_tagger = None
+        waifu_scorer = None
+
+        return main_dataset, buffer, sample_history, tag_priority_manager, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table
+
+    main_dataset, buffer, sample_history, tag_priority_manager, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
+
+    with open('./api.css', 'r', encoding='utf-8') as css_file:
+        css = css_file.read()
+
     # demo
-    with gr.Blocks() as demo:
+    with gr.Blocks(css=css) as demo:
         with gr.Tab(label=translate('Dataset', global_args.language)) as dataset_tab:
             with gr.Tab(translate('Main', global_args.language)) as main_tab:
                 # ========================================= Base variables ========================================= #
 
-                dataset = prepare_dataset(global_args)
-                buffer = dataset.buffer
-                sample_history = UISampleHistory()
-                tag_table = None
-                tag_feature_table = {}
-
-                cur_dataset = dataset
-                wd14 = None
-                waifu_scorer = None
-
                 with gr.Row():
                     with gr.Column():
-                        with gr.Row():
-                            category_selector = gr.Dropdown(
-                                label=translate('Category', global_args.language),
-                                choices=dataset.categories,
-                                value=None,
-                                multiselect=True,
-                                allow_custom_value=False,
-                                min_width=256,
-                            )
-                            cur_chunk_index = gr.Number(label=f"{translate('Chunk', global_args.language)} {1}/{cur_dataset.num_chunks}", value=1, min_width=128, precision=0, scale=0)
-                    with gr.Column():
-                        with gr.Row():
-                            sorting_methods_dropdown = gr.Dropdown(
-                                label=translate('Sorting Methods', global_args.language),
-                                choices=translate(SORTING_METHODS.keys(), global_args.language),
-                                value=None,
-                                multiselect=True,
-                                allow_custom_value=False,
-                                min_width=256,
-                            )
-                            reverse_checkbox = gr.Checkbox(
-                                label=translate('Reverse', global_args.language),
-                                value=False,
-                                container=True,
-                                scale=0,
-                                min_width=128,
-                            )
+                        with gr.Tab(translate('Category', global_args.language)):
+                            with gr.Row():
+                                category_selector = gr.Dropdown(
+                                    label=translate('Category', global_args.language),
+                                    choices=main_dataset.categories,
+                                    value=None,
+                                    container=False,
+                                    multiselect=True,
+                                    allow_custom_value=False,
+                                    min_width=256,
+                                )
+                                reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
 
-                with gr.Row():
-                    with gr.Column():
-                        with gr.Row():
-                            reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
+                        with gr.Tab(translate('Sort', global_args.language)):
+                            with gr.Row():
+                                sorting_methods_dropdown = gr.Dropdown(
+                                    label=translate('Sorting Methods', global_args.language),
+                                    choices=translate(SORTING_METHODS.keys(), global_args.language),
+                                    value=None,
+                                    container=False,
+                                    multiselect=True,
+                                    allow_custom_value=False,
+                                    min_width=256,
+                                )
+                                sorting_reverse_checkbox = gr.Checkbox(
+                                    label=translate('Reverse', global_args.language),
+                                    value=False,
+                                    container=False,
+                                    scale=0,
+                                    min_width=128,
+                                )
+
+                        with gr.Tab(translate('Query', global_args.language)):
+                            with gr.Row():
+                                query_use_regex = gr.Checkbox(
+                                    label=translate('Regex', global_args.language),
+                                    value=False,
+                                    container=False,
+                                    scale=0,
+                                    min_width=128,
+                                )
+                            with gr.Tab(translate("Tag", global_args.language)) as query_tag_tab:
+                                with gr.Row(variant='compact'):
+                                    query_refresh_tag_list_btn = cc.EmojiButton(Emoji.anticlockwise)
+                                    query_unload_tag_list_btn = cc.EmojiButton(Emoji.no_entry)
+
+                                with gr.Row(variant='compact'):
+                                    query_include_condition = gr.Dropdown(
+                                        label=translate('If', global_args.language),
+                                        choices=translate(list(CONDITION.keys()), global_args.language),
+                                        value=translate(list(CONDITION.keys())[0], global_args.language),
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=128,
+                                        scale=0,
+                                    )
+                                    query_include_tags = gr.Dropdown(
+                                        label=translate('Include', global_args.language),
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+                                    query_joiner_dropdown = gr.Dropdown(
+                                        label=translate('Joiner', global_args.language),
+                                        choices=translate(list(JOINER.keys()), global_args.language),
+                                        value=translate(list(JOINER.keys())[0], global_args.language),
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=108,
+                                        scale=0,
+                                    )
+
+                                with gr.Row(variant='compact'):
+                                    query_exclude_condition = gr.Dropdown(
+                                        label=translate('If', global_args.language),
+                                        choices=translate(list(CONDITION.keys()), global_args.language),
+                                        value=translate(list(CONDITION.keys())[0], global_args.language),
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        min_width=128,
+                                        scale=0,
+                                    )
+                                    query_exclude_tags = gr.Dropdown(
+                                        label=translate('Exclude', global_args.language),
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+                                    query_tab_table_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
+
+                            with gr.Tab(translate("Filename", global_args.language)) as query_filename_tab:
+                                with gr.Row(variant='compact'):
+                                    query_filename_selector = gr.Dropdown(
+                                        label=translate('Include', global_args.language),
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+                                    query_filename_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
+
+                            with gr.Tab(translate("Aesthetic Score", global_args.language)) as query_aes_score_tab:
+                                with gr.Row(variant='compact'):
+                                    query_min_aes_score = gr.Number(
+                                        label=translate('Min', global_args.language),
+                                        value=0,
+                                        min_width=128,
+                                        precision=4,
+                                        scale=0,
+                                    )
+                                    query_max_aes_score = gr.Number(
+                                        label=translate('Max', global_args.language),
+                                        value=10,
+                                        min_width=128,
+                                        precision=4,
+                                        scale=0,
+                                    )
+                                    query_aes_score_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
+
+                        with gr.Tab(translate('Source', global_args.language)):
+                            with gr.Row():
+                                source_file = gr.Textbox(
+                                    value=os.path.abspath(global_args.source) if global_args.source else None,
+                                    container=False,
+                                    interactive=True,
+                                    placeholder='Path/to/source',
+                                    scale=1,
+                                    min_width=128,
+                                )
+                                load_source_btn = cc.EmojiButton(Emoji.anticlockwise)
 
                     with gr.Column():
-                        log_box = gr.TextArea(
-                            label=translate('Log', global_args.language),
-                            lines=1,
-                            max_lines=1,
-                        )
+                        with gr.Row():
+                            log_box = gr.TextArea(
+                                label=translate('Log', global_args.language),
+                                lines=1,
+                                max_lines=1,
+                            )
 
                 with gr.Tab(translate('Dataset', global_args.language)) as tagging_tab:
                     with gr.Row():
@@ -232,8 +340,15 @@ def create_ui(
                                 load_next_hist_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, scale=1)
                                 load_next_chunk_btn = cc.EmojiButton(Emoji.black_right_pointing_double_triangle, scale=1)
                             with gr.Row():
+                                with gr.Column():
+                                    ...
+                                with gr.Column():
+                                    cur_chunk_index = gr.Number(label=f"{translate('Chunk', global_args.language)} {1}/{cur_dataset.num_chunks}", value=1, min_width=128, precision=0, scale=0)
+                                with gr.Column():
+                                    ...
+                            with gr.Row():
                                 dataset_metadata_df = gr.Dataframe(
-                                    value=dataset_to_metadata_df(dataset),
+                                    value=dataset_to_metadata_df(main_dataset),
                                     label=translate('Dataset Information', global_args.language),
                                     type='pandas',
                                     row_count=(1, 'fixed'),
@@ -249,6 +364,7 @@ def create_ui(
                                         show_copy_button=True,
                                         lines=6,
                                         max_lines=6,
+                                        placeholder='empty',
                                     )
                                 with gr.Tab(translate('Metadata', global_args.language)) as metadata_tab:
                                     with gr.Row():
@@ -275,6 +391,7 @@ def create_ui(
                                             lines=6,
                                             max_lines=6,
                                             interactive=True,
+                                            placeholder='empty',
                                         )
                                     with gr.Tab(label=translate('Negative Prompt', global_args.language)):
                                         negative_prompt = gr.Textbox(
@@ -285,6 +402,7 @@ def create_ui(
                                             lines=6,
                                             max_lines=6,
                                             interactive=True,
+                                            placeholder='empty',
                                         )
                                     with gr.Tab(label=translate('Generation Parameters', global_args.language)):
                                         gen_params_df = gr.Dataframe(
@@ -360,6 +478,7 @@ def create_ui(
                                             add_tag_btns.append(add_tag_btn)
                                             tag_selectors.append(tag_selector)
                                             remove_tag_btns.append(remove_tag_btn)
+
                                 with gr.Tab(translate("Replace", global_args.language)) as replace_tab:
                                     def custom_replace_tagging_row():
                                         with gr.Row(variant='compact'):
@@ -586,91 +705,7 @@ def create_ui(
                                     )
 
                         with gr.Column(scale=4):
-                            with gr.Tab(translate('Query', global_args.language)):
-                                with gr.Row():
-                                    query_use_regex = gr.Checkbox(
-                                        label=translate('Regex', global_args.language),
-                                        value=False,
-                                        container=False,
-                                        scale=0,
-                                        min_width=128,
-                                    )
-                                with gr.Tab(translate("Tag", global_args.language)) as query_tag_tab:
-                                    with gr.Row(variant='compact'):
-                                        query_refresh_tag_list_btn = cc.EmojiButton(Emoji.anticlockwise)
-                                        query_unload_tag_list_btn = cc.EmojiButton(Emoji.no_entry)
-
-                                    with gr.Row(variant='compact'):
-                                        query_include_condition = gr.Dropdown(
-                                            label=translate('If', global_args.language),
-                                            choices=translate(list(CONDITION.keys()), global_args.language),
-                                            value=translate(list(CONDITION.keys())[0], global_args.language),
-                                            multiselect=False,
-                                            allow_custom_value=False,
-                                            min_width=128,
-                                            scale=0,
-                                        )
-                                        query_include_tags = gr.Dropdown(
-                                            label=translate('Include', global_args.language),
-                                            choices=None,
-                                            allow_custom_value=True,
-                                            multiselect=True,
-                                        )
-                                        query_joiner_dropdown = gr.Dropdown(
-                                            label=translate('Joiner', global_args.language),
-                                            choices=translate(list(JOINER.keys()), global_args.language),
-                                            value=translate(list(JOINER.keys())[0], global_args.language),
-                                            multiselect=False,
-                                            allow_custom_value=False,
-                                            min_width=108,
-                                            scale=0,
-                                        )
-
-                                    with gr.Row(variant='compact'):
-                                        query_exclude_condition = gr.Dropdown(
-                                            label=translate('If', global_args.language),
-                                            choices=translate(list(CONDITION.keys()), global_args.language),
-                                            value=translate(list(CONDITION.keys())[0], global_args.language),
-                                            multiselect=False,
-                                            allow_custom_value=False,
-                                            min_width=128,
-                                            scale=0,
-                                        )
-                                        query_exclude_tags = gr.Dropdown(
-                                            label=translate('Exclude', global_args.language),
-                                            choices=None,
-                                            allow_custom_value=True,
-                                            multiselect=True,
-                                        )
-                                        query_tab_table_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
-
-                                with gr.Tab(translate("Filename", global_args.language)) as query_filename_tab:
-                                    with gr.Row(variant='compact'):
-                                        query_filename_selector = gr.Dropdown(
-                                            label=translate('Include', global_args.language),
-                                            choices=None,
-                                            allow_custom_value=True,
-                                            multiselect=True,
-                                        )
-                                        query_filename_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
-
-                                with gr.Tab(translate("Aesthetic Score", global_args.language)) as query_aes_score_tab:
-                                    with gr.Row(variant='compact'):
-                                        query_min_aes_score = gr.Number(
-                                            label=translate('Min', global_args.language),
-                                            value=0,
-                                            min_width=128,
-                                            precision=4,
-                                            scale=0,
-                                        )
-                                        query_max_aes_score = gr.Number(
-                                            label=translate('Max', global_args.language),
-                                            value=10,
-                                            min_width=128,
-                                            precision=4,
-                                            scale=0,
-                                        )
-                                        query_aes_score_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
+                            ...
 
                 with gr.Tab(translate('Database', global_args.language)) as database_tab:
                     database = gr.Dataframe(
@@ -729,7 +764,7 @@ def create_ui(
                 r"""
                 Get the image key that should be selected if the showing dataset is changed by `dset`. Doesn't depend on what the current dataset is.
                 """
-                pre_idx = dataset.selected.index
+                pre_idx = main_dataset.selected.index
                 if pre_idx is not None and pre_idx < len(dset):
                     new_img_key = dset.keys()[pre_idx]
                 else:
@@ -759,9 +794,9 @@ def create_ui(
                     sorting_methods = [method.replace(' ', '_') for method in sorting_methods]
 
                     extra_kwargs = {}
-                    selected_img_key = dataset.selected.image_key
+                    selected_img_key = main_dataset.selected.image_key
                     if selected_img_key is not None:
-                        target = dataset[selected_img_key]
+                        target = main_dataset[selected_img_key]
                         extra_kwargs['target'] = target.perceptual_hash
 
                     sorting_keys = []
@@ -825,6 +860,38 @@ def create_ui(
                         return func(*args, **kwargs)
                     return wrapper
 
+            # ========================================= Change Source ========================================= #
+
+            def change_source(source):
+                if source is None or source == '':
+                    return {log_box: 'empty source'}
+                source = os.path.abspath(source)
+                if not os.path.exists(source):
+                    return {log_box: f"source `{source}` not found"}
+                elif not (os.path.isdir(source) or source.endswith(('.csv', '.json'))):
+                    return {f"source `{source}` is not a file or directory"}
+
+                nonlocal main_dataset, buffer, sample_history, cur_dataset, tag_table, tag_feature_table
+
+                global_args.source = source
+                main_dataset, buffer, sample_history, _, cur_dataset, _, _, tag_table, tag_feature_table = init_everything()
+                return {
+                    source_file: global_args.source,
+                    category_selector: gr.update(choices=main_dataset.categories, value=None),
+                    showcase: [(v.image_path, k) for k, v in cur_dataset.chunk(0).items()],
+                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', global_args.language)} 1/{cur_dataset.num_chunks}"),
+                    query_include_tags: gr.update(choices=None),
+                    query_exclude_tags: gr.update(choices=None),
+                    log_box: f"source reloaded: `{source}`",
+                }
+
+            load_source_btn.click(
+                fn=change_source,
+                inputs=[source_file],
+                outputs=[source_file, category_selector, showcase, cur_chunk_index, query_include_tags, query_exclude_tags, log_box],
+                concurrency_limit=1,
+            )
+
             # ========================================= Subset key selector ========================================= #
 
             def change_to_dataset(dset: UIChunkedDataset = None, new_chunk_index=1, sorting_methods=None, reverse=False):
@@ -845,17 +912,17 @@ def create_ui(
                 Change current dataset to another dataset with category `category` and show its chunk
                 """
                 if categories is None or len(categories) == 0:
-                    dset = dataset
+                    dset = main_dataset
                 else:
                     dset = UIChunkedDataset(chunk_size=global_args.chunk_size)
                     for category in tqdm(sorted(categories), desc='loading subset'):
-                        if category not in dataset.categories:
+                        if category not in main_dataset.categories:
                             logu.warn(f"missing category `{category}`")
                             continue
-                        dset.update(dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=global_args.chunk_size))
+                        dset.update(main_dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=global_args.chunk_size))
                 return change_to_dataset(dset, new_chunk_index=1, sorting_methods=sorting_methods, reverse=reverse)
 
-            dataset_change_inputs = [cur_chunk_index, sorting_methods_dropdown, reverse_checkbox]
+            dataset_change_inputs = [cur_chunk_index, sorting_methods_dropdown, sorting_reverse_checkbox]
             dataset_change_listeners = [showcase, dataset_metadata_df, cur_image_key, database, cur_chunk_index, category_selector, log_box]
 
             # category_selector.blur(
@@ -869,7 +936,7 @@ def create_ui(
 
             reload_category_btn.click(
                 fn=change_to_categories,
-                inputs=[category_selector, sorting_methods_dropdown, reverse_checkbox],
+                inputs=[category_selector, sorting_methods_dropdown, sorting_reverse_checkbox],
                 outputs=dataset_change_listeners,
                 trigger_mode='multiple',
                 concurrency_limit=1,
@@ -878,7 +945,7 @@ def create_ui(
 
             set_category_btn.click(
                 fn=lambda image_key, *args: {**change_to_categories([cur_dataset[image_key].category], *args), category_selector: [cur_dataset[image_key].category]},
-                inputs=[cur_image_key, sorting_methods_dropdown, reverse_checkbox],
+                inputs=[cur_image_key, sorting_methods_dropdown, sorting_reverse_checkbox],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 trigger_mode='always_last',
@@ -938,7 +1005,7 @@ def create_ui(
             def select_image_key(selected: gr.SelectData):
                 if selected is None:
                     return None, None
-                image_key = dataset.select(selected)
+                image_key = main_dataset.select(selected)
                 return image_key
 
             showcase.select(
@@ -954,7 +1021,7 @@ def create_ui(
             def get_caption(image_key):
                 if image_key is None or image_key == '':
                     return None
-                img_info = dataset[image_key]
+                img_info = main_dataset[image_key]
                 if img_info.caption is None:
                     return None
                 return str(img_info.caption)
@@ -962,16 +1029,16 @@ def create_ui(
             def get_metadata_df(image_key, keys):
                 if global_args.render_mode == 'partial' and ui_data_tab.tab is not metadata_tab:
                     return None
-                if image_key is None or image_key == '' or image_key not in dataset:
+                if image_key is None or image_key == '' or image_key not in main_dataset:
                     return None
-                image_info: ImageInfo = dataset[image_key]
+                image_info: ImageInfo = main_dataset[image_key]
                 info_dict = image_info.dict()
                 data = [{translate(key.replace('_', ' ').title(), global_args.language): info_dict.get(key, None) for key in keys}]
                 df = pandas.DataFrame(data=data, columns=data[0].keys())
                 return df
 
             def get_gen_info(image_key):
-                image_info = dataset[image_key]
+                image_info = main_dataset[image_key]
                 metadata_dict = image_info.gen_info
                 pos_pmt = metadata_dict.pop('Positive prompt', None)
                 neg_pmt = metadata_dict.pop('Negative prompt', None)
@@ -983,10 +1050,10 @@ def create_ui(
                 if img_key is None or img_key == '':  # no image key selected
                     return {k: None for k in cur_image_key_change_listeners}
 
-                if img_key != dataset.selected.image_key:  # fix
-                    dataset.select((dataset.selected.index, img_key))
+                if img_key != main_dataset.selected.image_key:  # fix
+                    main_dataset.select((main_dataset.selected.index, img_key))
 
-                img_info = dataset.get(img_key)
+                img_info = main_dataset.get(img_key)
                 img_path = img_info.image_path
                 if not img_path.is_file():
                     return {log_box: f"image `{img_path}` not found"}
@@ -1075,8 +1142,8 @@ def create_ui(
             def remove_image(image_key, chunk_index):
                 if image_key is None or image_key == '':
                     return {log_box: f"empty image key"}
-                dataset.remove(image_key)
-                if cur_dataset is not dataset and image_key in cur_dataset:
+                main_dataset.remove(image_key)
+                if cur_dataset is not main_dataset and image_key in cur_dataset:
                     del cur_dataset[image_key]  # remove from current dataset
                 return change_to_dataset(new_chunk_index=chunk_index)
 
@@ -1094,7 +1161,7 @@ def create_ui(
                     }
                 new_img_key = sample_history.select(index)
                 return {
-                    showcase: dataset_to_gallery(Dataset(dataset[new_img_key])),
+                    showcase: dataset_to_gallery(Dataset(main_dataset[new_img_key])),
                     cur_image_key: new_img_key,
                 }
 
@@ -1126,7 +1193,7 @@ def create_ui(
                     sample_history.add(sample)
                 new_img_key = sample_history.select(len(sample_history) - 1)
                 return {
-                    showcase: dataset_to_gallery(Dataset(dataset[new_img_key])),
+                    showcase: dataset_to_gallery(Dataset(main_dataset[new_img_key])),
                     cur_image_key: new_img_key,
                     cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', global_args.language)} 1/{cur_dataset.num_chunks}"),
                 }
@@ -1194,14 +1261,14 @@ def create_ui(
                                         future.cancel()
                                     raise
                     else:
-                        results.append(edit(dataset[image_key].copy(), *args, **kwargs))
+                        results.append(edit(main_dataset[image_key].copy(), *args, **kwargs))
 
                     # write to dataset
                     for res in results:
                         if res is not None:
                             img_key = res.key
-                            dataset.set(img_key, res)
-                            if cur_dataset is not dataset and img_key in cur_dataset:
+                            main_dataset.set(img_key, res)
+                            if cur_dataset is not main_dataset and img_key in cur_dataset:
                                 cur_dataset[img_key] = res
 
                     if any(results):
@@ -1238,7 +1305,7 @@ def create_ui(
             )
 
             def undo(image_info):
-                image_info = dataset.undo(image_info.key)
+                image_info = main_dataset.undo(image_info.key)
                 return image_info
 
             undo_btn.click(
@@ -1249,7 +1316,7 @@ def create_ui(
             )
 
             def redo(image_info):
-                image_info = dataset.redo(image_info.key)
+                image_info = main_dataset.redo(image_info.key)
                 return image_info
 
             redo_btn.click(
@@ -1260,7 +1327,7 @@ def create_ui(
             )
 
             def save_to_disk(progress: gr.Progress = gr.Progress(track_tqdm=True)):
-                dataset.save(progress=progress)
+                main_dataset.save(progress=progress)
                 return f"saved!"
 
             save_btn.click(
@@ -1552,8 +1619,8 @@ def create_ui(
                 # make feature table using tag table
                 nonlocal tag_table, tag_feature_table
                 if tag_table is None:
-                    dataset.init_tag_table()
-                    tag_table = dataset.tag_table
+                    main_dataset.init_tag_table()
+                    tag_table = main_dataset.tag_table
 
                 caption: Caption = image_info.caption
                 if caption is None:
@@ -1567,7 +1634,7 @@ def create_ui(
                         # print(f"making ref: `{character}`")
                         ref[character] = {}
                         img_keys = tag_table[character]
-                        img_infos = [dataset[key] for key in img_keys]
+                        img_infos = [main_dataset[key] for key in img_keys]
                         if len(img_infos) < least_sample_size:
                             continue
                         for img_info in img_infos:
@@ -1594,15 +1661,15 @@ def create_ui(
             def wd14_tagging(image_info, general_threshold, character_threshold, os_mode):
                 if global_args.language != 'en':
                     os_mode = translate(os_mode, 'en')
-                nonlocal wd14
+                nonlocal waifu_tagger
                 old_caption = image_info.caption
                 if old_caption is not None and os_mode == 'ignore':
                     return old_caption
-                if wd14 is None:
+                if waifu_tagger is None:
                     from modules.compoents import WaifuTagger
-                    wd14 = WaifuTagger(model_path=global_args.wd14_model_path, label_path=global_args.wd14_label_path, verbose=True)
+                    waifu_tagger = WaifuTagger(model_path=global_args.wd14_model_path, label_path=global_args.wd14_label_path, verbose=True)
                 image = Image.open(image_info.image_path)
-                wd14_caption = wd14(image, general_threshold=general_threshold, character_threshold=character_threshold)
+                wd14_caption = waifu_tagger(image, general_threshold=general_threshold, character_threshold=character_threshold)
                 if os_mode == 'overwrite' or os_mode == 'ignore':
                     caption = wd14_caption
                 elif os_mode == 'append':
@@ -1761,8 +1828,8 @@ def create_ui(
                 def wrapper(sorting_methods=None, reverse=False, *args, **kwargs):
                     nonlocal cur_dataset
                     if cur_dataset is None or len(cur_dataset) == 0:
-                        return None
-                    res_dset = func(*args, **kwargs)
+                        return {log_box: f"empty dataset"}
+                    res_dset = func(*args, **kwargs) or UIChunkedDataset()
                     res = change_to_dataset(res_dset, sorting_methods=sorting_methods, reverse=reverse)
                     res.update({log_box: f"{proc_func_name} matches {len(res_dset)} images over {len(cur_dataset)} images"})
                     return res
@@ -1777,8 +1844,8 @@ def create_ui(
 
                 nonlocal tag_table
                 if tag_table is None:
-                    dataset.init_tag_table()
-                    tag_table = dataset.tag_table
+                    main_dataset.init_tag_table()
+                    tag_table = main_dataset.tag_table
 
                 joiner_func = JOINER[joiner]
 
@@ -1835,7 +1902,7 @@ def create_ui(
 
                 excl_set = set(cur_dataset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
                 res_set = joiner_func(incl_set, excl_set)  # join
-                res_dataset = UIChunkedDataset({img_key: dataset[img_key] for img_key in res_set}, chunk_size=global_args.chunk_size)
+                res_dataset = UIChunkedDataset({img_key: main_dataset[img_key] for img_key in res_set}, chunk_size=global_args.chunk_size)
 
                 # print(f"incl_set: {incl_set}")
                 # print(f"excl_set: {excl_set}")
@@ -1849,8 +1916,8 @@ def create_ui(
 
             query_tab_table_btn.click(
                 fn=query(query_tag_table),
-                inputs=[sorting_methods_dropdown, reverse_checkbox, query_include_condition, query_include_tags,
-                        query_joiner_dropdown, query_exclude_condition, query_exclude_tags, query_use_regex, log_box],
+                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_include_condition, query_include_tags,
+                        query_joiner_dropdown, query_exclude_condition, query_exclude_tags, query_use_regex],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
@@ -1866,12 +1933,12 @@ def create_ui(
                     matched_img_keys = [img_key for img_key in image_keys if img_key in cur_dataset.keys()]
                 if len(matched_img_keys) == 0:
                     return None
-                res_dataset = UIChunkedDataset({img_key: dataset[img_key] for img_key in matched_img_keys}, chunk_size=global_args.chunk_size)
+                res_dataset = UIChunkedDataset({img_key: main_dataset[img_key] for img_key in matched_img_keys}, chunk_size=global_args.chunk_size)
                 return res_dataset
 
             query_filename_btn.click(
                 fn=query(query_filename),
-                inputs=[sorting_methods_dropdown, reverse_checkbox, query_filename_selector, query_use_regex, log_box],
+                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_filename_selector, query_use_regex],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
@@ -1892,7 +1959,7 @@ def create_ui(
 
             query_aes_score_btn.click(
                 fn=query(query_aesthetic_score),
-                inputs=[sorting_methods_dropdown, reverse_checkbox, query_min_aes_score, query_max_aes_score, log_box],
+                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_min_aes_score, query_max_aes_score],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
@@ -1901,8 +1968,8 @@ def create_ui(
             def reload_query_tag_list(progress: gr.Progress = gr.Progress(track_tqdm=True)):
                 nonlocal tag_table
                 if tag_table is None:
-                    dataset.init_tag_table()
-                    tag_table = dataset.tag_table
+                    main_dataset.init_tag_table()
+                    tag_table = main_dataset.tag_table
 
                 tag_list = sorted(tag_table.keys(), key=lambda x: len(tag_table[x]), reverse=True)
                 return gr.update(choices=tag_list), gr.update(choices=tag_list)

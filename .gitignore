@@ -162,7 +162,7 @@ cython_debug/
 
 # customs
 
-draft*.py
+draft**.py
 tempCodeRunnerFile*.py
 main.py
 /models/*

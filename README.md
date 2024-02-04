@@ -1,3 +1,44 @@
+# SD-Dataset-Manager
+
+# 目录
+
+- [1. 介绍](#1-介绍)
+  - [更新日志](#更新日志)
+- [2. 开始使用](#2-开始使用)
+  - [2.1. 安装依赖项](#21-安装依赖项)
+  - [2.2. 使用方式一：使用 UI 界面](#22-使用方式一使用-ui-界面)
+    - [用法 1](#用法-1)
+    - [用法 2](#用法-2)
+    - [用法 3](#用法-3)
+      - [其他参数](#其他参数)
+- [3. 使用方法：UI 界面](#3-使用方法ui-界面)
+  - [3.1. 页眉](#31-页眉)
+    - [类别选择和定点翻页](#类别选择和定点翻页)
+    - [数据排序](#数据排序)
+    - [数据搜索](#数据搜索)
+    - [更换数据源](#更换数据源)
+    - [日志](#日志)
+  - [3.2. 数据集处理界面](#32-数据集处理界面)
+    - [画廊](#画廊)
+    - [标注](#标注)
+    - [元数据](#元数据)
+    - [生成信息](#生成信息)
+    - [按钮](#按钮)
+    - [处理选项](#处理选项)
+    - [快速标注](#快速标注)
+    - [自定义标注](#自定义标注)
+    - [正则表达式](#正则表达式)
+    - [标签排序](#标签排序)
+    - [一般去重](#一般去重)
+    - [语义去重](#语义去重)
+    - [去除特征](#去除特征)
+    - [格式化](#格式化)
+    - [标注器](#标注器)
+    - [美学评分器](#美学评分器)
+    - [哈稀器](#哈稀器)
+  - [3.3. 数据库界面](#33-数据库界面)
+  - [3.4. 缓冲区](#34-缓冲区)
+
 # 1. 介绍
 
 该项目是一个用于二次元图像-文本标注管理和优化的工具，提供 UI 交互界面。
@@ -55,6 +96,21 @@ pip install torch torchvision onnxruntime huggingface-hub
 
 ### 用法 1
 
+直接启动 UI 界面，不加载任何数据集。
+
+进入 UI 后，您需要在数据源部分输入数据集的根目录，以加载数据集。您可以在加载数据集后，对数据集进行编辑、保存和导出。
+
+```bash
+# 写入到 txt 文本文件，详细用法参照下文用法 2
+python api.py --write_to_txt --language cn
+# 写入到数据库文件，详细用法参照下文用法 3
+python api.py --write_to_database --database_file 'path/to/database.json' --language cn
+```
+
+### 用法 2
+
+该用法将在启动前加载数据集。
+
 该用法使用与图像名相同的 txt 文件保存标注。
 
 在控制台中输入以下命令启动 UI 界面：
@@ -67,7 +123,7 @@ python api.py --source path/to/folder --write_to_txt --language cn
 
 在使用前，您需要将 `path/to/folder` 替换为您的数据集文件夹路径，该文件夹内含有所有您需要处理的图像文件。程序会递归地读取该文件夹内的所有图像文件，即便是文件夹内的子文件夹中的图像文件也会被读取。
 
-### 用法 2
+### 用法 3
 
 该用法将标注结果写入到数据库文件中，而不是 txt 标注文件。
 
@@ -86,7 +142,7 @@ python api.py --source path/to/folder_or_database --write_to_database --database
 
 如果您不指定，那么所有数据集操作都将是模拟操作，不会对任何文件产生影响。如果您都指定，那么使用时保存数据库时将会同时写入 txt 文件。
 
-#### 其他参数
+### 其他参数
 
 - `--chunk_size`: 每页显示的图像数量，默认为 80。太高可能会导致加载缓慢。
 - `--share`: 是否共享 Gradio 网页。
@@ -97,7 +153,7 @@ python api.py --source path/to/folder_or_database --write_to_database --database
 
 UI 界面的主体为数据集处理界面，编辑数据的流程非常简单：选中数据->编辑数据->保存编辑。
 
-![alt text](./docs/zh/images/0.jpeg)
+![alt text](docs/zh/images/0.jpeg)
 
 ## 3.1. 页眉
 
@@ -109,7 +165,7 @@ UI 界面的主体为数据集处理界面，编辑数据的流程非常简单�
 
 不选择任何类别时，将加载所有数据。多选类别时，将加载所有选中的类别。
 
-![alt text](./docs/zh/images/1a.png)
+![alt text](docs/zh/images/1a.png)
 
 类别选择框右侧为当前所展示数据集的页码，每页可展示的最大数据数量由启动参数 `--chunk_size` 指定。
 输入制定页码后，回车即可跳转到该页。
@@ -118,11 +174,29 @@ UI 界面的主体为数据集处理界面，编辑数据的流程非常简单�
 
 UI 提供了多种排序方式，选中其中一种或多种后，之后加载的数据集将遵照所选排序方式进行排序。排序默认从较小值开始，勾选 `倒序` 将使排序结果倒序。
 
-![alt text](./docs/zh/images/1b.png)
+![alt text](docs/zh/images/1b.png)
 
 越靠前选择的排序方式越优先。例如，当选择了 `按质量排序` 和 `按美学评分排序` 时，数据集将按数据质量排序，质量相同的数据将按美学评分排序。
 
-![alt text](./docs/zh/images/1c.png)
+![alt text](docs/zh/images/1c.png)
+
+### 数据搜索
+
+数据搜索界面允许按照一定条件从当前所选的数据集子集中搜索数据。
+
+搜索结果将作为新的数据集子集被加载，并显示在画廊中。
+
+勾选“正则表达式”后，搜索条件中的标签将被视为正则表达式。
+
+![alt text](docs/zh/images/6.png)
+
+### 更换数据源
+
+您可以修改当前数据集的根目录，以切换数据来源。请注意，切换数据源后，先前数据集未保存的内容将会丢失！
+
+修改数据源后，单击右侧刷新按钮将加载新的数据集。若数据源无效，则不会更换数据源。
+
+![alt text](docs/zh/images/7.png)
 
 ### 日志
 
@@ -132,17 +206,17 @@ UI 提供了多种排序方式，选中其中一种或多种后，之后加载�
 
 UI 的数据集界面大体由两个部分组成：左侧的图像显示区域和右侧的标注处理区域。
 
-![alt text](./docs/zh/images/2a.png)
+![alt text](docs/zh/images/2a.png)
 
 单击左侧画廊中的图像即选中数据，选中数据后，其他面板将显示该数据的详细信息，并允许对其进行操作。
 
-![alt text](./docs/zh/images/2b.png)
+![alt text](docs/zh/images/2b.png)
 
 ### 画廊
 
 画廊显示所选数据集子集。
 
-![alt text](./docs/zh/images/2h.png)
+![alt text](docs/zh/images/2h.png)
 
 下方按钮效果从左到右依次为：
 
@@ -155,11 +229,11 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 数据集信息窗格显示当前选中数据集子集的信息。
 
-![alt text](./docs/zh/images/2i-1.png)
+![alt text](docs/zh/images/2i-1.png)
 
 其下方显示所选数据的其他信息。
 
-![alt text](./docs/zh/images/2i-2.png)
+![alt text](docs/zh/images/2i-2.png)
 
 ### 标注
 
@@ -167,25 +241,25 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 可直接通过修改文本框中的内容来编辑标注。
 
-![alt text](./docs/zh/images/2c.png)
+![alt text](docs/zh/images/2c.png)
 
 ### 元数据
 
 元数据窗格显示所选数据的实时元数据。
 
-![alt text](./docs/zh/images/2f.png)
+![alt text](docs/zh/images/2f.png)
 
 ### 生成信息
 
 生成信息窗格显示当前选中数据的生成信息（如果有）。
 
-![alt text](./docs/zh/images/2g-1.png)
-![alt text](./docs/zh/images/2g-2.png)
-![alt text](./docs/zh/images/2g-3.png)
+![alt text](docs/zh/images/2g-1.png)
+![alt text](docs/zh/images/2g-2.png)
+![alt text](docs/zh/images/2g-3.png)
 
 ### 按钮
 
-![alt text](./docs/zh/images/2d.png)
+![alt text](docs/zh/images/2d.png)
 
 几个按钮的效果从左至右依次为：
 
@@ -198,7 +272,7 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 ### 处理选项
 
-![alt text](./docs/zh/images/2e.png)
+![alt text](docs/zh/images/2e.png)
 
 勾选某个处理选项将影响之后所做的编辑操作。
 
@@ -210,7 +284,7 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 快速标注面板提供了快速进行质量有关数据标注的操作。
 
-![alt text](./docs/zh/images/3a.png)
+![alt text](docs/zh/images/3a.png)
 
 第一行按钮由高到低依次更改数据的质量标签，第二、三行按钮添加数据的美学描述。
 
@@ -218,24 +292,47 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 自定义标注面板提供了自定义数据标签的增、删和改操作。其中，删和改操作允许使用正则表达式匹配。
 
-![alt text](./docs/zh/images/3b.png)
-![alt text](./docs/zh/images/3c.png)
+![alt text](docs/zh/images/3b.png)
+![alt text](docs/zh/images/3c.png)
+
+### 正则表达式
+
+在 **自定义标注** 的 **删除** 和 **替换** 操作中，您可以使用正则表达式匹配标签。
+
+**删除** 操作会将所有与表达式匹配的标签删除。
+
+示例：
+
+- `.*hair.*` 匹配所有包含 `hair` 的 tag。
+- `(\w+) (\w+)` 匹配所有由两个单词组成的 tag。
+- `.*` 匹配所有 tag。
+- `1(girl|boy)` 匹配 `1girl` 和 `1boy`。
+
+**替换** 操作会将所有与表达式匹配的标签替换为指定的标签，调用逻辑为 `re.sub(pattern, repl, string)`，其中，`pattern` 为左侧文本框中的正则表达式，`repl` 为右侧文本框中的替换标签，`string` 为标注文本。
+`repl` 可以使用 `\1`、`\2` 等来引用 `pattern` 中的分组，例如，`(\w+) (\w+)` 的 `repl` 可以为 `\1 \2`。
+
+示例：
+
+- 要将所有 `1_xxx` 替换为 `1xxx`，其中 `xxx` 为任意单词，可以使用 `1_(\w+)` 作为 `pattern`，`1\1` 作为 `repl`。
+- 要将所有 `xxx yyy` 替换为 `yyy xxx`，其中，`xxx` 和 `yyy` 为任意单词，可以使用 `(\w+) (\w+)` 作为 `pattern`，`\2 \1` 作为 `repl`。
+
+正则表达式的详细用法可参考 [Python 正则表达式](https://www.runoob.com/python/python-reg-expressions.html)。
 
 ### 标签排序
 
 标签排序面板提供了对标签进行排序的操作。标签排序的优先级顺序可在 `配置` 面板编辑、保存和加载。
 
-![alt text](./docs/zh/images/3d-1.png)
+![alt text](docs/zh/images/3d-1.png)
 
 ### 一般去重
 
 一般去重功能去除标注中完全重复的 tag。
 
-![alt text](./docs/zh/images/3d-2.png)
+![alt text](docs/zh/images/3d-2.png)
 
 ### 语义去重
 
-![alt text](./docs/zh/images/3d-3.png)
+![alt text](docs/zh/images/3d-3.png)
 
 语义去重功能去除标注中语义重复的 tag，在重复 tag 中保留语义信息最丰富的一者。
 
@@ -247,7 +344,7 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 去除特征功能来源于角色 Lora 训练中技巧，即去除角色的外貌特征，从而在训练中让模型将失去的外貌特征关联到角色标签上，从而绑定角色和这些外貌。
 
-![alt text](./docs/zh/images/3d-4.png)
+![alt text](docs/zh/images/3d-4.png)
 
 执行该功能后，如果标注中存在某个角色标签，将会去除所有**同时**符合以下特征的外貌标签：
 
@@ -265,7 +362,7 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 格式化功能用于快速修改标注格式。
 
-![alt text](./docs/zh/images/3d-5.png)
+![alt text](docs/zh/images/3d-5.png)
 
 格式化操作效果依次为：
 
@@ -276,19 +373,19 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 - 解析式：将标注转换为易于解析的形式，即为艺术家、角色和风格标签添加对应注释；
 - 标准式：`解析式` 的反向操作，将标注转换为标准的形式，即为艺术家、角色和风格标签去除对应注释。
 
-![alt text](./docs/zh/images/3d-6.png)
+![alt text](docs/zh/images/3d-6.png)
 
 ### 标注器
 
 标注器使用基于 WD14-Swinv2 的图像标注模型，对图像进行标注。
 
-![alt text](./docs/zh/images/4a.png)
+![alt text](docs/zh/images/4a.png)
 
 ### 美学评分器
 
 美学评分器使用基于 Waifu-Scorer-v1 的图像美学评分模型，对图像进行美学评分。
 
-![alt text](./docs/zh/images/4b.png)
+![alt text](docs/zh/images/4b.png)
 
 分数为 0~10 分，分数与图像质量的对应关系如下：
 
@@ -306,26 +403,16 @@ UI 的数据集界面大体由两个部分组成：左侧的图像显示区域�
 
 感知哈希是一个计算机科学中的概念，它是一张图像的指纹，两个感知哈希之间越接近，两张图像越相似。一个感知哈希具体是一个 64 位的二进制数，显示为十六进制字符串。两个感知哈希之间的距离用汉明距离计算。
 
-![alt text](./docs/zh/images/4c.png)
-
-### 数据搜索
-
-数据搜索界面允许按照一定条件从当前所选的数据集子集中搜索数据。
-
-搜索结果将作为新的数据集子集被加载，并显示在画廊中。
-
-勾选“正则表达式”后，搜索条件中的标签将被视为正则表达式。
-
-![alt text](./docs/zh/images/6.png)
+![alt text](docs/zh/images/4c.png)
 
 ## 3.3. 数据库界面
 
 数据库面板显示所选数据集子集在数据库中的信息。
 
-![alt text](./docs/zh/images/5a.png)
+![alt text](docs/zh/images/5a.png)
 
 ## 3.4. 缓冲区
 
 缓冲区面板显示所有未保存的编辑操作。在关闭 UI 时，请确保该缓冲区为空，以免丢失未保存的编辑操作。
 
-![alt text](./docs/zh/images/5b.png)
+![alt text](docs/zh/images/5b.png)
