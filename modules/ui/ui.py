@@ -70,8 +70,12 @@ def prepare_dataset(
 ):
     from .ui_dataset import UIDataset
 
+    source = args.source
+    if args.write_to_database:
+        source = [args.database_file, source]
+
     dataset = UIDataset(
-        args.source,
+        source,
         formalize_caption=False,
         write_to_database=args.write_to_database,
         write_to_txt=args.write_to_txt,
@@ -82,8 +86,8 @@ def prepare_dataset(
     )
 
     if args.change_source:
-        old_img_src = args.old_img_src
-        new_img_src = args.new_img_src
+        old_img_src = args.old_source
+        new_img_src = args.new_source
 
         def change_source(image_info):
             nonlocal old_img_src, new_img_src
@@ -1236,6 +1240,8 @@ def create_ui(
                     # print(f"proc_mode: {proc_mode} | func_param_names: {func_param_names} | extra_kwargs: {extra_kwargs}")
 
                     def edit(image_info, *args, **kwargs):
+                        if not image_info.image_path.is_file():
+                            return None
                         new_img_info = func(image_info.copy(), *args, **extra_kwargs, **kwargs)
                         if image_info == new_img_info:
                             return None
@@ -1343,6 +1349,7 @@ def create_ui(
                 caption = image_info.caption or Caption()
                 caption.quality = quality
                 image_info.caption = caption
+                print(f"new caption: {caption}")
                 return image_info
 
             tagging_best_quality_btn.click(
@@ -1664,7 +1671,7 @@ def create_ui(
                 nonlocal waifu_tagger
                 old_caption = image_info.caption
                 if old_caption is not None and os_mode == 'ignore':
-                    return old_caption
+                    return image_info
                 if waifu_tagger is None:
                     from modules.compoents import WaifuTagger
                     waifu_tagger = WaifuTagger(model_path=global_args.wd14_model_path, label_path=global_args.wd14_label_path, verbose=True)

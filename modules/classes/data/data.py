@@ -9,6 +9,7 @@ class ImageInfo:
 
     image_path: Path
     caption: Caption
+    nl_caption: str
     original_size: Tuple[int, int]
     aesthetic_score: float
     perceptual_hash: str
@@ -17,6 +18,7 @@ class ImageInfo:
         self,
         image_path,
         caption=None,
+        nl_caption=None,
         original_size=None,
         aesthetic_score=None,
         perceptual_hash=None,
@@ -24,6 +26,7 @@ class ImageInfo:
     ):
         self._image_path = Path(image_path).absolute()
         self._caption = caption if caption is None or caption is ImageInfo.LAZY_READING else Caption(caption)
+        self._nl_caption = nl_caption if nl_caption is not None else str(self._caption)
         self._original_size = tuple(original_size) if original_size else None
         self._aesthetic_score = float(aesthetic_score) if aesthetic_score else None
         self._perceptual_hash = str(perceptual_hash) if perceptual_hash else None
@@ -60,6 +63,14 @@ class ImageInfo:
     def caption(self, value):
         self._caption = Caption(value) if value is not None else None
 
+    @property
+    def nl_caption(self):
+        return self._nl_caption
+
+    @nl_caption.setter
+    def nl_caption(self, value):
+        self._nl_caption = str(value) if value is not None else None
+
     # @property
     # def image_size(self):
     #     if not self._image_size:
@@ -69,6 +80,8 @@ class ImageInfo:
 
     @property
     def original_size(self):
+        if not self.image_path.is_file():
+            return None
         if not self._original_size:
             with Image.open(self.image_path) as image:
                 self._original_size = image.size
@@ -118,14 +131,16 @@ class ImageInfo:
             self._source = self.image_path.parent.parent
         return self._source
 
-    def dict(self, attrs: Tuple[Literal['image_path', 'caption', 'original_size', 'aesthetic_score', 'perceptual_hash']] = None):
+    def dict(self, attrs: Tuple[Literal['image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash']] = None):
         dic = {}
         if attrs is None or 'image_path' in attrs:
             dic['image_path'] = self.image_path.absolute().as_posix()
         if attrs is None or 'caption' in attrs:
             dic['caption'] = str(self.caption) if self.caption else None
+        if attrs is None or 'nl_caption' in attrs:
+            dic['nl_caption'] = self.nl_caption
         if attrs is None or 'original_size' in attrs:
-            dic['original_size'] = list(self.original_size)
+            dic['original_size'] = list(self.original_size) if self.original_size else None
         if attrs is None or 'aesthetic_score' in attrs:
             # keep 3 digits
             dic['aesthetic_score'] = round(self.aesthetic_score, 3) if self.aesthetic_score is not None else None
@@ -184,11 +199,12 @@ class ImageInfo:
         return ImageInfo(
             image_path=self.image_path,
             caption=self.caption.copy() if self.caption else None,
+            nl_caption=self.nl_caption,
             original_size=self.original_size,
             aesthetic_score=self.aesthetic_score,
             perceptual_hash=self.perceptual_hash,
         )
 
-    _all_attrs = ('image_path', 'caption', 'quality', 'artist', 'styles', 'characters', 'original_size', 'aesthetic_score', 'perceptual_hash')
-    _self_attrs = ('image_path', 'caption', 'original_size', 'aesthetic_score', 'perceptual_hash')
+    _all_attrs = ('image_path', 'caption', 'nl_caption', 'quality', 'artist', 'styles', 'characters', 'original_size', 'aesthetic_score', 'perceptual_hash')
+    _self_attrs = ('image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash')
     _caption_attrs = ('quality', 'artist', 'styles', 'characters')

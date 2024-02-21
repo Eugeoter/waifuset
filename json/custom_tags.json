@@ -29,6 +29,8 @@
     "style": [
         "clean color",
         "flat-pasto",
+        "kr-anime",
+        "anime",
         "impasto",
         "sketch",
         "photorealistic",
@@ -39,6 +41,7 @@
         "cel shading",
         "draft",
         "pseudo-impasto",
+        "pseudo impasto",
         "thin-pasto",
         "celluloid",
         "realistic",

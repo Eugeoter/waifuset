@@ -318,7 +318,7 @@ class UIDataset(UIChunkedDataset):
             with open(source, 'rb') as f:
                 self._data = pickle.load(f)._data
         else:
-            super().__init__(source, *args, **kwargs)
+            super().__init__(source, formalize_caption=formalize_caption, *args, **kwargs)
 
         # self.subsets = None
         self.categories = sorted(list(set(img_info.category for img_info in self.values()))) if len(self) > 0 else []

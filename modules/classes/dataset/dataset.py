@@ -24,12 +24,12 @@ class Dataset(_father_class):
 
     def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_caption=False, lazy_reading=True, formalize_caption=False, recur=True, verbose=False):
         self.verbose = verbose
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'Loading dataset...')
-        dic = {}
         if not isinstance(source, (list, tuple)):
             source = [source]
+        if self.verbose:
+            tic = time.time()
+            logu.info(f'Loading dataset from source: {source}...')
+        dic = {}
         for src in source:
             if isinstance(src, (str, Path)):
                 src = Path(src)
