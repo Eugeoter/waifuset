@@ -255,6 +255,18 @@ class Dataset(_father_class):
     def sort(self, key, reverse=False):
         self._data = dict(sorted(self._data.items(), key=key, reverse=reverse))
 
+    def sample(self, condition=None, n=1, randomly=False, random_seed=None) -> 'Dataset':
+        if condition is None:
+            def condition(x): return True
+        if randomly:
+            import random
+            if random_seed is not None:
+                random.seed(random_seed)
+            samples = random.sample([image_info for image_info in self.values() if condition(image_info)], n)
+        else:
+            samples = [image_info for image_info in self.values() if condition(image_info)][:n]
+        return Dataset(samples)
+
     def __iter__(self):
         return iter(self._data)
 

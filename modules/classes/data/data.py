@@ -26,7 +26,7 @@ class ImageInfo:
     ):
         self._image_path = Path(image_path).absolute()
         self._caption = caption if caption is None or caption is ImageInfo.LAZY_READING else Caption(caption)
-        self._nl_caption = nl_caption if nl_caption is not None else str(self._caption)
+        self._nl_caption = nl_caption if nl_caption is not None else None
         self._original_size = tuple(original_size) if original_size else None
         self._aesthetic_score = float(aesthetic_score) if aesthetic_score else None
         self._perceptual_hash = str(perceptual_hash) if perceptual_hash else None
@@ -133,20 +133,21 @@ class ImageInfo:
 
     def dict(self, attrs: Tuple[Literal['image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash']] = None):
         dic = {}
-        if attrs is None or 'image_path' in attrs:
+        attrs = set(attrs or self._self_attrs)
+        if 'image_path' in attrs:
             dic['image_path'] = self.image_path.absolute().as_posix()
-        if attrs is None or 'caption' in attrs:
+        if 'caption' in attrs:
             dic['caption'] = str(self.caption) if self.caption else None
-        if attrs is None or 'nl_caption' in attrs:
+        if 'nl_caption' in attrs:
             dic['nl_caption'] = self.nl_caption
-        if attrs is None or 'original_size' in attrs:
+        if 'original_size' in attrs:
             dic['original_size'] = list(self.original_size) if self.original_size else None
-        if attrs is None or 'aesthetic_score' in attrs:
+        if 'aesthetic_score' in attrs:
             # keep 3 digits
             dic['aesthetic_score'] = round(self.aesthetic_score, 3) if self.aesthetic_score is not None else None
-        if attrs is None or 'perceptual_hash' in attrs:
+        if 'perceptual_hash' in attrs:
             dic['perceptual_hash'] = self.perceptual_hash
-        if attrs is None or 'caption' in attrs:
+        if 'caption' in attrs:
             for attr_key in self._caption_attrs:
                 attr_value = getattr(self.caption, attr_key) if self.caption else None
                 if attr_value:

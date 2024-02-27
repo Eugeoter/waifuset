@@ -71,7 +71,7 @@ def prepare_dataset(
     from .ui_dataset import UIDataset
 
     source = args.source
-    if args.write_to_database:
+    if args.write_to_database and Path(args.database_file).is_file():
         source = [args.database_file, source]
 
     dataset = UIDataset(
@@ -1349,7 +1349,6 @@ def create_ui(
                 caption = image_info.caption or Caption()
                 caption.quality = quality
                 image_info.caption = caption
-                print(f"new caption: {caption}")
                 return image_info
 
             tagging_best_quality_btn.click(
