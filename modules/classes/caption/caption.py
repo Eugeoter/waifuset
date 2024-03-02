@@ -13,9 +13,16 @@ class Caption:
     _tags: List[str]
     _cached_properties = ('artist', 'quality', 'characters', 'styles')
 
+    # if caption_or_tags is a Caption object, return caption_or_tags itself
+    def __new__(cls, caption_or_tags=None, sep=',', fix_typos: bool = True):
+        if isinstance(caption_or_tags, Caption):
+            return caption_or_tags
+        else:
+            return super(Caption, cls).__new__(cls)
+
     def __init__(self, caption_or_tags=None, sep=',', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
-            tags = caption_or_tags._tags
+            tags = caption_or_tags._tags.copy()
         elif isinstance(caption_or_tags, (str, list)):
             if fix_typos and isinstance(caption_or_tags, str):
                 caption_or_tags = caption_or_tags.replace('，', ',')
@@ -103,6 +110,22 @@ class Caption:
             tag = tag.replace(old, new)
             if count != 0 and tag != tags[i]:
                 tags[i] = tag
+                count -= 1
+                if count == 0:
+                    break
+        return Caption(tags)
+
+    def replace_tag(self, old: str, new: str, count: int = -1):
+        r"""
+        Caption with replaced tags.
+        """
+        tags = self.tags.copy()
+        for i, tag in enumerate(tags):
+            if match(old, tag):
+                if isinstance(old, str):
+                    tags[i] = new
+                else:
+                    tags[i] = old.sub(new, tag)
                 count -= 1
                 if count == 0:
                     break

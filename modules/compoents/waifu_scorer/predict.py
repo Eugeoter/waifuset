@@ -3,7 +3,7 @@ import clip
 import os
 import time
 from PIL import Image
-from typing import List
+from typing import List, Union
 from .mlp import MLP
 from ...utils import log_utils as logu
 from ...utils.file_utils import download_from_url
@@ -40,7 +40,7 @@ class WaifuScorer:
             logu.info(f"model loaded: time_cost={toc-tic:.2f} | device={self.device} | dtype={self.dtype}")
 
     @torch.no_grad()
-    def __call__(self, images: List[Image.Image]) -> List[float]:
+    def __call__(self, images: List[Image.Image]) -> Union[List[float], float]:
         if isinstance(images, Image.Image):
             images = [images]
         n = len(images)

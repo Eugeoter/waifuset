@@ -24,7 +24,10 @@
         "beautiful",
         "complex gesture",
         "clean style",
-        "depth of field"
+        "depth of field",
+        "lowres",
+        "highres",
+        "absurdres"
     ],
     "style": [
         "clean color",

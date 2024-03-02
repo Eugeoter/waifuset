@@ -1,3 +1,4 @@
+import json
 from PIL import Image
 from pathlib import Path
 from typing import Tuple, Literal, Any
@@ -56,12 +57,12 @@ class ImageInfo:
     @property
     def caption(self):
         if self._caption is ImageInfo.LAZY_READING:
-            self.read_caption()
+            self.read_txt_caption()
         return self._caption
 
     @caption.setter
     def caption(self, value):
-        self._caption = Caption(value) if value is not None else None
+        self._caption = ImageInfo.LAZY_READING if value == ImageInfo.LAZY_READING else Caption(value) if value is not None else None
 
     @property
     def nl_caption(self):
@@ -86,6 +87,10 @@ class ImageInfo:
             with Image.open(self.image_path) as image:
                 self._original_size = image.size
         return self._original_size
+
+    @original_size.setter
+    def original_size(self, value):
+        self._original_size = tuple(value) if value is not None else None
 
     @property
     def aesthetic_score(self):
@@ -170,7 +175,7 @@ class ImageInfo:
         hash_str = ''
         for attr in self._self_attrs:
             value = getattr(self, attr)
-            if value:
+            if value is not None:
                 hash_str += str(value)
         return hash(hash_str)
 
@@ -183,23 +188,29 @@ class ImageInfo:
         from ...utils.image_utils import parse_gen_info
         return parse_gen_info(self.metadata)
 
-    def read_caption(self, label_path=None):
+    def read_txt_caption(self, label_path=None):
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
         if label_path.is_file():
             caption = Caption(label_path.read_text(encoding='utf-8'))
             if len(caption) > 0:
                 self.caption = caption
 
-    def write_caption(self, label_path=None):
+    def write_txt_caption(self, label_path=None):
         if not self.caption:
             return
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
         label_path.write_text(str(self.caption) if self.caption else '', encoding='utf-8')
 
+    def read_attrs(self, types: Literal['txt', 'waifuc'] = None, lazy=False):
+        attrs = get_attrs(self, types=types, lazy=lazy)
+        for attr, value in attrs.items():
+            if hasattr(self, attr):
+                setattr(self, attr, value)
+
     def copy(self):
         return ImageInfo(
             image_path=self.image_path,
-            caption=self.caption.copy() if self.caption else None,
+            caption=self.caption.copy() if self.caption is not None else None,
             nl_caption=self.nl_caption,
             original_size=self.original_size,
             aesthetic_score=self.aesthetic_score,
@@ -209,3 +220,46 @@ class ImageInfo:
     _all_attrs = ('image_path', 'caption', 'nl_caption', 'quality', 'artist', 'styles', 'characters', 'original_size', 'aesthetic_score', 'perceptual_hash')
     _self_attrs = ('image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash')
     _caption_attrs = ('quality', 'artist', 'styles', 'characters')
+
+
+def parse_waifuc_metadata(metadata):
+    metadata = metadata['danbooru']
+    tags = metadata['tag_string'].split(' ')
+    artist_tags = metadata['tag_string_artist'].split(' ')
+    character_tags = metadata['tag_string_character'].split(' ')
+
+    for artist in artist_tags:
+        tags = [f"artist:{artist}" if tag == artist else tag for tag in tags]
+    for character in character_tags:
+        tags = [f"character:{character}" if tag == character else tag for tag in tags]
+
+    caption = ', '.join([tag.replace('_', ' ') for tag in tags])
+    artist_tags = [tag.replace(' ', '_') for tag in artist_tags]
+    character_tags = [tag.replace(' ', '_') for tag in character_tags]
+
+    return {
+        'caption': caption,
+        'artist': artist_tags,
+        'characters': character_tags,
+        'original_size': (metadata['image_width'], metadata['image_height']),
+    }
+
+
+def get_attrs(img_info: ImageInfo, types: Literal['txt', 'waifuc'] = None, lazy=False):
+    if isinstance(types, str):
+        types = [types]
+    types = types or ['txt', 'waifuc']
+    img_path = img_info.image_path
+    if 'txt' in types and (txt_path := img_path.with_suffix('.txt')).is_file():
+        caption = txt_path.read_text(encoding='utf-8') if not lazy else ImageInfo.LAZY_READING
+        attrs = {
+            'image_path': img_path,
+            'caption': caption,
+        }
+    elif 'waifuc' in types and (waifuc_md_path := img_path.with_name(f".{img_path.stem}_meta.json")).is_file():
+        with open(waifuc_md_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        attrs = parse_waifuc_metadata(metadata)
+    else:
+        attrs = {}
+    return attrs

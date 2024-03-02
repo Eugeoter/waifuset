@@ -333,6 +333,12 @@ class UIDataset(UIChunkedDataset):
         if formalize_caption:
             self.buffer.update(self)
 
+        if self.database_file and self.database_file.is_file() and not self.database_file.samefile(source):
+            database = Dataset(self.database_file, condition=lambda img_info: img_info.key in self)
+            if len(database) > 0:
+                self.update(database)
+            self.buffer.update(self)
+
     # def init_subsets(self):
     #     subsets = {}
     #     for k, v in tqdm(self.items(), desc='making subsets'):
@@ -399,8 +405,8 @@ class UIDataset(UIChunkedDataset):
 
         # update tag table
         if self.tag_table is not None:
-            orig_caption = Caption() if img_info is None or img_info.caption is None else img_info.caption
-            new_caption = Caption() if value is None or value.caption is None else value.caption
+            orig_caption = Caption() if img_info is None or img_info.caption is None else img_info.caption.copy()
+            new_caption = Caption() if value is None or value.caption is None else value.caption.copy()
             orig_caption.tags = [preprocess_tag(tag) for tag in orig_caption.tags]
             new_caption.tags = [preprocess_tag(tag) for tag in new_caption.tags]
             # print(f"add tags: {new_caption - orig_caption}")
@@ -444,7 +450,7 @@ class UIDataset(UIChunkedDataset):
 
         # init history if needed
         if key not in self.edit_history:
-            self.edit_history.init(key, self.get(key))
+            self.edit_history.init(key, self.get(key).copy())
 
         # update dataset
         self[key] = value
@@ -494,7 +500,7 @@ class UIDataset(UIChunkedDataset):
             for img_key, img_info in tqdm(self.buffer.items(), desc='dumping to txt', disable=not self.verbose):
                 img_info: ImageInfo
                 if img_key in self:
-                    img_info.write_caption()
+                    img_info.write_txt_caption()
                 else:
                     backup(img_info)
             if self.verbose:

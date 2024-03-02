@@ -68,11 +68,10 @@ SORTING_METHODS: Dict[str, Callable] = {
 def prepare_dataset(
     args,
 ):
+    from ..classes import Dataset
     from .ui_dataset import UIDataset
 
     source = args.source
-    if args.write_to_database and Path(args.database_file).is_file():
-        source = [args.database_file, source]
 
     dataset = UIDataset(
         source,
@@ -81,7 +80,7 @@ def prepare_dataset(
         write_to_txt=args.write_to_txt,
         database_file=args.database_file,
         chunk_size=args.chunk_size,
-        read_caption=True,
+        read_attrs=True,
         verbose=True,
     )
 
@@ -209,10 +208,11 @@ def create_ui(
                                     allow_custom_value=False,
                                     min_width=256,
                                 )
+                                reload_sort_btn = cc.EmojiButton(Emoji.anticlockwise)
+                            with gr.Row():
                                 sorting_reverse_checkbox = gr.Checkbox(
                                     label=translate('Reverse', global_args.language),
                                     value=False,
-                                    container=False,
                                     scale=0,
                                     min_width=128,
                                 )
@@ -385,6 +385,17 @@ def create_ui(
                                             type='pandas',
                                             row_count=(1, 'fixed'),
                                         )
+                                with gr.Tab(translate('Description', global_args.language)) as nl_caption_tab:
+                                    nl_caption = gr.Textbox(
+                                        show_label=False,
+                                        value=None,
+                                        container=True,
+                                        show_copy_button=True,
+                                        lines=6,
+                                        max_lines=6,
+                                        placeholder='empty',
+                                    )
+
                                 with gr.Tab(translate('Generation Information', global_args.language)) as gen_info_tab:
                                     with gr.Tab(label=translate('Positive Prompt', global_args.language)):
                                         positive_prompt = gr.Textbox(
@@ -437,15 +448,16 @@ def create_ui(
                                 with gr.Row(variant='compact'):
                                     tagging_best_quality_btn = cc.EmojiButton(Emoji.love_emotion, variant='primary', scale=1)
                                     tagging_high_quality_btn = cc.EmojiButton(Emoji.heart, scale=1)
+                                    tagging_normal_quality_btn = cc.EmojiButton(Emoji.white_heart, scale=1)
                                     tagging_low_quality_btn = cc.EmojiButton(Emoji.broken_heart, scale=1)
                                     tagging_worst_quality_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
                                 with gr.Row(variant='compact'):
+                                    tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing', global_args.language), scale=1, variant='primary')
                                     tagging_color_btn = cc.EmojiButton(value=translate('Color', global_args.language), scale=1, variant='primary')
                                     tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', global_args.language), scale=1, variant='primary')
                                     tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', global_args.language), scale=1, variant='stop')
                                     tagging_messy_btn = cc.EmojiButton(value=translate('Messy', global_args.language), scale=1, variant='stop')
                                 with gr.Row(variant='compact'):
-                                    tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing', global_args.language), scale=1, variant='primary')
                                     tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', global_args.language), scale=1, variant='primary')
                                     tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', global_args.language), scale=1, variant='primary')
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
@@ -515,6 +527,13 @@ def create_ui(
                                         replace_tag_btns.append(replace_tag_btn)
                                         old_tag_selectors.append(old_tag_selector)
                                         new_tag_selectors.append(new_tag_selector)
+
+                                    match_tag_checkbox = gr.Checkbox(
+                                        label=translate('Match Tag', global_args.language),
+                                        value=True,
+                                        scale=0,
+                                        min_width=128,
+                                    )
 
                                     with gr.Accordion(label=translate('More', global_args.language), open=False):
                                         for r in range(6):
@@ -719,6 +738,12 @@ def create_ui(
                     )
 
                 with gr.Tab(translate('Buffer', global_args.language)) as buffer_tab:
+                    buffer_metadata_df = gr.Dataframe(
+                        value=None,
+                        label=translate('Buffer information', global_args.language),
+                        type='pandas',
+                        row_count=(1, 'fixed'),
+                    )
                     buffer_df = gr.Dataframe(
                         value=None,
                         label=translate('Buffer', global_args.language),
@@ -964,6 +989,14 @@ def create_ui(
                 concurrency_limit=1,
             )
 
+            reload_sort_btn.click(
+                fn=lambda *args: change_to_dataset(cur_dataset, *args),
+                inputs=dataset_change_inputs,
+                outputs=dataset_change_listeners,
+                show_progress=True,
+                concurrency_limit=1,
+            )
+
             tagging_tab.select(
                 fn=change_activating_tab(ui_main_tab, tagging_tab, lambda *args: change_to_dataset(cur_dataset, *args)),
                 inputs=dataset_change_inputs,
@@ -1018,7 +1051,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            cur_image_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
+            cur_image_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, nl_caption, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
             CAPTION_MD_KEYS = tuple(ImageInfo._caption_attrs)
             OTHER_MD_KEYS = ('aesthetic_score', 'perceptual_hash')
 
@@ -1040,6 +1073,15 @@ def create_ui(
                 data = [{translate(key.replace('_', ' ').title(), global_args.language): info_dict.get(key, None) for key in keys}]
                 df = pandas.DataFrame(data=data, columns=data[0].keys())
                 return df
+
+            def get_nl_caption(image_key):
+                if image_key is None or image_key == '':
+                    return None
+                img_info = main_dataset[image_key]
+                if img_info.nl_caption is None:
+                    print(f"empty nl_caption for `{img_info.image_path}`")
+                    return None
+                return img_info.nl_caption
 
             def get_gen_info(image_key):
                 image_info = main_dataset[image_key]
@@ -1072,6 +1114,7 @@ def create_ui(
                         caption: get_caption(img_key),
                         caption_metadata_df: get_metadata_df(img_key, keys=CAPTION_MD_KEYS),
                         other_metadata_df: get_metadata_df(img_key, keys=OTHER_MD_KEYS),
+                        nl_caption: get_nl_caption(img_key),
                         positive_prompt: pos_pmt,
                         negative_prompt: neg_pmt,
                         gen_params_df: param_df,
@@ -1123,6 +1166,13 @@ def create_ui(
                     inputs=[cur_image_key],
                     outputs=[caption_metadata_df, other_metadata_df],
                     trigger_mode='always_last',
+                    concurrency_limit=1,
+                )
+
+                nl_caption_tab.select(
+                    fn=change_activating_tab(ui_data_tab, nl_caption_tab, get_nl_caption),
+                    inputs=[cur_image_key],
+                    outputs=[nl_caption],
                     concurrency_limit=1,
                 )
 
@@ -1257,7 +1307,7 @@ def create_ui(
                                 results.append(edit(image_info, *args, **kwargs))
                         else:
                             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                                futures = [executor.submit(edit, image_info, *args, **kwargs) for image_info in subset.values()]
+                                futures = [executor.submit(edit, main_dataset[img_key], *args, **kwargs) for img_key in subset.keys()]
                                 try:
                                     wait(futures)
                                     for future in futures:
@@ -1267,7 +1317,7 @@ def create_ui(
                                         future.cancel()
                                     raise
                     else:
-                        results.append(edit(main_dataset[image_key].copy(), *args, **kwargs))
+                        results.append(edit(main_dataset[image_key], *args, **kwargs))
 
                     # write to dataset
                     for res in results:
@@ -1360,6 +1410,13 @@ def create_ui(
 
             tagging_high_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='high')),
+                inputs=[image_path, proc_opts],
+                outputs=cur_image_key_change_listeners,
+                concurrency_limit=1,
+            )
+
+            tagging_normal_quality_btn.click(
+                fn=data_edition_handler(kwargs_setter(change_quality, quality='normal')),
                 inputs=[image_path, proc_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
@@ -1495,7 +1552,7 @@ def create_ui(
                     concurrency_limit=1,
                 )
 
-            def replace_tag(image_info, old, new, regex):
+            def replace_tag(image_info, old, new, match_tag, regex):
                 caption = image_info.caption
                 if caption is None:
                     return image_info
@@ -1509,14 +1566,14 @@ def create_ui(
                     except re.error as e:
                         raise gr.Error(f"regex error: {e}")
                 else:
-                    caption = caption.replace(old, new)
+                    caption = caption.replace(old, new) if not match_tag else caption.replace_tag(old, new)
                 image_info.caption = caption
                 return image_info
 
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
                     fn=data_edition_handler(replace_tag),
-                    inputs=[image_path, proc_opts, old_tag_selector, new_tag_selector],
+                    inputs=[image_path, proc_opts, old_tag_selector, new_tag_selector, match_tag_checkbox],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
@@ -1819,15 +1876,19 @@ def create_ui(
             # ========================================= Buffer ========================================= #
 
             def show_buffer():
-                return buffer.df()
+                return {
+                    buffer_df: buffer.df(),
+                    buffer_metadata_df: dataset_to_metadata_df(buffer),
+                }
 
             buffer_tab.select(
                 fn=show_buffer,
-                outputs=[buffer_df],
+                outputs=[buffer_df, buffer_metadata_df],
                 concurrency_limit=1,
             )
 
             # ========================================= Query ========================================= #
+
             def query(func: Callable[[Tuple[Any, ...], Dict[str, Any]], UIChunkedDataset]):
                 proc_func_name = func.__name__
 
@@ -1835,7 +1896,7 @@ def create_ui(
                     nonlocal cur_dataset
                     if cur_dataset is None or len(cur_dataset) == 0:
                         return {log_box: f"empty dataset"}
-                    res_dset = func(*args, **kwargs) or UIChunkedDataset()
+                    res_dset = func(*args, **kwargs) or UIChunkedDataset(chunk_size=global_args.chunk_size)
                     res = change_to_dataset(res_dset, sorting_methods=sorting_methods, reverse=reverse)
                     res.update({log_box: f"{proc_func_name} matches {len(res_dset)} images over {len(cur_dataset)} images"})
                     return res

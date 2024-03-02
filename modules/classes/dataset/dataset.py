@@ -3,7 +3,7 @@ import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
 from pathlib import Path
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Literal
 from ..data import ImageInfo
 from ...utils.file_utils import listdir, smart_name
 from ...const import IMAGE_EXTS
@@ -22,7 +22,7 @@ class Dataset(_father_class):
 
     _data: Dict[str, ImageInfo]
 
-    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_caption=False, lazy_reading=True, formalize_caption=False, recur=True, verbose=False):
+    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=False):
         self.verbose = verbose
         if not isinstance(source, (list, tuple)):
             source = [source]
@@ -39,12 +39,9 @@ class Dataset(_father_class):
                         image_key = src.stem
                         if image_key in dic:
                             continue
-                        if read_caption:
-                            cap_path = src.with_suffix('.txt')
-                            caption = cap_path.read_text(encoding='utf-8') if cap_path.is_file() else None
-                        else:
-                            caption = None
-                        image_info = ImageInfo(src, caption=caption)
+                        image_info = ImageInfo(src)
+                        if read_attrs:
+                            image_info.read_attrs(types=read_types, lazy=lazy_reading)
                         dic[image_key] = image_info
 
                     elif suffix == '.json':  # json file
@@ -77,15 +74,9 @@ class Dataset(_father_class):
                         if image_key in dic:
                             # logu.warn(f'Duplicated image key `{image_key}`: path_1: `{dic[image_key].image_path}`, path_2: `{file}`.')
                             continue
-                        if read_caption:
-                            cap_path = file.with_suffix('.txt')
-                            if cap_path.is_file():
-                                caption = cap_path.read_text(encoding='utf-8') if not lazy_reading else ImageInfo.LAZY_READING
-                            else:
-                                caption = None
-                        else:
-                            caption = None
-                        image_info = ImageInfo(file, caption=caption)
+                        image_info = ImageInfo(file)
+                        if read_attrs:
+                            image_info.read_attrs(types=read_types, lazy=lazy_reading)
                         dic[image_key] = image_info  # update dictionary
 
                 else:
@@ -361,7 +352,7 @@ def dump_as_txts(source, ask_confirm=True, verbose=False):
     if not ask_confirm or input(logu.green(f"continue? ([y]/n): ")) == 'y':
         for image_key, image_info in tqdm(dataset.items(), desc='Stage 2/2: Writing to disk' if ask_confirm else 'Writing to disk', smoothing=1, disable=not verbose):
             image_info.image_path.parent.mkdir(parents=True, exist_ok=True)
-            image_info.write_caption()
+            image_info.write_txt_caption()
     else:
         if verbose:
             logu.info('Aborted.')

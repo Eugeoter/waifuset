@@ -147,5 +147,6 @@
     "reverse": "倒序",
     "replacer": "被替换项",
     "replacement": "替换项",
-    "source": "数据源"
+    "source": "数据源",
+    "match tag": "匹配标签"
 }

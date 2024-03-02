@@ -1,5 +1,6 @@
 class Emoji:
     heart = u'\u2764\ufe0f'  # ❤️
+    white_heart = u'\U0001f90d'  # 🤍
     broken_heart = u'\U0001f494'  # 💔
     love_emotion = u'\U0001f970'  # 🥰
     hate_emotion = u'\U0001f621'  # 😡
