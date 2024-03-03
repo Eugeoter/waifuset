@@ -1,6 +1,6 @@
 import gradio as gr
-from modules.ui.ui import create_ui
-from modules.ui.arg_parser import parse_args
+from waifuset.ui.ui import create_ui
+from waifuset.ui.arg_parser import parse_args
 
 
 def api(args):
