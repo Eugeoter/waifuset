@@ -162,14 +162,14 @@ cython_debug/
 
 # customs
 
-draft**.py
+draft**
 tempCodeRunnerFile*.py
 main.py
 /models/*
 /logs/*
 /database/*
 /images/*
-cmds.txt
+cmds.sh
 launch.bat
 .backup
 /demos

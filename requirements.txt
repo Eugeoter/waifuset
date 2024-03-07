@@ -4,6 +4,7 @@ numpy
 pillow
 imagehash
 gradio==4.13.0
+opencv-contrib-python
 # huggingface-hub
 # onnxruntime-gpu
 # torch

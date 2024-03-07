@@ -1,4 +1,5 @@
 import time
+import math
 import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
@@ -22,20 +23,20 @@ class Dataset(_father_class):
 
     _data: Dict[str, ImageInfo]
 
-    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=False):
+    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, exts=IMAGE_EXTS, verbose=False):
         self.verbose = verbose
         if not isinstance(source, (list, tuple)):
             source = [source]
         if self.verbose:
             tic = time.time()
-            logu.info(f'Loading dataset from source: {source}...')
+            logu.info(f'loading dataset')
         dic = {}
         for src in source:
             if isinstance(src, (str, Path)):
                 src = Path(src)
                 if src.is_file():
                     suffix = src.suffix
-                    if suffix in IMAGE_EXTS:  # image file
+                    if suffix in exts:  # image file
                         image_key = src.stem
                         if image_key in dic:
                             continue
@@ -48,7 +49,7 @@ class Dataset(_father_class):
                         import json
                         with open(src, 'r', encoding='utf-8') as f:
                             json_data = json.load(f)
-                        for image_key, image_info in tqdm(json_data.items(), desc=f"Reading `{src.name}`", smoothing=1, disable=not verbose):
+                        for image_key, image_info in tqdm(json_data.items(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             if image_key in dic:
                                 continue
                             dic[image_key] = ImageInfo(**image_info)  # update dictionary
@@ -56,7 +57,7 @@ class Dataset(_father_class):
                     elif suffix == '.csv':  # csv file
                         df = pd.read_csv(src)
                         df = df.applymap(lambda x: None if pd.isna(x) else x)
-                        for _, row in tqdm(df.iterrows(), desc=f"Reading `{src.name}`", smoothing=1, disable=not verbose):
+                        for _, row in tqdm(df.iterrows(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             image_key = row['image_key']
                             if image_key in dic:
                                 continue
@@ -68,8 +69,8 @@ class Dataset(_father_class):
                         raise ValueError(f'Invalid file source {src}.')
 
                 elif src.is_dir():  # directory
-                    files = listdir(src, exts=IMAGE_EXTS, return_path=True, return_type=Path, recur=recur)
-                    for file in tqdm(files, desc=f"Reading `{src.name}`", smoothing=1, disable=not verbose):
+                    files = listdir(src, exts=exts, return_path=True, return_type=Path, recur=recur)
+                    for file in tqdm(files, desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                         image_key = file.stem
                         if image_key in dic:
                             # logu.warn(f'Duplicated image key `{image_key}`: path_1: `{dic[image_key].image_path}`, path_2: `{file}`.')
@@ -89,7 +90,7 @@ class Dataset(_father_class):
                 dic[image_key] = src
 
             elif isinstance(src, Dataset):
-                for image_key, image_info in tqdm(src.items(), desc='Loading Dataset', smoothing=1, disable=not verbose):
+                for image_key, image_info in tqdm(src.items(), desc='loading Dataset', smoothing=1, disable=not verbose):
                     if image_key in dic:
                         continue
                     dic[image_key] = image_info
@@ -103,7 +104,7 @@ class Dataset(_father_class):
                     dic[image_key] = image_info
 
                 else:
-                    for image_key, image_info in tqdm(src.items(), desc='Loading dict', smoothing=1, disable=not verbose):
+                    for image_key, image_info in tqdm(src.items(), desc='loading dict', smoothing=1, disable=not verbose):
                         if image_key in dic:
                             continue
                         if isinstance(image_info, dict):
@@ -122,14 +123,14 @@ class Dataset(_father_class):
             dic = {image_key: image_info for image_key, image_info in dic.items() if condition(image_info)}
         # formalize caption
         if formalize_caption:
-            for image_info in tqdm(dic.values(), desc='Formalizing captions', smoothing=1, disable=not verbose):
+            for image_info in tqdm(dic.values(), desc='formalizing captions', smoothing=1, disable=not verbose):
                 if image_info.caption:
                     image_info.caption = image_info.caption.formalized()
         self._data = dic
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
+            logu.success(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
 
         # end init
 
@@ -188,6 +189,9 @@ class Dataset(_father_class):
     def __repr__(self):
         return repr(self._data)
 
+    def copy(self):
+        return Dataset({image_key: image_info.copy() for image_key, image_info in self.items()})
+
     def apply_map(self, func, *args, max_workers=1, **kwargs):
         if self.verbose:
             tic = time.time()
@@ -197,10 +201,10 @@ class Dataset(_father_class):
         func_ = logu.track_tqdm(pbar)(func)
         if max_workers == 1:
             for image_key, image_info in self.items():
-                self[image_key] = func_(image_info, *args, **kwargs)
+                self[image_key] = func_(image_info.copy(), *args, **kwargs)
         else:
             with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(func_, image_info, *args, **kwargs) for image_info in self.values()]
+                futures = [executor.submit(func_, image_info.copy(), *args, **kwargs) for image_info in self.values()]
 
                 for future in cf.as_completed(futures):
                     image_info = future.result()
@@ -212,6 +216,27 @@ class Dataset(_father_class):
             logu.success(f'Map applied: time_cost={toc - tic:.2f}s.')
 
         return self
+
+    def with_map(self, func, *args, max_workers=1, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=True, **kwargs):
+        if verbose:
+            tic = time.time()
+            logu.info(f'With map `{logu.yellow(func.__name__)}`...')
+
+        pbar = tqdm(self.items(), desc=f'With map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
+        func_ = logu.track_tqdm(pbar)(func)
+        if max_workers == 1:
+            result = [func_(image_info.copy(), *args, **kwargs) for image_info in self.values()]
+        else:
+            with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(func_, image_info.copy(), *args, **kwargs) for image_info in self.values()]
+                result = [future.result() for future in cf.as_completed(futures)]
+
+        pbar.close()
+        if verbose:
+            toc = time.time()
+            logu.success(f'With map applied: time_cost={toc - tic:.2f}s.')
+
+        return Dataset(result, condition=condition, read_attrs=read_attrs, read_types=read_types, lazy_reading=lazy_reading, formalize_caption=formalize_caption, recur=recur, verbose=verbose)
 
     def sort_keys(self):
         self._data = dict(sorted(self._data.items(), key=lambda x: x[0]))
@@ -236,7 +261,7 @@ class Dataset(_father_class):
             import random
             if random_seed is not None:
                 random.seed(random_seed)
-            samples = random.sample([image_info for image_info in self.values() if not condition or condition(image_info)], n)
+            samples = random.sample([image_info for image_info in self.values() if not condition or condition(image_info)], min(n, len(self)))
         else:
             samples = [image_info for image_info in self.values() if not condition or condition(image_info)][:n]
         return Dataset(samples)
@@ -301,6 +326,38 @@ class Dataset(_father_class):
         if self.verbose:
             toc = time.time()
             logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+
+    def split(self, *ratio, shuffle=True) -> List['Dataset']:
+        keys = list(self.keys())
+        if shuffle:
+            import random
+            random.shuffle(keys)
+        datasets = []
+        r_sum = sum(ratio)
+        r_norm = [r / r_sum for r in ratio]
+        r_cumsum = [0] + [sum(r_norm[:i + 1]) for i in range(len(r_norm))]
+        for i in range(len(ratio)):
+            start = int(r_cumsum[i] * len(keys))
+            end = int(r_cumsum[i + 1] * len(keys))
+            datasets.append(Dataset({key: self[key] for key in keys[start:end]}))
+        return datasets
+
+    def split_n(self, n: int, shuffle: bool = True) -> List['Dataset']:
+        keys = list(self.keys())
+        if shuffle:
+            import random
+            random.shuffle(keys)
+        stride = math.ceil(len(keys) / n)
+        datasets = [Dataset({key: self[key] for key in keys[i:i + stride]}) for i in range(0, len(keys), stride)]
+        return datasets
+
+    def batches(self, batch_size: int, shuffle: bool = True) -> List['Dataset']:
+        keys = list(self.keys())
+        if shuffle:
+            import random
+            random.shuffle(keys)
+        batches = [[self[key] for key in keys[i:i + batch_size]] for i in range(0, len(keys), batch_size)]
+        return batches
 
 
 def dump_as_json(source, fp, mode='a', indent=4, sort_keys=False, verbose=False):

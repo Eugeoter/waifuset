@@ -1,7 +1,7 @@
 import json
 from PIL import Image
 from pathlib import Path
-from typing import Tuple, Literal, Any
+from typing import Tuple, Literal
 from ..caption import Caption, captionize
 
 

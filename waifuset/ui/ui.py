@@ -68,7 +68,6 @@ SORTING_METHODS: Dict[str, Callable] = {
 def prepare_dataset(
     args,
 ):
-    from ..classes import Dataset
     from .ui_dataset import UIDataset
 
     source = args.source
@@ -102,7 +101,7 @@ def prepare_dataset(
 
 
 def create_ui(
-    global_args,
+    univargs,
 ):
     # ========================================= UI ========================================= #
 
@@ -119,9 +118,9 @@ def create_ui(
             cats = cats[:5] + ['...']
         df = pandas.DataFrame(
             data={
-                translate('Number of images', global_args.language): [num_images],
-                translate('Number of categories', global_args.language): [num_cats],
-                translate('Categories', global_args.language): [cats],
+                translate('Number of images', univargs.language): [num_images],
+                translate('Number of categories', univargs.language): [num_cats],
+                translate('Categories', univargs.language): [cats],
             },
         )
         return df
@@ -129,7 +128,7 @@ def create_ui(
     def import_priority_config():
         import json
         nonlocal tag_priority_manager
-        with open(global_args.tag_priority_config_path, 'r') as f:
+        with open(univargs.tag_priority_config_path, 'r') as f:
             config = json.load(f)
         for name, patterns in tagging.PRIORITY.items():
             if name in config:
@@ -139,12 +138,12 @@ def create_ui(
 
     def init_everything():
         # args validation
-        if global_args.language not in ['en', 'cn']:
-            print(f"language {global_args.language} not supported, using `en` instead")
-            global_args.language = 'en'
-        global_args.max_workers = max(1, min(global_args.max_workers, os.cpu_count() - 1))
-        global_args.chunk_size = max(1, global_args.chunk_size)
-        if not global_args.write_to_database and not global_args.write_to_txt:
+        if univargs.language not in ['en', 'cn']:
+            print(f"language {univargs.language} not supported, using `en` instead")
+            univargs.language = 'en'
+        univargs.max_workers = max(1, min(univargs.max_workers, os.cpu_count() - 1))
+        univargs.chunk_size = max(1, univargs.chunk_size)
+        if not univargs.write_to_database and not univargs.write_to_txt:
             print("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
 
         # import priority config
@@ -159,7 +158,7 @@ def create_ui(
             tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
 
         # init dataset
-        main_dataset = prepare_dataset(global_args)
+        main_dataset = prepare_dataset(univargs)
         cur_dataset = main_dataset
         buffer = main_dataset.buffer
         sample_history = UISampleHistory()
@@ -171,24 +170,24 @@ def create_ui(
 
         return main_dataset, buffer, sample_history, tag_priority_manager, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table
 
-    main_dataset, buffer, sample_history, tag_priority_manager, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
+    univset, buffer, sample_history, tag_priority_manager, subset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
 
     with open('./api.css', 'r', encoding='utf-8') as css_file:
         css = css_file.read()
 
     # demo
     with gr.Blocks(css=css) as demo:
-        with gr.Tab(label=translate('Dataset', global_args.language)) as dataset_tab:
-            with gr.Tab(translate('Main', global_args.language)) as main_tab:
+        with gr.Tab(label=translate('Dataset', univargs.language)) as dataset_tab:
+            with gr.Tab(translate('Main', univargs.language)) as main_tab:
                 # ========================================= Base variables ========================================= #
 
                 with gr.Row():
                     with gr.Column():
-                        with gr.Tab(translate('Category', global_args.language)):
+                        with gr.Tab(translate('Category', univargs.language)):
                             with gr.Row():
                                 category_selector = gr.Dropdown(
-                                    label=translate('Category', global_args.language),
-                                    choices=main_dataset.categories,
+                                    label=translate('Category', univargs.language),
+                                    choices=univset.categories,
                                     value=None,
                                     container=False,
                                     multiselect=True,
@@ -197,11 +196,11 @@ def create_ui(
                                 )
                                 reload_category_btn = cc.EmojiButton(Emoji.anticlockwise)
 
-                        with gr.Tab(translate('Sort', global_args.language)):
+                        with gr.Tab(translate('Sort', univargs.language)):
                             with gr.Row():
                                 sorting_methods_dropdown = gr.Dropdown(
-                                    label=translate('Sorting Methods', global_args.language),
-                                    choices=translate(SORTING_METHODS.keys(), global_args.language),
+                                    label=translate('Sorting Methods', univargs.language),
+                                    choices=translate(SORTING_METHODS.keys(), univargs.language),
                                     value=None,
                                     container=False,
                                     multiselect=True,
@@ -211,46 +210,46 @@ def create_ui(
                                 reload_sort_btn = cc.EmojiButton(Emoji.anticlockwise)
                             with gr.Row():
                                 sorting_reverse_checkbox = gr.Checkbox(
-                                    label=translate('Reverse', global_args.language),
+                                    label=translate('Reverse', univargs.language),
                                     value=False,
                                     scale=0,
                                     min_width=128,
                                 )
 
-                        with gr.Tab(translate('Query', global_args.language)):
+                        with gr.Tab(translate('Query', univargs.language)):
                             with gr.Row():
-                                query_use_regex = gr.Checkbox(
-                                    label=translate('Regex', global_args.language),
-                                    value=False,
+                                query_opts = gr.CheckboxGroup(
+                                    choices=[translate('Subset', univargs.language), translate('Complement', univargs.language), translate('Regex', univargs.language)],
+                                    value=None,
                                     container=False,
-                                    scale=0,
-                                    min_width=128,
+                                    scale=1,
                                 )
-                            with gr.Tab(translate("Tag", global_args.language)) as query_tag_tab:
+                            with gr.Tab(translate("Tag", univargs.language)) as query_tag_tab:
                                 with gr.Row(variant='compact'):
+                                    query_tab_table_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
                                     query_refresh_tag_list_btn = cc.EmojiButton(Emoji.anticlockwise)
                                     query_unload_tag_list_btn = cc.EmojiButton(Emoji.no_entry)
 
                                 with gr.Row(variant='compact'):
                                     query_include_condition = gr.Dropdown(
-                                        label=translate('If', global_args.language),
-                                        choices=translate(list(CONDITION.keys()), global_args.language),
-                                        value=translate(list(CONDITION.keys())[0], global_args.language),
+                                        label=translate('If', univargs.language),
+                                        choices=translate(list(CONDITION.keys()), univargs.language),
+                                        value=translate(list(CONDITION.keys())[0], univargs.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=128,
                                         scale=0,
                                     )
                                     query_include_tags = gr.Dropdown(
-                                        label=translate('Include', global_args.language),
+                                        label=translate('Include', univargs.language),
                                         choices=None,
                                         allow_custom_value=True,
                                         multiselect=True,
                                     )
                                     query_joiner_dropdown = gr.Dropdown(
-                                        label=translate('Joiner', global_args.language),
-                                        choices=translate(list(JOINER.keys()), global_args.language),
-                                        value=translate(list(JOINER.keys())[0], global_args.language),
+                                        label=translate('Joiner', univargs.language),
+                                        choices=translate(list(JOINER.keys()), univargs.language),
+                                        value=translate(list(JOINER.keys())[0], univargs.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=108,
@@ -259,77 +258,91 @@ def create_ui(
 
                                 with gr.Row(variant='compact'):
                                     query_exclude_condition = gr.Dropdown(
-                                        label=translate('If', global_args.language),
-                                        choices=translate(list(CONDITION.keys()), global_args.language),
-                                        value=translate(list(CONDITION.keys())[0], global_args.language),
+                                        label=translate('If', univargs.language),
+                                        choices=translate(list(CONDITION.keys()), univargs.language),
+                                        value=translate(list(CONDITION.keys())[0], univargs.language),
                                         multiselect=False,
                                         allow_custom_value=False,
                                         min_width=128,
                                         scale=0,
                                     )
                                     query_exclude_tags = gr.Dropdown(
-                                        label=translate('Exclude', global_args.language),
+                                        label=translate('Exclude', univargs.language),
                                         choices=None,
                                         allow_custom_value=True,
                                         multiselect=True,
                                     )
-                                    query_tab_table_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
 
-                            with gr.Tab(translate("Filename", global_args.language)) as query_filename_tab:
+                            with gr.Tab(translate("Quality", univargs.language)) as query_quality_tab:
                                 with gr.Row(variant='compact'):
-                                    query_filename_selector = gr.Dropdown(
-                                        label=translate('Include', global_args.language),
-                                        choices=None,
-                                        allow_custom_value=True,
+                                    query_quality_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
+                                with gr.Row(variant='compact'):
+                                    query_quality_selector = gr.Dropdown(
+                                        label=translate('Quality', univargs.language),
+                                        choices=translate(['Amazing', 'Best', 'High', 'Normal', 'Low', 'Worst', 'Horrible'], univargs.language),
+                                        allow_custom_value=False,
                                         multiselect=True,
                                     )
-                                    query_filename_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
 
-                            with gr.Tab(translate("Aesthetic Score", global_args.language)) as query_aes_score_tab:
+                            with gr.Tab(translate("Aesthetic Score", univargs.language)) as query_aes_score_tab:
+                                with gr.Row(variant='compact'):
+                                    query_aes_score_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
                                 with gr.Row(variant='compact'):
                                     query_min_aes_score = gr.Number(
-                                        label=translate('Min', global_args.language),
+                                        label=translate('Min', univargs.language),
                                         value=0,
                                         min_width=128,
                                         precision=4,
                                         scale=0,
                                     )
                                     query_max_aes_score = gr.Number(
-                                        label=translate('Max', global_args.language),
+                                        label=translate('Max', univargs.language),
                                         value=10,
                                         min_width=128,
                                         precision=4,
                                         scale=0,
                                     )
-                                    query_aes_score_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary', min_width=100)
 
-                        with gr.Tab(translate('Source', global_args.language)):
+                            with gr.Tab(translate("Image Key", univargs.language)) as query_img_key_tab:
+                                with gr.Row(variant='compact'):
+                                    query_img_key_btn = cc.EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
+                                with gr.Row(variant='compact'):
+                                    query_img_key_selector = gr.Dropdown(
+                                        label=translate('Include', univargs.language),
+                                        choices=None,
+                                        allow_custom_value=True,
+                                        multiselect=True,
+                                    )
+
+                        with gr.Tab(translate('Source', univargs.language)):
                             with gr.Row():
-                                source_file = gr.Textbox(
-                                    value=os.path.abspath(global_args.source) if global_args.source else None,
+                                source_file = gr.Dropdown(
+                                    choices=None,
+                                    value=[os.path.abspath(src) for src in univargs.source] if univargs.source else None,
+                                    multiselect=True,
                                     container=False,
                                     interactive=True,
-                                    placeholder='Path/to/source',
                                     scale=1,
                                     min_width=128,
+                                    allow_custom_value=True,
                                 )
                                 load_source_btn = cc.EmojiButton(Emoji.anticlockwise)
 
                     with gr.Column():
                         with gr.Row():
                             log_box = gr.TextArea(
-                                label=translate('Log', global_args.language),
+                                label=translate('Log', univargs.language),
                                 lines=1,
                                 max_lines=1,
                             )
 
-                with gr.Tab(translate('Dataset', global_args.language)) as tagging_tab:
+                with gr.Tab(translate('Dataset', univargs.language)) as tagging_tab:
                     with gr.Row():
                         with gr.Column():
                             with gr.Row():
                                 showcase = gr.Gallery(
-                                    label=translate('Showcase', global_args.language),
-                                    value=[(v.image_path, k) for k, v in cur_dataset.chunk(0).items()],
+                                    label=translate('Showcase', univargs.language),
+                                    value=[(v.image_path, k) for k, v in subset.chunk(0).items()],
                                     rows=4,
                                     columns=4,
                                     container=True,
@@ -347,20 +360,20 @@ def create_ui(
                                 with gr.Column():
                                     ...
                                 with gr.Column():
-                                    cur_chunk_index = gr.Number(label=f"{translate('Chunk', global_args.language)} {1}/{cur_dataset.num_chunks}", value=1, min_width=128, precision=0, scale=0)
+                                    cur_chunk_index = gr.Number(label=f"{translate('Chunk', univargs.language)} {1}/{subset.num_chunks}", value=1, min_width=128, precision=0, scale=0)
                                 with gr.Column():
                                     ...
                             with gr.Row():
                                 dataset_metadata_df = gr.Dataframe(
-                                    value=dataset_to_metadata_df(main_dataset),
-                                    label=translate('Dataset Information', global_args.language),
+                                    value=dataset_to_metadata_df(univset),
+                                    label=translate('Dataset Information', univargs.language),
                                     type='pandas',
                                     row_count=(1, 'fixed'),
                                 )
 
                         with gr.Column():
                             with gr.Row():
-                                with gr.Tab(translate('Caption', global_args.language)) as caption_tab:
+                                with gr.Tab(translate('Caption', univargs.language)) as caption_tab:
                                     caption = gr.Textbox(
                                         show_label=False,
                                         value=None,
@@ -370,22 +383,22 @@ def create_ui(
                                         max_lines=6,
                                         placeholder='empty',
                                     )
-                                with gr.Tab(translate('Metadata', global_args.language)) as metadata_tab:
+                                with gr.Tab(translate('Metadata', univargs.language)) as metadata_tab:
                                     with gr.Row():
                                         caption_metadata_df = gr.Dataframe(
-                                            label=translate("Caption", global_args.language),
+                                            label=translate("Caption", univargs.language),
                                             value=None,
                                             type='pandas',
                                             row_count=(1, 'fixed'),
                                         )
                                     with gr.Row():
                                         other_metadata_df = gr.Dataframe(
-                                            label=translate("Other", global_args.language),
+                                            label=translate("Other", univargs.language),
                                             value=None,
                                             type='pandas',
                                             row_count=(1, 'fixed'),
                                         )
-                                with gr.Tab(translate('Description', global_args.language)) as nl_caption_tab:
+                                with gr.Tab(translate('Description', univargs.language)) as nl_caption_tab:
                                     nl_caption = gr.Textbox(
                                         show_label=False,
                                         value=None,
@@ -396,10 +409,10 @@ def create_ui(
                                         placeholder='empty',
                                     )
 
-                                with gr.Tab(translate('Generation Information', global_args.language)) as gen_info_tab:
-                                    with gr.Tab(label=translate('Positive Prompt', global_args.language)):
+                                with gr.Tab(translate('Generation Information', univargs.language)) as gen_info_tab:
+                                    with gr.Tab(label=translate('Positive Prompt', univargs.language)):
                                         positive_prompt = gr.Textbox(
-                                            label=translate('Positive Prompt', global_args.language),
+                                            label=translate('Positive Prompt', univargs.language),
                                             value=None,
                                             container=False,
                                             show_copy_button=True,
@@ -408,9 +421,9 @@ def create_ui(
                                             interactive=True,
                                             placeholder='empty',
                                         )
-                                    with gr.Tab(label=translate('Negative Prompt', global_args.language)):
+                                    with gr.Tab(label=translate('Negative Prompt', univargs.language)):
                                         negative_prompt = gr.Textbox(
-                                            label=translate('Negative Prompt', global_args.language),
+                                            label=translate('Negative Prompt', univargs.language),
                                             value=None,
                                             container=False,
                                             show_copy_button=True,
@@ -419,7 +432,7 @@ def create_ui(
                                             interactive=True,
                                             placeholder='empty',
                                         )
-                                    with gr.Tab(label=translate('Generation Parameters', global_args.language)):
+                                    with gr.Tab(label=translate('Generation Parameters', univargs.language)):
                                         gen_params_df = gr.Dataframe(
                                             value=None,
                                             show_label=False,
@@ -433,18 +446,18 @@ def create_ui(
                                 set_category_btn = cc.EmojiButton(Emoji.top_left_arrow)
                                 undo_btn = cc.EmojiButton(Emoji.leftwards)
                                 redo_btn = cc.EmojiButton(Emoji.rightwards)
-                                save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary', visible=global_args.write_to_database or global_args.write_to_txt)
-                                cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=global_args.max_workers == 1)
+                                save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary', visible=univargs.write_to_database or univargs.write_to_txt)
+                                cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=univargs.max_workers == 1)
                             with gr.Row():
                                 proc_opts = gr.CheckboxGroup(
-                                    label=translate('Process options', global_args.language),
-                                    choices=translate(['Batch', 'Append', 'Regex'], global_args.language),
+                                    label=translate('Process options', univargs.language),
+                                    choices=translate(['Batch', 'Append', 'Regex'], univargs.language),
                                     value=None,
                                     container=False,
                                     scale=1,
                                 )
 
-                            with gr.Tab(translate('Quick Tagging', global_args.language)):
+                            with gr.Tab(translate('Quick Tagging', univargs.language)):
                                 with gr.Row(variant='compact'):
                                     tagging_best_quality_btn = cc.EmojiButton(Emoji.love_emotion, variant='primary', scale=1)
                                     tagging_high_quality_btn = cc.EmojiButton(Emoji.heart, scale=1)
@@ -452,18 +465,18 @@ def create_ui(
                                     tagging_low_quality_btn = cc.EmojiButton(Emoji.broken_heart, scale=1)
                                     tagging_worst_quality_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
                                 with gr.Row(variant='compact'):
-                                    tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing', global_args.language), scale=1, variant='primary')
-                                    tagging_color_btn = cc.EmojiButton(value=translate('Color', global_args.language), scale=1, variant='primary')
-                                    tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', global_args.language), scale=1, variant='primary')
-                                    tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', global_args.language), scale=1, variant='stop')
-                                    tagging_messy_btn = cc.EmojiButton(value=translate('Messy', global_args.language), scale=1, variant='stop')
+                                    tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing', univargs.language), scale=1, variant='primary')
+                                    tagging_color_btn = cc.EmojiButton(value=translate('Color', univargs.language), scale=1, variant='primary')
+                                    tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', univargs.language), scale=1, variant='primary')
+                                    tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', univargs.language), scale=1, variant='stop')
+                                    tagging_messy_btn = cc.EmojiButton(value=translate('Messy', univargs.language), scale=1, variant='stop')
                                 with gr.Row(variant='compact'):
-                                    tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', global_args.language), scale=1, variant='primary')
-                                    tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', global_args.language), scale=1, variant='primary')
+                                    tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', univargs.language), scale=1, variant='primary')
+                                    tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', univargs.language), scale=1, variant='primary')
                                     tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
-                            with gr.Tab(label=translate('Custom Tagging', global_args.language)):
-                                with gr.Tab(translate("Add/Remove", global_args.language)) as add_remove_tab:
+                            with gr.Tab(label=translate('Custom Tagging', univargs.language)):
+                                with gr.Tab(translate("Add/Remove", univargs.language)) as add_remove_tab:
                                     def custom_add_rem_tagging_row():
                                         with gr.Row(variant='compact'):
                                             add_tag_btn = cc.EmojiButton(Emoji.plus, variant='primary')
@@ -488,14 +501,14 @@ def create_ui(
                                         tag_selectors.append(tag_selector)
                                         remove_tag_btns.append(remove_tag_btn)
 
-                                    with gr.Accordion(label=translate('More', global_args.language), open=False):
+                                    with gr.Accordion(label=translate('More', univargs.language), open=False):
                                         for r in range(6):
                                             add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
                                             add_tag_btns.append(add_tag_btn)
                                             tag_selectors.append(tag_selector)
                                             remove_tag_btns.append(remove_tag_btn)
 
-                                with gr.Tab(translate("Replace", global_args.language)) as replace_tab:
+                                with gr.Tab(translate("Replace", univargs.language)) as replace_tab:
                                     def custom_replace_tagging_row():
                                         with gr.Row(variant='compact'):
                                             replace_tag_btn = cc.EmojiButton(Emoji.clockwise_downwards_and_upwards_open_circle_arrows, variant='primary')
@@ -529,13 +542,13 @@ def create_ui(
                                         new_tag_selectors.append(new_tag_selector)
 
                                     match_tag_checkbox = gr.Checkbox(
-                                        label=translate('Match Tag', global_args.language),
+                                        label=translate('Match Tag', univargs.language),
                                         value=True,
                                         scale=0,
                                         min_width=128,
                                     )
 
-                                    with gr.Accordion(label=translate('More', global_args.language), open=False):
+                                    with gr.Accordion(label=translate('More', univargs.language), open=False):
                                         for r in range(6):
                                             replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
                                             replace_tag_btns.append(replace_tag_btn)
@@ -593,69 +606,69 @@ def create_ui(
                             #             min_width=144,
                             #         )
 
-                            with gr.Tab(label=translate('Optimizers', global_args.language)):
-                                with gr.Tab(translate('Sort', global_args.language)):
+                            with gr.Tab(label=translate('Optimizers', univargs.language)):
+                                with gr.Tab(translate('Sort', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         sort_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Deduplicate', global_args.language)):
+                                with gr.Tab(translate('Deduplicate', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         deduplicate_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Deoverlap', global_args.language)):
+                                with gr.Tab(translate('Deoverlap', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         deoverlap_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Defeature', global_args.language)):
+                                with gr.Tab(translate('Defeature', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         defeature_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
                                     with gr.Row(variant='compact'):
                                         defeature_freq_thres = gr.Slider(
-                                            label=translate('Frequency Threshold', global_args.language),
+                                            label=translate('Frequency Threshold', univargs.language),
                                             value=0.3,
                                             minimum=0,
                                             maximum=1,
                                             step=0.01,
                                         )
                                         defeature_count_thres = gr.Slider(
-                                            label=translate('Counting Threshold', global_args.language),
+                                            label=translate('Counting Threshold', univargs.language),
                                             value=1,
                                             minimum=1,
                                             maximum=1000,
                                             step=1,
                                         )
                                         defeature_least_sample_size = gr.Slider(
-                                            label=translate('Least Sample Size', global_args.language),
+                                            label=translate('Least Sample Size', univargs.language),
                                             value=1,
                                             minimum=1,
                                             maximum=1000,
                                             step=1,
                                         )
-                                with gr.Tab(translate('Formalize', global_args.language)):
+                                with gr.Tab(translate('Formalize', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         formalize_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, scale=0, min_width=40, variant='primary')
                                     with gr.Row(variant='compact'):
                                         formalize_caption_dropdown = gr.Dropdown(
-                                            label=translate('Format', global_args.language),
-                                            choices=translate(list(FORMAT.keys()), global_args.language),
+                                            label=translate('Format', univargs.language),
+                                            choices=translate(list(FORMAT.keys()), univargs.language),
                                             value=None,
                                             multiselect=True,
                                             allow_custom_value=False,
                                             scale=1,
                                         )
 
-                            with gr.Tab(label=translate('Tools', global_args.language)):
+                            with gr.Tab(label=translate('Tools', univargs.language)):
 
-                                with gr.Tab(label=translate('Tagger', global_args.language)):
+                                with gr.Tab(label=translate('Tagger', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         wd14_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
                                     with gr.Row(variant='compact'):
                                         wd14_general_threshold = gr.Slider(
-                                            label=translate('General Threshold', global_args.language),
+                                            label=translate('General Threshold', univargs.language),
                                             value=0.35,
                                             minimum=0,
                                             maximum=1,
                                             step=0.01,
                                         )
                                         wd14_character_threshold = gr.Slider(
-                                            label=translate('Character Threshold', global_args.language),
+                                            label=translate('Character Threshold', univargs.language),
                                             value=0.35,
                                             minimum=0,
                                             maximum=1,
@@ -663,47 +676,54 @@ def create_ui(
                                         )
                                     with gr.Row(variant='compact'):
                                         wd14_caption_proc_mode = gr.Radio(
-                                            label=translate('Overwrite mode', global_args.language),
-                                            choices=translate(['overwrite', 'append', 'prepend', 'ignore'], global_args.language),
-                                            value=translate('overwrite', global_args.language),
+                                            label=translate('Overwrite mode', univargs.language),
+                                            choices=translate(['overwrite', 'append', 'prepend', 'ignore'], univargs.language),
+                                            value=translate('overwrite', univargs.language),
                                             scale=1,
                                             min_width=128,
                                         )
 
-                                with gr.Tab(label=translate('Scorer', global_args.language)):
+                                with gr.Tab(label=translate('Scorer', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         predict_aesthetic_score_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
                                         label_aesthetic_btn = cc.EmojiButton(Emoji.label, min_width=40)
                                         clean_aesthetic_score_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
                                     with gr.Row():
+                                        waifu_scorer_batch_size = gr.Number(
+                                            value=1,
+                                            label=translate('Batch Size', univargs.language),
+                                            min_width=128,
+                                            precision=0,
+                                            scale=1,
+                                        )
                                         waifu_scorer_os_mode = gr.Radio(
-                                            label=translate('Overwrite mode', global_args.language),
-                                            choices=translate(['overwrite', 'ignore'], global_args.language),
-                                            value=translate('overwrite', global_args.language),
+                                            label=translate('Overwrite mode', univargs.language),
+                                            choices=translate(['overwrite', 'ignore'], univargs.language),
+                                            value=translate('overwrite', univargs.language),
                                             scale=1,
                                             min_width=128,
                                         )
 
-                                with gr.Tab(label=translate('Hasher', global_args.language)):
+                                with gr.Tab(label=translate('Hasher', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         get_perceptual_hash_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
                                         clean_perceptual_hash_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
                                     with gr.Row():
                                         hasher_os_mode = gr.Radio(
-                                            label=translate('Overwrite mode', global_args.language),
-                                            choices=translate(['overwrite', 'ignore'], global_args.language),
-                                            value=translate('overwrite', global_args.language),
+                                            label=translate('Overwrite mode', univargs.language),
+                                            choices=translate(['overwrite', 'ignore'], univargs.language),
+                                            value=translate('overwrite', univargs.language),
                                             scale=1,
                                             min_width=128,
                                         )
 
                     with gr.Row():
                         with gr.Column(scale=4):
-                            with gr.Tab(translate('Image Key', global_args.language)):
+                            with gr.Tab(translate('Image Key', univargs.language)):
                                 with gr.Row(variant='compact'):
                                     cur_image_key = gr.Textbox(value=None, show_label=False, max_lines=1, lines=1)
 
-                            with gr.Tab(translate('Image Path', global_args.language)):
+                            with gr.Tab(translate('Image Path', univargs.language)):
                                 with gr.Row(variant='compact'):
                                     image_path = gr.Textbox(
                                         value=None,
@@ -715,7 +735,7 @@ def create_ui(
                                         interactive=False,
                                     )
                                     open_folder_btn = cc.EmojiButton(Emoji.open_file_folder)
-                            with gr.Tab(translate('Resolution', global_args.language)):
+                            with gr.Tab(translate('Resolution', univargs.language)):
                                 with gr.Row(variant='compact'):
                                     resolution = gr.Textbox(
                                         value=None,
@@ -730,36 +750,36 @@ def create_ui(
                         with gr.Column(scale=4):
                             ...
 
-                with gr.Tab(translate('Database', global_args.language)) as database_tab:
+                with gr.Tab(translate('Database', univargs.language)) as database_tab:
                     database = gr.Dataframe(
                         value=None,
-                        label=translate('Database', global_args.language),
+                        label=translate('Database', univargs.language),
                         type='pandas',
                     )
 
-                with gr.Tab(translate('Buffer', global_args.language)) as buffer_tab:
+                with gr.Tab(translate('Buffer', univargs.language)) as buffer_tab:
                     buffer_metadata_df = gr.Dataframe(
                         value=None,
-                        label=translate('Buffer information', global_args.language),
+                        label=translate('Buffer information', univargs.language),
                         type='pandas',
                         row_count=(1, 'fixed'),
                     )
                     buffer_df = gr.Dataframe(
                         value=None,
-                        label=translate('Buffer', global_args.language),
+                        label=translate('Buffer', univargs.language),
                         type='pandas',
                         row_count=(20, 'fixed'),
                     )
 
-            with gr.Tab(translate('Config', global_args.language)) as config_tab:
+            with gr.Tab(translate('Config', univargs.language)) as config_tab:
                 with gr.Row():
                     cfg_log_box = gr.TextArea(
-                        label=translate('Log', global_args.language),
+                        label=translate('Log', univargs.language),
                         lines=1,
                         max_lines=1,
                     )
 
-                with gr.Tab(translate('Tag Order', global_args.language)):
+                with gr.Tab(translate('Tag Order', univargs.language)):
                     with gr.Row():
                         export_tag_priority_config_btn = cc.EmojiButton(Emoji.floppy_disk)
                         import_priority_config_btn = cc.EmojiButton(Emoji.inbox_tray)
@@ -767,9 +787,9 @@ def create_ui(
                     tag_priority_comps = []
                     for i, name in enumerate(tag_priority_manager.keys()):
                         with gr.Row(variant='compact'):
-                            tag_priority_level = gr.Number(label=translate(name.replace('_', ' ').title(), global_args.language), value=i, precision=0, scale=0, min_width=144)
+                            tag_priority_level = gr.Number(label=translate(name.replace('_', ' ').title(), univargs.language), value=i, precision=0, scale=0, min_width=144)
                             tag_priority_custom_tags = gr.Dropdown(
-                                label=translate('Tags', global_args.language),
+                                label=translate('Tags', univargs.language),
                                 choices=None,
                                 value=None,
                                 multiselect=True,
@@ -793,7 +813,7 @@ def create_ui(
                 r"""
                 Get the image key that should be selected if the showing dataset is changed by `dset`. Doesn't depend on what the current dataset is.
                 """
-                pre_idx = main_dataset.selected.index
+                pre_idx = univset.selected.index
                 if pre_idx is not None and pre_idx < len(dset):
                     new_img_key = dset.keys()[pre_idx]
                 else:
@@ -814,18 +834,18 @@ def create_ui(
                 r"""
                 Change the current dataset to `dset`
                 """
-                nonlocal cur_dataset
+                nonlocal subset
 
                 # pre-sorting
                 if sorting_methods is not None and len(sorting_methods) > 0:
-                    if global_args.language != 'en':
+                    if univargs.language != 'en':
                         sorting_methods = translate(sorting_methods, 'en')
                     sorting_methods = [method.replace(' ', '_') for method in sorting_methods]
 
                     extra_kwargs = {}
-                    selected_img_key = main_dataset.selected.image_key
+                    selected_img_key = univset.selected.image_key
                     if selected_img_key is not None:
-                        target = main_dataset[selected_img_key]
+                        target = univset[selected_img_key]
                         extra_kwargs['target'] = target.perceptual_hash
 
                     sorting_keys = []
@@ -835,11 +855,11 @@ def create_ui(
                         func_param_names = list(func_params.keys())
                         sorting_keys.append((func, {k: v for k, v in extra_kwargs.items() if k in func_param_names}))
 
-                cur_dataset = dset
+                subset = dset
 
                 # post-sorting
                 if sorting_methods is not None and len(sorting_methods) > 0:
-                    cur_dataset.sort(key=lambda item: tuple(func(item[1], **kwargs) for func, kwargs in sorting_keys), reverse=reverse)
+                    subset.sort(key=lambda item: tuple(func(item[1], **kwargs) for func, kwargs in sorting_keys), reverse=reverse)
 
             def show_dataset(dset=None, new_chunk_index=1):
                 r"""
@@ -857,7 +877,7 @@ def create_ui(
                     showcase: gallery,
                     dataset_metadata_df: dataset_to_metadata_df(dset),
                     cur_image_key: new_img_key,
-                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', global_args.language)} {new_chunk_index}/{cur_dataset.num_chunks}")
+                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', univargs.language)} {new_chunk_index}/{subset.num_chunks}")
                 }
 
             def show_database(dset=None, new_chunk_index=1):
@@ -869,7 +889,7 @@ def create_ui(
                 df = chunk.df()
                 return {
                     database: df,
-                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', global_args.language)} {new_chunk_index}/{dset.num_chunks}"),
+                    cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', univargs.language)} {new_chunk_index}/{dset.num_chunks}"),
                 }
 
             # ========================================= Tab changing parser ========================================= #
@@ -892,23 +912,24 @@ def create_ui(
             # ========================================= Change Source ========================================= #
 
             def change_source(source):
-                if source is None or source == '':
+                if source is None or len(source) == 0:
                     return {log_box: 'empty source'}
-                source = os.path.abspath(source)
-                if not os.path.exists(source):
-                    return {log_box: f"source `{source}` not found"}
-                elif not (os.path.isdir(source) or source.endswith(('.csv', '.json'))):
-                    return {f"source `{source}` is not a file or directory"}
+                source = [os.path.abspath(src) for src in source]
+                for src in source:
+                    if not os.path.exists(src):
+                        return {log_box: f"source `{src}` not found"}
+                    elif not (os.path.isdir(src) or src.endswith(('.csv', '.json'))):
+                        return {f"source `{src}` is not a file or directory"}
 
-                nonlocal main_dataset, buffer, sample_history, cur_dataset, tag_table, tag_feature_table
+                nonlocal univset, buffer, sample_history, subset, tag_table, tag_feature_table
 
-                global_args.source = source
-                main_dataset, buffer, sample_history, _, cur_dataset, _, _, tag_table, tag_feature_table = init_everything()
+                univargs.source = source
+                univset, buffer, sample_history, _, subset, _, _, tag_table, tag_feature_table = init_everything()
                 return {
-                    source_file: global_args.source,
-                    category_selector: gr.update(choices=main_dataset.categories, value=None),
-                    showcase: [(v.image_path, k) for k, v in cur_dataset.chunk(0).items()],
-                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', global_args.language)} 1/{cur_dataset.num_chunks}"),
+                    source_file: univargs.source,
+                    category_selector: gr.update(choices=univset.categories, value=None),
+                    showcase: [(v.image_path, k) for k, v in subset.chunk(0).items()],
+                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', univargs.language)} 1/{subset.num_chunks}"),
                     query_include_tags: gr.update(choices=None),
                     query_exclude_tags: gr.update(choices=None),
                     log_box: f"source reloaded: `{source}`",
@@ -928,7 +949,7 @@ def create_ui(
                 Change current dataset to another dataset `dset` and show its chunk
                 """
                 if dset is None:
-                    dset = cur_dataset
+                    dset = subset
                 change_current_dataset(dset, sorting_methods=sorting_methods, reverse=reverse)
                 if ui_main_tab.tab is tagging_tab:
                     res = show_dataset(dset, new_chunk_index)
@@ -941,14 +962,14 @@ def create_ui(
                 Change current dataset to another dataset with category `category` and show its chunk
                 """
                 if categories is None or len(categories) == 0:
-                    dset = main_dataset
+                    dset = univset
                 else:
-                    dset = UIChunkedDataset(chunk_size=global_args.chunk_size)
+                    dset = UIChunkedDataset(chunk_size=univargs.chunk_size)
                     for category in tqdm(sorted(categories), desc='loading subset'):
-                        if category not in main_dataset.categories:
+                        if category not in univset.categories:
                             logu.warn(f"missing category `{category}`")
                             continue
-                        dset.update(main_dataset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=global_args.chunk_size))
+                        dset.update(univset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=univargs.chunk_size))
                 return change_to_dataset(dset, new_chunk_index=1, sorting_methods=sorting_methods, reverse=reverse)
 
             dataset_change_inputs = [cur_chunk_index, sorting_methods_dropdown, sorting_reverse_checkbox]
@@ -973,7 +994,7 @@ def create_ui(
             )
 
             set_category_btn.click(
-                fn=lambda image_key, *args: {**change_to_categories([cur_dataset[image_key].category], *args), category_selector: [cur_dataset[image_key].category]},
+                fn=lambda image_key, *args: {**change_to_categories([subset[image_key].category], *args), category_selector: [subset[image_key].category]},
                 inputs=[cur_image_key, sorting_methods_dropdown, sorting_reverse_checkbox],
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -982,7 +1003,7 @@ def create_ui(
             )
 
             reload_subset_btn.click(  # same as above
-                fn=lambda *args: change_to_dataset(cur_dataset, *args),
+                fn=lambda *args: change_to_dataset(subset, *args),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -990,7 +1011,7 @@ def create_ui(
             )
 
             reload_sort_btn.click(
-                fn=lambda *args: change_to_dataset(cur_dataset, *args),
+                fn=lambda *args: change_to_dataset(subset, *args),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -998,7 +1019,7 @@ def create_ui(
             )
 
             tagging_tab.select(
-                fn=change_activating_tab(ui_main_tab, tagging_tab, lambda *args: change_to_dataset(cur_dataset, *args)),
+                fn=change_activating_tab(ui_main_tab, tagging_tab, lambda *args: change_to_dataset(subset, *args)),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1006,7 +1027,7 @@ def create_ui(
             )
 
             database_tab.select(
-                fn=change_activating_tab(ui_main_tab, database_tab, lambda *args: change_to_dataset(cur_dataset, *args)),
+                fn=change_activating_tab(ui_main_tab, database_tab, lambda *args: change_to_dataset(subset, *args)),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1014,7 +1035,7 @@ def create_ui(
             )
 
             cur_chunk_index.submit(
-                fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index),
+                fn=lambda chunk_index: change_to_dataset(subset, chunk_index),
                 inputs=[cur_chunk_index],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1022,7 +1043,7 @@ def create_ui(
             )
 
             load_pre_chunk_btn.click(
-                fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index - 1),
+                fn=lambda chunk_index: change_to_dataset(subset, chunk_index - 1),
                 inputs=[cur_chunk_index],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1030,7 +1051,7 @@ def create_ui(
             )
 
             load_next_chunk_btn.click(
-                fn=lambda chunk_index: change_to_dataset(cur_dataset, chunk_index + 1),
+                fn=lambda chunk_index: change_to_dataset(subset, chunk_index + 1),
                 inputs=[cur_chunk_index],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1042,7 +1063,7 @@ def create_ui(
             def select_image_key(selected: gr.SelectData):
                 if selected is None:
                     return None, None
-                image_key = main_dataset.select(selected)
+                image_key = univset.select(selected)
                 return image_key
 
             showcase.select(
@@ -1058,32 +1079,32 @@ def create_ui(
             def get_caption(image_key):
                 if image_key is None or image_key == '':
                     return None
-                img_info = main_dataset[image_key]
+                img_info = univset[image_key]
                 if img_info.caption is None:
                     return None
                 return str(img_info.caption)
 
             def get_metadata_df(image_key, keys):
-                if global_args.render_mode == 'partial' and ui_data_tab.tab is not metadata_tab:
+                if univargs.render_mode == 'partial' and ui_data_tab.tab is not metadata_tab:
                     return None
-                if image_key is None or image_key == '' or image_key not in main_dataset:
+                if image_key is None or image_key == '' or image_key not in univset:
                     return None
-                image_info: ImageInfo = main_dataset[image_key]
+                image_info: ImageInfo = univset[image_key]
                 info_dict = image_info.dict()
-                data = [{translate(key.replace('_', ' ').title(), global_args.language): info_dict.get(key, None) for key in keys}]
+                data = [{translate(key.replace('_', ' ').title(), univargs.language): info_dict.get(key, None) for key in keys}]
                 df = pandas.DataFrame(data=data, columns=data[0].keys())
                 return df
 
             def get_nl_caption(image_key):
                 if image_key is None or image_key == '':
                     return None
-                img_info = main_dataset[image_key]
+                img_info = univset[image_key]
                 if img_info.nl_caption is None:
                     return None
                 return img_info.nl_caption
 
             def get_gen_info(image_key):
-                image_info = main_dataset[image_key]
+                image_info = univset[image_key]
                 metadata_dict = image_info.gen_info
                 pos_pmt = metadata_dict.pop('Positive prompt', None)
                 neg_pmt = metadata_dict.pop('Negative prompt', None)
@@ -1095,17 +1116,17 @@ def create_ui(
                 if img_key is None or img_key == '':  # no image key selected
                     return {k: None for k in cur_image_key_change_listeners}
 
-                if img_key != main_dataset.selected.image_key:  # fix
-                    main_dataset.select((main_dataset.selected.index, img_key))
+                if img_key != univset.selected.image_key:  # fix
+                    univset.select((univset.selected.index, img_key))
 
-                img_info = main_dataset.get(img_key)
+                img_info = univset.get(img_key)
                 img_path = img_info.image_path
                 if not img_path.is_file():
                     return {log_box: f"image `{img_path}` not found"}
 
                 reso = f"{img_info.original_size[0]}x{img_info.original_size[1]}"
 
-                if global_args.render_mode == 'full':
+                if univargs.render_mode == 'full':
                     pos_pmt, neg_pmt, param_df = get_gen_info(img_key)
                     res = {
                         image_path: img_path,
@@ -1149,7 +1170,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            if global_args.render_mode == 'partial':
+            if univargs.render_mode == 'partial':
                 caption_tab.select(
                     fn=change_activating_tab(ui_data_tab, caption_tab, get_caption),
                     inputs=[cur_image_key],
@@ -1195,9 +1216,9 @@ def create_ui(
             def remove_image(image_key, chunk_index):
                 if image_key is None or image_key == '':
                     return {log_box: f"empty image key"}
-                main_dataset.remove(image_key)
-                if cur_dataset is not main_dataset and image_key in cur_dataset:
-                    del cur_dataset[image_key]  # remove from current dataset
+                univset.remove(image_key)
+                if subset is not univset and image_key in subset:
+                    del subset[image_key]  # remove from current dataset
                 return change_to_dataset(new_chunk_index=chunk_index)
 
             remove_image_btn.click(
@@ -1214,7 +1235,7 @@ def create_ui(
                     }
                 new_img_key = sample_history.select(index)
                 return {
-                    showcase: dataset_to_gallery(Dataset(main_dataset[new_img_key])),
+                    showcase: dataset_to_gallery(Dataset(univset[new_img_key])),
                     cur_image_key: new_img_key,
                 }
 
@@ -1235,20 +1256,20 @@ def create_ui(
             # ========================================= Base Tagging Buttons ========================================= #
 
             def random_sample(n=1):
-                subset = cur_dataset
-                if len(subset) == 0:
+                sampleset = subset
+                if len(sampleset) == 0:
                     return {log_box: f"empty dataset"}
-                subset = subset.make_subset(condition=lambda x: x.key not in sample_history)
-                if len(subset) == 0:
+                sampleset = sampleset.make_subset(condition=lambda x: x.key not in sample_history)
+                if len(sampleset) == 0:
                     return {log_box: f"no more image to sample"}
-                samples: Dataset = subset.sample(n=n, randomly=True)
+                samples: Dataset = sampleset.sample(n=n, randomly=True)
                 for sample in samples.keys():
                     sample_history.add(sample)
                 new_img_key = sample_history.select(len(sample_history) - 1)
                 return {
-                    showcase: dataset_to_gallery(Dataset(main_dataset[new_img_key])),
+                    showcase: dataset_to_gallery(Dataset(univset[new_img_key])),
                     cur_image_key: new_img_key,
-                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', global_args.language)} 1/{cur_dataset.num_chunks}"),
+                    cur_chunk_index: gr.update(value=1, label=f"{translate('Chunk', univargs.language)} 1/{subset.num_chunks}"),
                 }
 
             random_btn.click(
@@ -1259,72 +1280,80 @@ def create_ui(
             )
 
             def data_edition_handler(func: Callable[[ImageInfo, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
-                proc_func_name = func.__name__
-                max_workers = global_args.max_workers
+                funcname = func.__name__
+                max_workers = univargs.max_workers
 
-                def wrapper(image_key, proc_opts, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
-                    nonlocal proc_func_name, max_workers
-                    proc_func_log_name = proc_func_name.replace('_', ' ')
+                def wrapper(image_key, opts, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
+                    nonlocal funcname, max_workers
+                    proc_func_log_name = funcname.replace('_', ' ')
 
-                    if global_args.language != 'en':
-                        proc_opts = translate(proc_opts, 'en')
-                    proc_opts = [pm.lower() for pm in proc_opts]
-
-                    batch = ('batch' in proc_opts) and (func is not write_caption)
+                    if univargs.language != 'en':
+                        opts = translate(opts, 'en')
+                    opts = [pm.lower() for pm in opts]
+                    do_batch = ('batch' in opts) and (func is not write_caption)
                     extra_kwargs = dict(
-                        append='append' in proc_opts,
-                        regex='regex' in proc_opts,
+                        do_append='append' in opts,
+                        do_regex='regex' in opts,
                     )
                     # filter out extra kwargs
-                    func_params = inspect.signature(func).parameters
-                    func_param_names = list(func_params.keys())
-                    extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in func_param_names}
+                    funcparams = list(inspect.signature(func).parameters.keys())
+                    extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in funcparams}
 
                     if image_key is None or image_key == '':
-                        if not batch:
+                        if not do_batch:
                             return {log_box: f"{proc_func_log_name}: empty image key"}
                     else:
                         image_key = Path(image_key).stem
 
                     # print(f"proc_mode: {proc_mode} | func_param_names: {func_param_names} | extra_kwargs: {extra_kwargs}")
 
-                    def edit(image_info, *args, **kwargs):
-                        if not image_info.image_path.is_file():
-                            return None
-                        new_img_info = func(image_info.copy(), *args, **extra_kwargs, **kwargs)
-                        if image_info == new_img_info:
-                            return None
-                        return new_img_info
+                    def edit(batch, *args, **kwargs):
+                        if isinstance(batch, ImageInfo):  # single image
+                            img_info = batch
+                            if not img_info.image_path.is_file():
+                                return []
+                            new_img_info = func(img_info.copy(), *args, **extra_kwargs, **kwargs)
+                            return [new_img_info]
+                        else:
+                            batch = [img_info for img_info in batch if img_info.image_path.is_file()]
+                            new_batch = func([img_info.copy() for img_info in batch], *args, **extra_kwargs, **kwargs)
+                            return new_batch
 
                     results = []
-                    if batch:
-                        subset = cur_dataset
-                        pbar = tqdm(total=len(subset), desc=f'{proc_func_log_name} batch processing')
+                    if do_batch:
+                        editset = subset
+                        if func in (predict_aesthetic_score,):
+                            batch_size, args = args[0], args[1:]  # first arg is batch size
+                            batches = [editset.values()[i:i + batch_size] for i in range(0, len(editset), batch_size)]
+                        else:
+                            batch_size = 1
+                            batches = list(editset.values())
+                        pbar = tqdm(total=len(batches), desc=f'{proc_func_log_name} batch processing')
                         edit = logu.track_tqdm(pbar)(edit)
                         if max_workers == 1:
-                            for image_info in subset.values():
-                                results.append(edit(image_info, *args, **kwargs))
+                            for batch in batches:
+                                results.extend(edit(batch, *args, **kwargs))
                         else:
                             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                                futures = [executor.submit(edit, main_dataset[img_key], *args, **kwargs) for img_key in subset.keys()]
+                                futures = [executor.submit(edit, batch, *args, **kwargs) for batch in batches]
                                 try:
                                     wait(futures)
                                     for future in futures:
-                                        results.append(future.result())
+                                        results.extend(future.result())
                                 except (gr.CancelledError, KeyboardInterrupt):
                                     for future in futures:
                                         future.cancel()
                                     raise
                     else:
-                        results.append(edit(main_dataset[image_key], *args, **kwargs))
+                        results.extend(edit(univset[image_key], *args, **kwargs))
 
                     # write to dataset
                     for res in results:
                         if res is not None:
                             img_key = res.key
-                            main_dataset.set(img_key, res)
-                            if cur_dataset is not main_dataset and img_key in cur_dataset:
-                                cur_dataset[img_key] = res
+                            univset.set(img_key, res)
+                            if subset is not univset and img_key in subset:
+                                subset[img_key] = res
 
                     if any(results):
                         ret = track_image_key(image_key)
@@ -1360,7 +1389,7 @@ def create_ui(
             )
 
             def undo(image_info):
-                image_info = main_dataset.undo(image_info.key)
+                image_info = univset.undo(image_info.key)
                 return image_info
 
             undo_btn.click(
@@ -1371,7 +1400,7 @@ def create_ui(
             )
 
             def redo(image_info):
-                image_info = main_dataset.redo(image_info.key)
+                image_info = univset.redo(image_info.key)
                 return image_info
 
             redo_btn.click(
@@ -1382,7 +1411,7 @@ def create_ui(
             )
 
             def save_to_disk(progress: gr.Progress = gr.Progress(track_tqdm=True)):
-                main_dataset.save(progress=progress)
+                univset.save(progress=progress)
                 return f"saved!"
 
             save_btn.click(
@@ -1451,12 +1480,12 @@ def create_ui(
                     raise gr.Error(f"invalid tag format: {tag}")
                 return tag
 
-            def add_tags(image_info, tags, append):
+            def add_tags(image_info, tags, do_append):
                 caption = image_info.caption or Caption()
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
-                if append:
+                if do_append:
                     caption = (caption - tags) | tags
                 else:
                     caption = tags | caption
@@ -1635,7 +1664,7 @@ def create_ui(
                     return image_info
                 if isinstance(formats, str):
                     formats = [formats]
-                if global_args.language != 'en':
+                if univargs.language != 'en':
                     formats = [translate(fmt, 'en') for fmt in formats]
                 for fmt in formats:
                     caption = FORMAT[fmt](caption)
@@ -1681,8 +1710,8 @@ def create_ui(
                 # make feature table using tag table
                 nonlocal tag_table, tag_feature_table
                 if tag_table is None:
-                    main_dataset.init_tag_table()
-                    tag_table = main_dataset.tag_table
+                    univset.init_tag_table()
+                    tag_table = univset.tag_table
 
                 caption: Caption = image_info.caption
                 if caption is None:
@@ -1696,7 +1725,7 @@ def create_ui(
                         # print(f"making ref: `{character}`")
                         ref[character] = {}
                         img_keys = tag_table[character]
-                        img_infos = [main_dataset[key] for key in img_keys]
+                        img_infos = [univset[key] for key in img_keys]
                         if len(img_infos) < least_sample_size:
                             continue
                         for img_info in img_infos:
@@ -1721,7 +1750,7 @@ def create_ui(
             # ========================================= WD14 ========================================= #
 
             def wd14_tagging(image_info, general_threshold, character_threshold, os_mode):
-                if global_args.language != 'en':
+                if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
                 nonlocal waifu_tagger
                 old_caption = image_info.caption
@@ -1729,7 +1758,7 @@ def create_ui(
                     return image_info
                 if waifu_tagger is None:
                     from waifuset.compoents import WaifuTagger
-                    waifu_tagger = WaifuTagger(model_path=global_args.wd14_model_path, label_path=global_args.wd14_label_path, verbose=True)
+                    waifu_tagger = WaifuTagger(model_path=univargs.wd14_model_path, label_path=univargs.wd14_label_path, verbose=True)
                 image = Image.open(image_info.image_path)
                 wd14_caption = waifu_tagger(image, general_threshold=general_threshold, character_threshold=character_threshold)
                 if os_mode == 'overwrite' or os_mode == 'ignore':
@@ -1751,28 +1780,37 @@ def create_ui(
             )
 
             # ========================================= Aesthetic predictor ========================================= #
-            def predict_aesthetic_score(image_info, os_mode):
-                if global_args.language != 'en':
+            def predict_aesthetic_score(batch, os_mode):
+                if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
 
                 nonlocal waifu_scorer
                 if waifu_scorer is None:
                     from waifuset.compoents import WaifuScorer
-                    waifu_scorer = WaifuScorer(model_path=global_args.waifu_scorer_model_path, device='cuda', verbose=True)
+                    waifu_scorer = WaifuScorer(model_path=univargs.waifu_scorer_model_path, device='cuda', verbose=True)
 
-                image = Image.open(image_info.image_path)
-                orig_score = image_info.aesthetic_score
-                if orig_score is not None and os_mode == 'ignore':
-                    return image_info
+                if isinstance(batch, ImageInfo):  # single input
+                    batch = [batch]
+                batch = [img_info for img_info in batch if img_info.image_path.is_file() and not (os_mode == 'ignore' and img_info.aesthetic_score is not None)]
 
-                pred_score = waifu_scorer(image)
+                if len(batch) == 0:
+                    return []
 
-                image_info.aesthetic_score = pred_score
-                return image_info
+                images = [Image.open(img_info.image_path) for img_info in batch]
+
+                pred_scores = waifu_scorer(images)
+
+                if isinstance(pred_scores, float):  # single input
+                    pred_scores = [pred_scores]
+
+                for i, img_info in enumerate(batch):
+                    img_info.aesthetic_score = pred_scores[i]
+
+                return batch
 
             predict_aesthetic_score_btn.click(
                 fn=data_edition_handler(predict_aesthetic_score),
-                inputs=[cur_image_key, proc_opts, waifu_scorer_os_mode],
+                inputs=[cur_image_key, proc_opts, waifu_scorer_batch_size, waifu_scorer_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
                 cancels=cancel_event,
@@ -1799,7 +1837,7 @@ def create_ui(
             def change_quality_according_to_aesthetic_score(image_info: ImageInfo, os_mode):
                 caption = image_info.caption
                 orig_quality = caption.quality if caption is not None else None
-                if global_args.language != 'en':
+                if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
                 if orig_quality is not None and os_mode == 'ignore':
                     return image_info
@@ -1829,7 +1867,7 @@ def create_ui(
 
             # ========================================= Perceptual Hash ========================================= #
             def get_perceptual_hash(image_info, os_mode):
-                if global_args.language != 'en':
+                if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
 
                 try:
@@ -1888,30 +1926,53 @@ def create_ui(
 
             # ========================================= Query ========================================= #
 
-            def query(func: Callable[[Tuple[Any, ...], Dict[str, Any]], UIChunkedDataset]):
-                proc_func_name = func.__name__
+            query_base_inputs = [query_opts, sorting_methods_dropdown, sorting_reverse_checkbox]
 
-                def wrapper(sorting_methods=None, reverse=False, *args, **kwargs):
-                    nonlocal cur_dataset
-                    if cur_dataset is None or len(cur_dataset) == 0:
-                        return {log_box: f"empty dataset"}
-                    res_dset = func(*args, **kwargs) or UIChunkedDataset(chunk_size=global_args.chunk_size)
-                    res = change_to_dataset(res_dset, sorting_methods=sorting_methods, reverse=reverse)
-                    res.update({log_box: f"{proc_func_name} matches {len(res_dset)} images over {len(cur_dataset)} images"})
-                    return res
+            def query(func: Callable[[Tuple[Any, ...], Dict[str, Any]], UIChunkedDataset]):
+                funcname = func.__name__
+
+                def wrapper(opts, sorting_methods=None, reverse=False, *args, **kwargs):
+                    # parse opts as extra kwargs
+                    if univargs.language != 'en':
+                        opts = translate(opts, 'en')
+                    opts = [opt.lower() for opt in opts]
+                    do_subset = 'subset' in opts
+                    do_complement = 'complement' in opts
+                    extra_kwargs = dict(
+                        do_regex='regex' in opts,
+                    )
+                    # filter out extra kwargs
+                    funcparams = list(inspect.signature(func).parameters.keys())
+                    extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in funcparams}
+
+                    queryset = subset if do_subset else univset
+
+                    if queryset is None or len(queryset) == 0:
+                        return {log_box: f"empty query range"}
+
+                    # QUERY
+                    resset = func(queryset, *args, **extra_kwargs, **kwargs) or UIChunkedDataset(chunk_size=univargs.chunk_size)
+                    if do_complement:
+                        resset = UIChunkedDataset({img_key: univset[img_key] for img_key in queryset.keys() if img_key not in resset}, chunk_size=univargs.chunk_size)
+
+                    print(f"[{logu.blue(funcname)}] find: {len(resset)}/{len(queryset)}")
+                    result = change_to_dataset(resset, sorting_methods=sorting_methods, reverse=reverse)
+                    result.update({log_box: f"{funcname} matches {len(resset)} images over {len(queryset)} images"})
+
+                    return result
                 return wrapper
 
-            def query_tag_table(include_condition, include_tags, joiner, exclude_condition, exclude_tags, enable_regex, progress: gr.Progress = gr.Progress(track_tqdm=True)):
+            def query_by_tags(queryset, include_condition, include_tags, joiner, exclude_condition, exclude_tags, do_regex, progress: gr.Progress = gr.Progress(track_tqdm=True)):
                 # translate
-                if global_args.language != 'en':
+                if univargs.language != 'en':
                     include_condition = translate(include_condition, 'en')
                     exclude_condition = translate(exclude_condition, 'en')
                     joiner = translate(joiner, 'en')
 
                 nonlocal tag_table
                 if tag_table is None:
-                    main_dataset.init_tag_table()
-                    tag_table = main_dataset.tag_table
+                    univset.init_tag_table()
+                    tag_table = univset.tag_table
 
                 joiner_func = JOINER[joiner]
 
@@ -1919,11 +1980,9 @@ def create_ui(
                 # print(f"include_tags: {include_tags}")
                 # print(f"exclude_tags: {exclude_tags}")
 
-                subset = cur_dataset
-
                 incl_set = set()
                 for pattern in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags
-                    if enable_regex:
+                    if do_regex:
                         regex = re.compile(pattern)
                         tags = [tag for tag in tag_table.keys() if regex.match(tag)]
                     else:
@@ -1934,8 +1993,8 @@ def create_ui(
                     for tag in tags:
                         tag_set = tag_table[tag]
                         # filter by subset
-                        if subset:
-                            tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                        if queryset:
+                            tag_set = set(img_key for img_key in tag_set if img_key in queryset)
                         if len(tag_set) == 0:
                             continue
 
@@ -1946,7 +2005,7 @@ def create_ui(
 
                 excl_set = set()
                 for pattern in tqdm(exclude_tags, desc='Excluding tags'):  # calculate the union of all key(s), s ∈ exclude_tags
-                    if enable_regex:
+                    if do_regex:
                         regex = re.compile(pattern)
                         tags = [tag for tag in tag_table.keys() if regex.match(tag)]
                     else:
@@ -1956,8 +2015,8 @@ def create_ui(
 
                     for tag in tags:
                         tag_set = tag_table[tag]
-                        if subset:
-                            tag_set = set(img_key for img_key in tag_set if img_key in subset)
+                        if queryset:
+                            tag_set = set(img_key for img_key in tag_set if img_key in queryset)
                         if len(tag_set) == 0:
                             continue
 
@@ -1966,9 +2025,9 @@ def create_ui(
                         else:
                             excl_set.intersection_update(tag_set)
 
-                excl_set = set(cur_dataset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
-                res_set = joiner_func(incl_set, excl_set)  # join
-                res_dataset = UIChunkedDataset({img_key: main_dataset[img_key] for img_key in res_set}, chunk_size=global_args.chunk_size)
+                excl_set = set(subset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
+                join_set = joiner_func(incl_set, excl_set)  # join
+                resset = UIChunkedDataset({img_key: univset[img_key] for img_key in join_set}, chunk_size=univargs.chunk_size)
 
                 # print(f"incl_set: {incl_set}")
                 # print(f"excl_set: {excl_set}")
@@ -1978,54 +2037,72 @@ def create_ui(
                 # search_range_size = len(cur_dataset)
                 # res = change_to_dataset(res_dataset)
                 # res.update({log_box: f"querying matches {len(res_dataset)} images over {search_range_size} images"})
-                return res_dataset
+                return resset
 
             query_tab_table_btn.click(
-                fn=query(query_tag_table),
-                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_include_condition, query_include_tags,
-                        query_joiner_dropdown, query_exclude_condition, query_exclude_tags, query_use_regex],
+                fn=query(query_by_tags),
+                inputs=[*query_base_inputs, query_include_condition, query_include_tags,
+                        query_joiner_dropdown, query_exclude_condition, query_exclude_tags],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
             )
 
-            def query_filename(image_keys, enable_regex):
-                if image_keys is None or image_keys == '':
-                    return None
-                if enable_regex:
-                    regex = [re.compile(img_key) for img_key in image_keys]
-                    matched_img_keys = [img_key for img_key in cur_dataset.keys() if any(r.match(img_key) for r in regex)]
+            def query_by_quality(queryset, quality):
+                if quality is None or len(quality) == 0:
+                    quality = set([None])
                 else:
-                    matched_img_keys = [img_key for img_key in image_keys if img_key in cur_dataset.keys()]
-                if len(matched_img_keys) == 0:
-                    return None
-                res_dataset = UIChunkedDataset({img_key: main_dataset[img_key] for img_key in matched_img_keys}, chunk_size=global_args.chunk_size)
-                return res_dataset
+                    if univargs.language != 'en':
+                        quality = [translate(q, 'en') for q in quality]
+                    quality = set([q.lower() for q in quality])
+                resset = UIChunkedDataset(queryset, condition=lambda img_info: img_info.caption is not None and img_info.caption.quality in quality, chunk_size=univargs.chunk_size)
+                return resset
 
-            query_filename_btn.click(
-                fn=query(query_filename),
-                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_filename_selector, query_use_regex],
+            query_quality_btn.click(
+                fn=query(query_by_quality),
+                inputs=[*query_base_inputs, query_quality_selector],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
             )
 
-            def query_aesthetic_score(min_score, max_score):
+            def query_by_aesthetic_score(queryset, min_score, max_score):
                 if min_score is None and max_score is None:
-                    return cur_dataset
+                    return queryset
                 if min_score is None:
                     min_score = -float('inf')
                 if max_score is None:
                     max_score = float('inf')
                 if min_score > max_score:
-                    min_score, max_score = max_score, min_score
-                res_dataset = UIChunkedDataset(cur_dataset, condition=lambda img_info: img_info.aesthetic_score is not None and min_score <=
-                                               img_info.aesthetic_score <= max_score, chunk_size=global_args.chunk_size)
-                return res_dataset
+                    return None
+                resset = UIChunkedDataset(queryset, condition=lambda img_info: img_info.aesthetic_score is not None and min_score <=
+                                          img_info.aesthetic_score <= max_score, chunk_size=univargs.chunk_size)
+                return resset
 
             query_aes_score_btn.click(
-                fn=query(query_aesthetic_score),
-                inputs=[sorting_methods_dropdown, sorting_reverse_checkbox, query_min_aes_score, query_max_aes_score],
+                fn=query(query_by_aesthetic_score),
+                inputs=[*query_base_inputs, query_min_aes_score, query_max_aes_score],
+                outputs=dataset_change_listeners,
+                show_progress=True,
+                concurrency_limit=1,
+            )
+
+            def query_by_image_key(queryset, image_keys, do_regex):
+                if image_keys is None or image_keys == '':
+                    return None
+                if do_regex:
+                    regex = [re.compile(img_key) for img_key in image_keys]
+                    matched_img_keys = [img_key for img_key in queryset.keys() if any(r.match(img_key) for r in regex)]
+                else:
+                    matched_img_keys = [img_key for img_key in image_keys if img_key in queryset.keys()]
+                if len(matched_img_keys) == 0:
+                    return None
+                resset = UIChunkedDataset({img_key: univset[img_key] for img_key in matched_img_keys}, chunk_size=univargs.chunk_size)
+                return resset
+
+            query_img_key_btn.click(
+                fn=query(query_by_image_key),
+                inputs=[*query_base_inputs, query_img_key_selector],
                 outputs=dataset_change_listeners,
                 show_progress=True,
                 concurrency_limit=1,
@@ -2034,8 +2111,8 @@ def create_ui(
             def reload_query_tag_list(progress: gr.Progress = gr.Progress(track_tqdm=True)):
                 nonlocal tag_table
                 if tag_table is None:
-                    main_dataset.init_tag_table()
-                    tag_table = main_dataset.tag_table
+                    univset.init_tag_table()
+                    tag_table = univset.tag_table
 
                 tag_list = sorted(tag_table.keys(), key=lambda x: len(tag_table[x]), reverse=True)
                 return gr.update(choices=tag_list), gr.update(choices=tag_list)
@@ -2080,7 +2157,7 @@ def create_ui(
                 import json
                 nonlocal tag_priority_manager
                 config = tag_priority_manager.config
-                with open(global_args.tag_priority_config_path, 'w') as f:
+                with open(univargs.tag_priority_config_path, 'w') as f:
                     json.dump(config, f, indent=4)
                 return f"priority config saved"
 

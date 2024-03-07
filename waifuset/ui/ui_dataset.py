@@ -333,7 +333,7 @@ class UIDataset(UIChunkedDataset):
         if formalize_caption:
             self.buffer.update(self)
 
-        if self.database_file and self.database_file.is_file() and not self.database_file.samefile(source):
+        if len(source) == 1 and self.database_file and self.database_file.is_file() and not self.database_file.samefile(source[0]):
             database = Dataset(self.database_file, condition=lambda img_info: img_info.key in self)
             if len(database) > 0:
                 self.update(database)

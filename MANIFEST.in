@@ -1,0 +1,2 @@
+recursive-include waifuset/json *.json
+recursive-include models/wd selected_tags.csv

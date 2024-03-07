@@ -2,12 +2,15 @@ from setuptools import setup, find_packages
 with open('./requirements.txt') as f:
     requirements = f.read().splitlines()
 
-packages = find_packages()
+packages = find_packages(
+    exclude=["waifuset.ui", "waifuset.ui.*"]
+)
 
 setup(
     name='waifuset',
     version='0.1',
     packages=packages,
+    include_package_data=True,
     description='Image caption tools',
     long_description='',
     author='euge',

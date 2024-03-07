@@ -40,16 +40,16 @@ def listdir(
             for f in filenames:
                 files.append(os.path.join(root, f))
 
-        if exts:
-            files = [f for f in files if os.path.splitext(f)[1] in exts]
-        if return_dir:
-            files = [f for f in files if os.path.isdir(f)]
-        if not return_path:
-            files = [os.path.basename(f) for f in files]
-        if return_abspath:
-            files = [os.path.abspath(f) for f in files]
-        if return_type == Path:
-            files = [return_type(f) for f in files]
+    if exts:
+        files = [f for f in files if os.path.splitext(f)[1] in exts]
+    if return_dir:
+        files = [f for f in files if os.path.isdir(f)]
+    if not return_path:
+        files = [os.path.basename(f) for f in files]
+    if return_abspath:
+        files = [os.path.abspath(f) for f in files]
+    if return_type == Path:
+        files = [return_type(f) for f in files]
 
     return files
 

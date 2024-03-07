@@ -22,7 +22,7 @@ def init_cn_translation():
     if EN2CN is not None and CN2EN is not None:
         return
     try:
-        with open('./json/translation_cn.json', 'r', encoding='utf-8') as f:
+        with open('./waifuset/json/translation_cn.json', 'r', encoding='utf-8') as f:
             EN2CN = json.load(f)
         CN2EN = {v: k for k, v in EN2CN.items()}
     except FileNotFoundError:

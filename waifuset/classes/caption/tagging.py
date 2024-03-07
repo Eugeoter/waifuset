@@ -1,8 +1,9 @@
 import re
+import json
 import numpy as np
 
-OVERLAP_TABLE_PATH = './json/overlap_tags.json'
-CUSTOM_TAG_PATH = './json/custom_tags.json'
+OVERLAP_TABLE_PATH = './waifuset/json/overlap_tags.json'
+CUSTOM_TAG_PATH = './waifuset/json/custom_tags.json'
 WD_LABEL_PATH = './models/wd/selected_tags.csv'
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
@@ -37,7 +38,14 @@ try:
     CUSTOM_TAGS = read_custom_tags(CUSTOM_TAG_PATH)
 except FileNotFoundError:
     CUSTOM_TAGS = {}
-    print('Custom tag json file not found.')
+    print(f'custom tag config not found: {CUSTOM_TAG_PATH}')
+except json.JSONDecodeError:
+    CUSTOM_TAGS = {}
+    print(f'custom tag config is invalid or broken: {CUSTOM_TAG_PATH}')
+except Exception as e:
+    CUSTOM_TAGS = {}
+    print(f'failed to load custom tag config: {CUSTOM_TAG_PATH}, due to: {e}')
+
 
 QUALITY_TAGS = set(CUSTOM_TAGS.get('quality', []))
 AESTHETIC_TAGS = set(CUSTOM_TAGS.get('aesthetic', []))

@@ -5,6 +5,7 @@ from typing import Literal
 from waifuc.export import SaveExporter
 from waifuc.source import DanbooruSource
 from waifuc import action
+from ..utils import log_utils
 
 
 class Waifuc:
@@ -43,11 +44,11 @@ class Waifuc:
             already_exist = len([f for f in os.listdir(output_dir) if f.startswith('.') and f.endswith('.json')])
             max_this_tag = max_per_tag - already_exist
             if max_this_tag <= 0:
-                print(f"skip {tag} because already exist {already_exist} images")
+                print(log_utils.yellow("skip {tag} because already exist {already_exist} images"))
                 pbar.update(1)
                 continue
             else:
-                print(f"downloading {max_this_tag} images for {tag}")
+                print(log_utils.yellow(f"downloading {max_this_tag} images for {tag}"))
 
             logs['tag'] = tag
             pbar.set_postfix(logs)
