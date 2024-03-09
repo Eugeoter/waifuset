@@ -1,4 +1,4 @@
-# SD-Dataset-Manager
+# WaifuSet
 
 # 目录
 
@@ -65,8 +65,8 @@
 首先，我们需要在控制台中输入以下命令安装项目和依赖项：
 
 ```bash
-git clone https://github.com/Eugeoter/sd-dataset-manager
-cd sd-dataset-manager
+git clone https://github.com/Eugeoter/waifuset
+cd waifuset
 pip install -r requirements.txt
 ```
 
