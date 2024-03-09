@@ -2,9 +2,6 @@ import os
 from pathlib import Path
 from tqdm import tqdm
 from typing import Literal
-from waifuc.export import SaveExporter
-from waifuc.source import DanbooruSource
-from waifuc import action
 from ..utils import log_utils
 
 
@@ -25,6 +22,10 @@ class Waifuc:
         skip_when_image_exist=True,
         skip_when_dir_exist=False,
     ):
+        from waifuc.export import SaveExporter
+        from waifuc.source import DanbooruSource
+        from waifuc import action
+
         output_root = Path(output_root).absolute()
         if isinstance(tags, str):
             tags = [tags]

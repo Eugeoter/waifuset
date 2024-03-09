@@ -5,10 +5,10 @@ pillow
 imagehash
 gradio==4.13.0
 opencv-contrib-python
-# huggingface-hub
-# onnxruntime-gpu
-# torch
+# huggingface-hub # required by downloading models
+# onnxruntime-gpu # required by Waifu Tagger
+# onnxruntime # required by Waifu Tagger (cpu model only)
+# torch # required by Waifu Scorer and Waifu Tagger
+# pytorch-lightning # required by Waifu Scorer
 # torchvision
-# onnxruntime
-# pytorch-lightning
-# git+https://github.com/openai/CLIP.git
+# git+https://github.com/openai/CLIP.git # required by Waifu Scorer

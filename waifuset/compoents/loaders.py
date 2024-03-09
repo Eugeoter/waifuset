@@ -1,16 +1,17 @@
 import os
-import torch
 import time
-import onnxruntime as rt
-from ...utils.file_utils import download_from_url
-from ...utils import log_utils as logu
+from ..utils import log_utils as logu
 
 
 class OnnxModelLoader:
     def __init__(self, model_path=None, model_url=None, cache_dir=None, *args, device='cuda', verbose=False, **kwargs):
+        import torch
+        import onnxruntime as rt
+
         self.verbose = verbose
         self.model_path = os.path.abspath(model_path)
         if not os.path.isfile(self.model_path):
+            from ..utils.file_utils import download_from_url
             if model_url:
                 self.model_path = download_from_url(model_url, cache_dir=cache_dir)
             else:

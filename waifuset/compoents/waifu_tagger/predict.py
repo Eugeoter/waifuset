@@ -1,15 +1,12 @@
 import os
 import cv2
-import torch
 import numpy as np
-import pandas as pd
-import onnxruntime as rt
 from pathlib import Path
 from PIL import Image
 from typing import Dict, List, Union
-from ..utils.file_utils import download_from_url
-from ..utils import log_utils as logu, image_utils as imgu
-from ..const import StrPath
+from ..loaders import OnnxModelLoader
+from ...utils import log_utils as logu, image_utils as imgu
+from ...const import StrPath
 
 WD_MODEL_URL = os.getenv(
     "WD_MODEL_URL",
@@ -21,51 +18,28 @@ WD_LABEL_URL = os.getenv(
     "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/selected_tags.csv"
 )
 
+WD_CACHE_DIR = "./models/wd/"
+WD_MODEL_PATH = "./models/wd/swinv2.onnx"
+WD_LABEL_PATH = "./models/wd/selected_tags.csv"
 
-class WaifuTagger:
-    def __init__(self, model_path=None, label_path=None, device='cuda', verbose=False):
-        self.verbose = verbose
+
+class WaifuTagger(OnnxModelLoader):
+    def __init__(self, model_path=WD_MODEL_PATH, label_path=WD_LABEL_PATH, cache_dir=WD_CACHE_DIR, device='cuda', verbose=False):
+        import pandas as pd
+
         if model_path is None:
-            model_path = download_from_url(WD_MODEL_URL)
+            logu.info(f"model path is None, switch to default: `{WD_MODEL_PATH}`")
+            model_path = WD_MODEL_PATH
         if label_path is None:
-            label_path = download_from_url(WD_LABEL_URL)
-        # wait for download
-        while not Path(model_path).is_file():
-            pass
+            logu.info(f"label path is None, switch to default: `{WD_LABEL_PATH}`")
+            label_path = WD_LABEL_PATH
 
-        self.model_path = model_path
-        self.label_path = label_path
+        super().__init__(model_path=model_path, model_url=WD_MODEL_URL, cache_dir=cache_dir, device=device, verbose=verbose)
 
-        # Load model
-        os.environ['CUDA_MODULE_LOADING'] = 'LAZY'
-        if device == 'cuda':
-            self.providers = [
-                'CUDAExecutionProvider',
-                'CPUExecutionProvider',
-            ]
-            self.device = 'cuda' if device == 'cuda' and 'CUDAExecutionProvider' in self.providers else 'cpu'
-        elif device == 'cpu':
-            self.providers = ['CPUExecutionProvider']
-            self.device = 'cpu'
-
-        if device != self.device:
-            logu.warn(f"Device `{device}` is not available, use `{self.device}` instead.")
-
-        if self.verbose:
-            verbose_info = []
-            verbose_info.append(f"Loading pretrained tagger model from `{logu.stylize(self.model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
-            verbose_info.append(f"  Providers: {logu.stylize(self.providers, logu.ANSI.GREEN)}")
-            if self.device == 'cuda':
-                verbose_info.append(f"  Run on cuda: {logu.stylize(torch.version.cuda, logu.ANSI.GREEN)}")
-            elif self.device == 'cpu':
-                verbose_info.append(f"  Run on CPU.")
-            verbose_info = '\n'.join(verbose_info)
-            logu.info(verbose_info)
-
-        self.model = rt.InferenceSession(
-            self.model_path,
-            providers=self.providers
-        )
+        self.label_path = Path(label_path)
+        if not os.path.isfile(self.label_path):
+            from ...utils.file_utils import download_from_url
+            self.label_path = download_from_url(WD_LABEL_URL, cache_dir=cache_dir)
 
         # Load labels
         df = pd.read_csv(self.label_path)  # Read csv file
@@ -79,7 +53,7 @@ class WaifuTagger:
         self._size = self.model.get_inputs()[0].shape[1]
 
         if self.verbose:
-            logu.info(f"Model loaded.")
+            logu.info(f"label loaded.")
 
     def __call__(
         self,
@@ -87,7 +61,7 @@ class WaifuTagger:
         general_threshold: float = 0.35,
         character_threshold: float = 0.35,
     ) -> str:
-
+        import torch
         batch_inputs = preprocess_image(image, self._size)
 
         # Run model

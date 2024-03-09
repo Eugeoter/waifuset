@@ -1,7 +1,4 @@
 import gradio as gr
-import random
-import cv2
-import numpy as np
 import re
 import os
 import pandas
@@ -10,12 +7,12 @@ from functools import wraps
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
-from typing import Callable, Any, Tuple, Dict, List, Union
+from typing import Callable, Any, Tuple, Dict, List, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
+from .emoji import Emoji
 from . import custom_components as cc
 from ..import tagging, sorting
-from .emoji import Emoji
-from ..utils import log_utils as logu, image_utils as imgu
+from ..utils import log_utils as logu
 
 
 OPS = {
@@ -1318,7 +1315,7 @@ def create_ui(
                             if not img_info.image_path.is_file():
                                 return []
                             new_img_info = func(img_info.copy(), *args, **extra_kwargs, **kwargs)
-                            return [new_img_info]
+                            return new_img_info if isinstance(new_img_info, Iterable) else [new_img_info]
                         else:
                             batch = [img_info for img_info in batch if img_info.image_path.is_file()]
                             new_batch = func([img_info.copy() for img_info in batch], *args, **extra_kwargs, **kwargs)
@@ -1360,9 +1357,12 @@ def create_ui(
                         if func in (predict_aesthetic_score,):
                             args = args[1:]
                         res = edit(univset[image_key], *args, **kwargs)
-                        if not isinstance(res, list):
-                            res = [res]
-                        results.extend(res)
+                        if isinstance(res, ImageInfo):
+                            results.append(res)
+                        elif isinstance(res, list):
+                            results.extend(res)
+                        else:
+                            raise ValueError(f"invalid return type: {type(res)}")
 
                     # write to dataset
                     for res in results:
@@ -1817,7 +1817,7 @@ def create_ui(
 
                 pred_scores = waifu_scorer(images)
 
-                if isinstance(pred_scores, float):  # single input
+                if isinstance(pred_scores, float):  # single output
                     pred_scores = [pred_scores]
 
                 for i, img_info in enumerate(batch):

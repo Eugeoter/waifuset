@@ -1,12 +1,9 @@
 import torch
-import clip
 import os
 import time
 from PIL import Image
 from typing import List, Union
-from .mlp import MLP
 from ...utils import log_utils as logu
-from ...utils.file_utils import download_from_url
 
 MLP_MODEL_URL = "https://huggingface.co/Eugeoter/waifu-scorer-v2/waifu-scorer-v2-1.pth"
 MLP_CACHE_DIR = "./models/laion/"
@@ -26,6 +23,7 @@ class WaifuScorer:
             logu.info(f"[{logu.blue('waifu-scorer')}] loading pretrained model from `{logu.stylize(model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
 
         if not os.path.isfile(model_path):
+            from ...utils.file_utils import download_from_url
             model_path = download_from_url(MLP_MODEL_URL, cache_dir=MLP_CACHE_DIR)
 
         self.mlp = load_model(model_path, input_size=768, device=device)
@@ -55,11 +53,13 @@ class WaifuScorer:
 
 
 def load_clip_models(name: str = "ViT-L/14", device='cuda'):
+    import clip
     model2, preprocess = clip.load(name, device=device)  # RN50x64
     return model2, preprocess
 
 
 def load_model(model_path: str = None, input_size=768, device: str = 'cuda', dtype=None):
+    from .mlp import MLP
     model = MLP(input_size=input_size)
     if model_path:
         s = torch.load(model_path, map_location=device)
