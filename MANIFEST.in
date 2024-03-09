@@ -1,2 +1,3 @@
-recursive-include waifuset/json *.json
+recursive-include waifuset/json overlap_tags.json
+recursive-include waifuset/json translation_cn.json
 recursive-include models/wd selected_tags.csv
