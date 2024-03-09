@@ -15,7 +15,7 @@ setup(
     long_description='',
     author='euge',
     author_email='1507064225@qq.com',
-    url='https://github.com/Eugeoter/stable-dataset-manager',
+    url='https://github.com/Eugeoter/waifuset',
     install_requires=requirements,
     classifiers=[
         'Development Status :: 3 - Alpha',

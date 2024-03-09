@@ -446,7 +446,6 @@ def create_ui(
                                             show_label=False,
                                             type='pandas',
                                             row_count=(1, 'fixed'),
-                                            interactive=True,
                                         )
 
                             with gr.Row():
