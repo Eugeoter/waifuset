@@ -54,10 +54,20 @@ GAME_TAGS = set(CUSTOM_TAGS.get('game', []))
 CHARACTER_TAGS = set(CUSTOM_TAGS.get('character', []))
 CUSTOM_TAGS = QUALITY_TAGS | AESTHETIC_TAGS | STYLE_TAGS | GAME_TAGS
 
-PATTERN_CHARACTER_TAGS = '(' + '|'.join([REGEX_UNESCAPED_BRACKET.sub(r'\\\?\\\1', tag).replace(' ', r'[\s_]') for tag in CHARACTER_TAGS]) + ')'
+
+def encode_tag(tag: str):
+    tag = re.escape(tag)
+    tag = REGEX_UNESCAPED_BRACKET.sub(r'\\\?\\\1', tag)
+    tag = tag.replace('\ ', r'[\s_]')
+    return tag
+
+
+PATTERN_CHARACTER_TAGS = '(' + '|'.join(
+    [encode_tag(tag) for tag in CHARACTER_TAGS]
+) + ')'
 REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
 
-PATTERN_STYLE_TAGS = '(' + '|'.join([REGEX_UNESCAPED_BRACKET.sub(r'\\\?\\\1', tag).replace(' ', r'[\s_]') for tag in STYLE_TAGS]) + ')'
+PATTERN_STYLE_TAGS = '(' + '|'.join([encode_tag(tag) for tag in STYLE_TAGS]) + ')'
 
 
 def init_overlap_table():

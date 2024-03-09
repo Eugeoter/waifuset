@@ -1,19 +1,17 @@
 import gradio as gr
-import os
 import re
-import json
-import pickle
-import time
-import shutil
 import math
-import functools
-from pathlib import Path
+import os
+import json
+import time
 from tqdm import tqdm
-from typing import List, Iterable, Dict, Any, Callable, Union, Tuple
+from typing import Union, Callable, Tuple
+from pathlib import Path
+from typing import List, Dict
 from ..classes import Dataset, ImageInfo, Caption
 from ..classes.caption.caption import preprocess_tag
 from ..utils import log_utils as logu
-from .. import tagging
+from ..utils.file_utils import listdir
 
 
 class UISelectData:
@@ -221,6 +219,8 @@ class UITagPriorityManager:
 
 
 class UIChunkedDataset(Dataset):
+    chunk_size: int
+
     def __init__(self, source=None, *args, chunk_size=None, **kwargs):
         super().__init__(source, *args, **kwargs)
         self.chunk_size = chunk_size
@@ -305,7 +305,7 @@ class UIDataset(UIChunkedDataset):
     selected: UISelectData
     edit_history: UIEditHistory
 
-    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, formalize_caption=False, backup_dir=None, *args, **kwargs):
+    def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, backup_dir=None, *args, **kwargs):
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
 
@@ -314,38 +314,33 @@ class UIDataset(UIChunkedDataset):
         self.database_file = Path(database_file).absolute() if database_file else None
         self.backup_dir = Path(backup_dir or './backups').absolute()
 
-        if isinstance(source, (str, Path)) and source.endswith(".pkl"):
-            with open(source, 'rb') as f:
-                self._data = pickle.load(f)._data
+        same_io = source and len(source) == 1 and write_to_database and self.database_file.samefile(source[0])
+        if same_io:
+            print(f"[ui_dataset] same io")
+            super().__init__(source, *args, **kwargs)
         else:
-            super().__init__(source, formalize_caption=formalize_caption, *args, **kwargs)
+            print(f"[ui_dataset] overload: {logu.yellow(source)} -> {logu.yellow(self.database_file)}")
+            if self.database_file and self.database_file.is_file():
+                database = Dataset(self.database_file, *args, **kwargs)
+            else:
+                database = None
+
+            super().__init__(source, *args, cacheset=database, **kwargs)
 
         # self.subsets = None
+        self.buffer = Dataset()
         self.categories = sorted(list(set(img_info.category for img_info in self.values()))) if len(self) > 0 else []
         self.tag_table = None
         self.selected = UISelectData()
         self.edit_history = UIEditHistory()
-        self.buffer = Dataset()
         self.subset = self
 
-        # self.init_subsets()
-
-        if formalize_caption:
+        if kwargs.get('formalize_caption', False):
             self.buffer.update(self)
 
-        if len(source) == 1 and self.database_file and self.database_file.is_file() and not self.database_file.samefile(source[0]):
-            database = Dataset(self.database_file, condition=lambda img_info: img_info.key in self)
-            if len(database) > 0:
-                self.update(database)
-            self.buffer.update(self)
-
-    # def init_subsets(self):
-    #     subsets = {}
-    #     for k, v in tqdm(self.items(), desc='making subsets'):
-    #         if v.category not in subsets:
-    #             subsets[v.category] = ChunkedDataset(source=None, chunk_size=self.chunk_size)
-    #         subsets[v.category][k] = v
-    #     self.subsets = subsets
+    def make_subset(self, *args, **kwargs):
+        kwargs['cls'] = UIChunkedDataset
+        return super().make_subset(*args, **kwargs)
 
     def init_tag_table(self):
         if self.tag_table is not None:
@@ -357,9 +352,6 @@ class UIDataset(UIChunkedDataset):
                 continue
             for tag in caption:
                 self.tag_table.add(tag, image_key)
-
-    def make_subset(self, condition: Callable[[ImageInfo], bool], chunk_size=None, *args, **kwargs):
-        return UIChunkedDataset(self, chunk_size=chunk_size, *args, condition=condition, **kwargs)
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):

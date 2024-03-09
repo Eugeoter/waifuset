@@ -21,45 +21,57 @@ except ImportError:
 
 class Dataset(_father_class):
 
-    _data: Dict[str, ImageInfo]
+    verbose: bool
+    exts: set
 
-    def __init__(self, source=None, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, exts=IMAGE_EXTS, verbose=False):
+    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
         self.verbose = verbose
+        self.exts = exts
+        key_condition = key_condition or (lambda x: True)
         if not isinstance(source, (list, tuple)):
             source = [source]
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'loading dataset')
+        # if self.verbose:
+        #     tic = time.time()
+        #     logu.info(f'loading dataset')
         dic = {}
         for src in source:
             if isinstance(src, (str, Path)):
                 src = Path(src)
                 if src.is_file():
                     suffix = src.suffix
-                    if suffix in exts:  # image file
+                    if suffix in exts:  # 1. image file
                         image_key = src.stem
-                        if image_key in dic:
+                        if image_key in dic or not key_condition(image_key):
+                            continue
+                        if cacheset and image_key in cacheset:
+                            dic[image_key] = cacheset[image_key]
                             continue
                         image_info = ImageInfo(src)
                         if read_attrs:
                             image_info.read_attrs(types=read_types, lazy=lazy_reading)
                         dic[image_key] = image_info
 
-                    elif suffix == '.json':  # json file
+                    elif suffix == '.json':  # 2. json file
                         import json
                         with open(src, 'r', encoding='utf-8') as f:
                             json_data = json.load(f)
                         for image_key, image_info in tqdm(json_data.items(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
-                            if image_key in dic:
+                            if image_key in dic or not key_condition(image_key):
+                                continue
+                            if cacheset and image_key in cacheset:
+                                dic[image_key] = cacheset[image_key]
                                 continue
                             dic[image_key] = ImageInfo(**image_info)  # update dictionary
 
-                    elif suffix == '.csv':  # csv file
+                    elif suffix == '.csv':  # 3. csv file
                         df = pd.read_csv(src)
                         df = df.applymap(lambda x: None if pd.isna(x) else x)
                         for _, row in tqdm(df.iterrows(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             image_key = row['image_key']
-                            if image_key in dic:
+                            if image_key in dic or not key_condition(image_key):
+                                continue
+                            if cacheset and image_key in cacheset:
+                                dic[image_key] = cacheset[image_key]
                                 continue
                             info_kwargs = {name: row[name] for name in ImageInfo._all_attrs if name in row}
                             image_info = ImageInfo(**info_kwargs)
@@ -68,12 +80,15 @@ class Dataset(_father_class):
                     else:
                         raise ValueError(f'Invalid file source {src}.')
 
-                elif src.is_dir():  # directory
+                elif src.is_dir():  # 4. directory
                     files = listdir(src, exts=exts, return_path=True, return_type=Path, recur=recur)
                     for file in tqdm(files, desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                         image_key = file.stem
-                        if image_key in dic:
+                        if image_key in dic or not key_condition(image_key):
                             # logu.warn(f'Duplicated image key `{image_key}`: path_1: `{dic[image_key].image_path}`, path_2: `{file}`.')
+                            continue
+                        if cacheset and image_key in cacheset:
+                            dic[image_key] = cacheset[image_key]
                             continue
                         image_info = ImageInfo(file)
                         if read_attrs:
@@ -83,29 +98,41 @@ class Dataset(_father_class):
                 else:
                     raise FileNotFoundError(f'File {src} not found.')
 
-            elif isinstance(src, ImageInfo):
+            elif isinstance(src, ImageInfo):  # 5. ImageInfo object
                 image_key = src.key
-                if image_key in dic:
+                if image_key in dic or not key_condition(image_key):
+                    continue
+                if cacheset and image_key in cacheset:
+                    dic[image_key] = cacheset[image_key]
                     continue
                 dic[image_key] = src
 
-            elif isinstance(src, Dataset):
+            elif isinstance(src, Dataset):  # 6. Dataset object
                 for image_key, image_info in tqdm(src.items(), desc='loading Dataset', smoothing=1, disable=not verbose):
-                    if image_key in dic:
+                    if image_key in dic or not key_condition(image_key):
+                        continue
+                    if cacheset and image_key in cacheset:
+                        dic[image_key] = cacheset[image_key]
                         continue
                     dic[image_key] = image_info
 
-            elif isinstance(src, dict):
-                if src.get('image_path'):
+            elif isinstance(src, dict):  # dict
+                if src.get('image_path'):  # 7. metadata dict
                     image_info = ImageInfo(**src)
                     image_key = image_info.key
-                    if image_key in dic:
+                    if image_key in dic or not key_condition(image_key):
+                        continue
+                    if cacheset and image_key in cacheset:
+                        dic[image_key] = cacheset[image_key]
                         continue
                     dic[image_key] = image_info
 
-                else:
+                else:  # 8. img_key: img_info dict
                     for image_key, image_info in tqdm(src.items(), desc='loading dict', smoothing=1, disable=not verbose):
-                        if image_key in dic:
+                        if image_key in dic or not key_condition(image_key):
+                            continue
+                        if cacheset and image_key in cacheset:
+                            dic[image_key] = cacheset[image_key]
                             continue
                         if isinstance(image_info, dict):
                             image_info = ImageInfo(**image_info)
@@ -113,29 +140,30 @@ class Dataset(_father_class):
                             pass
                         dic[image_key] = image_info
 
-            elif src is None:
+            elif src is None:  # 9. None
                 continue
             else:
                 raise TypeError(f'Invalid type {type(src)} for Dataset.')
 
-        # filter by condition
-        if condition:
-            dic = {image_key: image_info for image_key, image_info in dic.items() if condition(image_info)}
         # formalize caption
         if formalize_caption:
             for image_info in tqdm(dic.values(), desc='formalizing captions', smoothing=1, disable=not verbose):
-                if image_info.caption:
+                if image_info.caption is not None:
                     image_info.caption = image_info.caption.formalized()
         self._data = dic
 
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
+        # if self.verbose:
+        #     toc = time.time()
+        #     logu.success(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
 
         # end init
 
-    def make_subset(self, condition: Callable[[ImageInfo], bool] = None, *args, **kwargs):
-        return Dataset(self, *args, condition=condition, **kwargs)
+    def make_subset(self, condition: Callable[[ImageInfo], bool] = None, cls=None, *args, **kwargs):
+        import inspect
+        cls = cls or self.__class__
+        init_params = inspect.signature(cls.__init__).parameters.keys()
+        attrs_kwargs = {k: getattr(self, k) for k in cls.__annotations__ if k in init_params and k not in kwargs}
+        return cls({img_key: img_info for img_key, img_info in self.items() if condition(img_info)}, *args, **kwargs, **attrs_kwargs)
 
     def update(self, other, recur=False):
         other = Dataset(other, recur=recur)
@@ -190,7 +218,8 @@ class Dataset(_father_class):
         return repr(self._data)
 
     def copy(self):
-        return Dataset({image_key: image_info.copy() for image_key, image_info in self.items()})
+        from copy import deepcopy
+        return deepcopy(self)
 
     def apply_map(self, func, *args, max_workers=1, **kwargs):
         if self.verbose:
@@ -236,7 +265,7 @@ class Dataset(_father_class):
             toc = time.time()
             logu.success(f'With map applied: time_cost={toc - tic:.2f}s.')
 
-        return Dataset(result, condition=condition, read_attrs=read_attrs, read_types=read_types, lazy_reading=lazy_reading, formalize_caption=formalize_caption, recur=recur, verbose=verbose)
+        return Dataset(result, key_condition=condition, read_attrs=read_attrs, read_types=read_types, lazy_reading=lazy_reading, formalize_caption=formalize_caption, recur=recur, verbose=verbose)
 
     def sort_keys(self):
         self._data = dict(sorted(self._data.items(), key=lambda x: x[0]))

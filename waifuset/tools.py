@@ -23,7 +23,7 @@ def run_tagger(
         condition = None
     else:
         def condition(image_info): return image_info.caption is None
-    dataset = Dataset(source, condition=condition)
+    dataset = Dataset(source).make_subset(condition=condition)
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
 

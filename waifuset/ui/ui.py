@@ -65,6 +65,20 @@ SORTING_METHODS: Dict[str, Callable] = {
 }
 
 
+def track_progress(progress: gr.Progress, desc=None, total=None, n=1):
+    progress.n = 0  # initial call
+    progress(0, desc=desc, total=total)
+
+    def wrapper(func):
+        def inner(*args, **kwargs):
+            res = func(*args, **kwargs)
+            progress.n += n
+            progress((progress.n, total), desc=desc, total=total)
+            return res
+        return inner
+    return wrapper
+
+
 def prepare_dataset(
     args,
 ):
@@ -139,12 +153,12 @@ def create_ui(
     def init_everything():
         # args validation
         if univargs.language not in ['en', 'cn']:
-            print(f"language {univargs.language} not supported, using `en` instead")
+            logu.error(f"language {univargs.language} is not supported, using `en` instead")
             univargs.language = 'en'
         univargs.max_workers = max(1, min(univargs.max_workers, os.cpu_count() - 1))
         univargs.chunk_size = max(1, univargs.chunk_size)
         if not univargs.write_to_database and not univargs.write_to_txt:
-            print("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
+            logu.warn("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
 
         # import priority config
         tagging.init_priority_tags()
@@ -154,7 +168,7 @@ def create_ui(
             import_priority_config()
             assert tag_priority_manager is not None
         except Exception as e:
-            print(f"failed to load priority config: {e}")
+            logu.error(f"failed to load priority config: {e}")
             tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
 
         # init dataset
@@ -172,11 +186,8 @@ def create_ui(
 
     univset, buffer, sample_history, tag_priority_manager, subset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
 
-    with open('./api.css', 'r', encoding='utf-8') as css_file:
-        css = css_file.read()
-
     # demo
-    with gr.Blocks(css=css) as demo:
+    with gr.Blocks() as demo:
         with gr.Tab(label=translate('Dataset', univargs.language)) as dataset_tab:
             with gr.Tab(translate('Main', univargs.language)) as main_tab:
                 # ========================================= Base variables ========================================= #
@@ -449,9 +460,9 @@ def create_ui(
                                 save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary', visible=univargs.write_to_database or univargs.write_to_txt)
                                 cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=univargs.max_workers == 1)
                             with gr.Row():
-                                proc_opts = gr.CheckboxGroup(
+                                edit_opts = gr.CheckboxGroup(
                                     label=translate('Process options', univargs.language),
-                                    choices=translate(['Batch', 'Append', 'Regex'], univargs.language),
+                                    choices=translate(['Batch', 'Append', 'Regex', 'Progress'], univargs.language),
                                     value=None,
                                     container=False,
                                     scale=1,
@@ -466,14 +477,14 @@ def create_ui(
                                     tagging_worst_quality_btn = cc.EmojiButton(Emoji.hate_emotion, variant='stop', scale=1)
                                 with gr.Row(variant='compact'):
                                     tagging_amazing_quality_btn = cc.EmojiButton(value=translate('Amazing', univargs.language), scale=1, variant='primary')
-                                    tagging_color_btn = cc.EmojiButton(value=translate('Color', univargs.language), scale=1, variant='primary')
                                     tagging_detailed_btn = cc.EmojiButton(value=translate('Detail', univargs.language), scale=1, variant='primary')
+                                    tagging_messy_btn = cc.EmojiButton(value=translate('Messy', univargs.language), scale=1)
                                     tagging_lowres_btn = cc.EmojiButton(value=translate('Lowres', univargs.language), scale=1, variant='stop')
-                                    tagging_messy_btn = cc.EmojiButton(value=translate('Messy', univargs.language), scale=1, variant='stop')
+                                    tagging_horrible_btn = cc.EmojiButton(value=translate('Horrible', univargs.language), scale=1, variant='stop')
                                 with gr.Row(variant='compact'):
+                                    tagging_color_btn = cc.EmojiButton(value=translate('Color', univargs.language), scale=1, variant='primary')
                                     tagging_aesthetic_btn = cc.EmojiButton(value=translate('Aesthetic', univargs.language), scale=1, variant='primary')
                                     tagging_beautiful_btn = cc.EmojiButton(value=translate('Beautiful', univargs.language), scale=1, variant='primary')
-                                    tagging_y_btn = cc.EmojiButton(value='Y', scale=1, variant='stop', visible=False)
 
                             with gr.Tab(label=translate('Custom Tagging', univargs.language)):
                                 with gr.Tab(translate("Add/Remove", univargs.language)) as add_remove_tab:
@@ -830,7 +841,7 @@ def create_ui(
                     chunk_index = min(max(chunk_index, 1), dset.num_chunks)
                 return chunk_index
 
-            def change_current_dataset(dset, sorting_methods=None, reverse=False):
+            def change_subset(newset, sorting_methods=None, reverse=False):
                 r"""
                 Change the current dataset to `dset`
                 """
@@ -855,27 +866,27 @@ def create_ui(
                         func_param_names = list(func_params.keys())
                         sorting_keys.append((func, {k: v for k, v in extra_kwargs.items() if k in func_param_names}))
 
-                subset = dset
+                subset = newset
 
                 # post-sorting
                 if sorting_methods is not None and len(sorting_methods) > 0:
                     subset.sort(key=lambda item: tuple(func(item[1], **kwargs) for func, kwargs in sorting_keys), reverse=reverse)
 
-            def show_dataset(dset=None, new_chunk_index=1):
+            def show_dataset(showset=None, new_chunk_index=1):
                 r"""
                 Convert `dset` to gallery value and image key that should be selected
                 """
-                if isinstance(dset, UIChunkedDataset):
-                    new_chunk_index = correct_chunk_idx(dset, new_chunk_index)
-                    chunk = dset.chunk(new_chunk_index - 1) if isinstance(dset, UIChunkedDataset) else dset
-                elif isinstance(dset, Dataset):
-                    chunk = dset
+                if isinstance(showset, UIChunkedDataset):
+                    new_chunk_index = correct_chunk_idx(showset, new_chunk_index)
+                    chunk = showset.chunk(new_chunk_index - 1) if isinstance(showset, UIChunkedDataset) else showset
+                elif isinstance(showset, Dataset):
+                    chunk = showset
                     new_chunk_index = 1
                 new_img_key = get_new_img_key(chunk)
                 gallery = dataset_to_gallery(chunk)
                 return {
                     showcase: gallery,
-                    dataset_metadata_df: dataset_to_metadata_df(dset),
+                    dataset_metadata_df: dataset_to_metadata_df(showset),
                     cur_image_key: new_img_key,
                     cur_chunk_index: gr.update(value=new_chunk_index, label=f"{translate('Chunk', univargs.language)} {new_chunk_index}/{subset.num_chunks}")
                 }
@@ -911,7 +922,8 @@ def create_ui(
 
             # ========================================= Change Source ========================================= #
 
-            def change_source(source):
+            def load_source(source):
+                print(f"[{logu.blue('load_source')}]: {source}")
                 if source is None or len(source) == 0:
                     return {log_box: 'empty source'}
                 source = [os.path.abspath(src) for src in source]
@@ -936,7 +948,7 @@ def create_ui(
                 }
 
             load_source_btn.click(
-                fn=change_source,
+                fn=load_source,
                 inputs=[source_file],
                 outputs=[source_file, category_selector, showcase, cur_chunk_index, query_include_tags, query_exclude_tags, log_box],
                 concurrency_limit=1,
@@ -944,33 +956,25 @@ def create_ui(
 
             # ========================================= Subset key selector ========================================= #
 
-            def change_to_dataset(dset: UIChunkedDataset = None, new_chunk_index=1, sorting_methods=None, reverse=False):
+            def change_to_dataset(newset: UIChunkedDataset = None, new_chunk_index=1, sorting_methods=None, reverse=False):
                 r"""
                 Change current dataset to another dataset `dset` and show its chunk
                 """
-                if dset is None:
-                    dset = subset
-                change_current_dataset(dset, sorting_methods=sorting_methods, reverse=reverse)
+                if newset is None:
+                    newset = subset
+                change_subset(newset, sorting_methods=sorting_methods, reverse=reverse)
                 if ui_main_tab.tab is tagging_tab:
-                    res = show_dataset(dset, new_chunk_index)
+                    res = show_dataset(newset, new_chunk_index)
                 elif ui_main_tab.tab is database_tab:
-                    res = show_database(dset, new_chunk_index)
+                    res = show_database(newset, new_chunk_index)
                 return res
 
             def change_to_categories(categories, sorting_methods=None, reverse=False, progress=gr.Progress(track_tqdm=True)):
                 r"""
                 Change current dataset to another dataset with category `category` and show its chunk
                 """
-                if categories is None or len(categories) == 0:
-                    dset = univset
-                else:
-                    dset = UIChunkedDataset(chunk_size=univargs.chunk_size)
-                    for category in tqdm(sorted(categories), desc='loading subset'):
-                        if category not in univset.categories:
-                            logu.warn(f"missing category `{category}`")
-                            continue
-                        dset.update(univset.make_subset(condition=lambda img_info: img_info.category == category, chunk_size=univargs.chunk_size))
-                return change_to_dataset(dset, new_chunk_index=1, sorting_methods=sorting_methods, reverse=reverse)
+                catset = univset if categories is None or len(categories) == 0 else univset.make_subset(condition=lambda img_info: img_info.category in set(categories))
+                return change_to_dataset(catset, new_chunk_index=1, sorting_methods=sorting_methods, reverse=reverse)
 
             dataset_change_inputs = [cur_chunk_index, sorting_methods_dropdown, sorting_reverse_checkbox]
             dataset_change_listeners = [showcase, dataset_metadata_df, cur_image_key, database, cur_chunk_index, category_selector, log_box]
@@ -1099,9 +1103,9 @@ def create_ui(
                 if image_key is None or image_key == '':
                     return None
                 img_info = univset[image_key]
-                if img_info.nl_caption is None:
+                if img_info.description is None:
                     return None
-                return img_info.nl_caption
+                return img_info.description
 
             def get_gen_info(image_key):
                 image_info = univset[image_key]
@@ -1256,10 +1260,10 @@ def create_ui(
             # ========================================= Base Tagging Buttons ========================================= #
 
             def random_sample(n=1):
-                sampleset = subset
+                sampleset = subset  # sample from current dataset
                 if len(sampleset) == 0:
-                    return {log_box: f"empty dataset"}
-                sampleset = sampleset.make_subset(condition=lambda x: x.key not in sample_history)
+                    return {log_box: f"empty subset"}
+                sampleset = sampleset.make_subset(condition=lambda img_info: img_info.key not in sample_history)
                 if len(sampleset) == 0:
                     return {log_box: f"no more image to sample"}
                 samples: Dataset = sampleset.sample(n=n, randomly=True)
@@ -1291,6 +1295,7 @@ def create_ui(
                         opts = translate(opts, 'en')
                     opts = [pm.lower() for pm in opts]
                     do_batch = ('batch' in opts) and (func is not write_caption)
+                    do_progress = 'progress' in opts
                     extra_kwargs = dict(
                         do_append='append' in opts,
                         do_regex='regex' in opts,
@@ -1328,8 +1333,13 @@ def create_ui(
                         else:
                             batch_size = 1
                             batches = list(editset.values())
-                        pbar = tqdm(total=len(batches), desc=f'{proc_func_log_name} batch processing')
+
+                        desc = f'[{proc_func_log_name}] batch processing'
+                        pbar = tqdm(total=len(batches), desc=desc)
                         edit = logu.track_tqdm(pbar)(edit)
+                        if do_progress:
+                            edit = track_progress(progress, desc=desc, total=len(batches))(edit)
+
                         if max_workers == 1:
                             for batch in batches:
                                 results.extend(edit(batch, *args, **kwargs))
@@ -1344,8 +1354,15 @@ def create_ui(
                                     for future in futures:
                                         future.cancel()
                                     raise
+
+                        pbar.close()
                     else:
-                        results.extend(edit(univset[image_key], *args, **kwargs))
+                        if func in (predict_aesthetic_score,):
+                            args = args[1:]
+                        res = edit(univset[image_key], *args, **kwargs)
+                        if not isinstance(res, list):
+                            res = [res]
+                        results.extend(res)
 
                     # write to dataset
                     for res in results:
@@ -1382,7 +1399,7 @@ def create_ui(
 
             caption.blur(
                 fn=data_edition_handler(write_caption),
-                inputs=[image_path, proc_opts, caption],
+                inputs=[image_path, edit_opts, caption],
                 outputs=cur_image_key_change_listeners,
                 cancels=cancel_event,
                 concurrency_limit=1,
@@ -1394,7 +1411,7 @@ def create_ui(
 
             undo_btn.click(
                 fn=data_edition_handler(undo),
-                inputs=[cur_image_key, proc_opts],
+                inputs=[cur_image_key, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1405,7 +1422,7 @@ def create_ui(
 
             redo_btn.click(
                 fn=data_edition_handler(redo),
-                inputs=[cur_image_key, proc_opts],
+                inputs=[cur_image_key, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1431,35 +1448,35 @@ def create_ui(
 
             tagging_best_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='best')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_high_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='high')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_normal_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='normal')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_low_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='low')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_worst_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='worst')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1492,14 +1509,14 @@ def create_ui(
                 image_info.caption = caption
                 return image_info
 
-            def remove_tags(image_info, tags, regex):
+            def remove_tags(image_info, tags, do_regex):
                 caption = image_info.caption
                 if caption is None:
                     return image_info
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
-                if regex:
+                if do_regex:
                     try:
                         tags = [re.compile(tag) for tag in tags]
                     except re.error as e:
@@ -1510,56 +1527,56 @@ def create_ui(
 
             tagging_color_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='beautiful color')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_detailed_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='detailed')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_lowres_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='lowres')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
+                outputs=cur_image_key_change_listeners,
+                concurrency_limit=1,
+            )
+
+            tagging_horrible_btn.click(
+                fn=data_edition_handler(kwargs_setter(add_tags, tags='horrible')),
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_messy_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='messy')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_aesthetic_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='aesthetic')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_beautiful_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='beautiful')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_amazing_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='amazing')),
-                inputs=[image_path, proc_opts],
-                outputs=cur_image_key_change_listeners,
-                concurrency_limit=1,
-            )
-
-            tagging_y_btn.click(
-                fn=data_edition_handler(kwargs_setter(add_tags, tags='y')),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1569,22 +1586,22 @@ def create_ui(
             for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
                 add_tag_btn.click(
                     fn=data_edition_handler(add_tags),
-                    inputs=[image_path, proc_opts, tag_selector],
+                    inputs=[image_path, edit_opts, tag_selector],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
                 remove_tag_btn.click(
                     fn=data_edition_handler(remove_tags),
-                    inputs=[image_path, proc_opts, tag_selector],
+                    inputs=[image_path, edit_opts, tag_selector],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
 
-            def replace_tag(image_info, old, new, match_tag, regex):
+            def replace_tag(image_info, old, new, match_tag, do_regex):
                 caption = image_info.caption
                 if caption is None:
                     return image_info
-                if regex:
+                if do_regex:
                     try:
                         old = re.compile(old)
                     except re.error as e:
@@ -1601,7 +1618,7 @@ def create_ui(
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
                     fn=data_edition_handler(replace_tag),
-                    inputs=[image_path, proc_opts, old_tag_selector, new_tag_selector, match_tag_checkbox],
+                    inputs=[image_path, edit_opts, old_tag_selector, new_tag_selector, match_tag_checkbox],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
@@ -1653,7 +1670,7 @@ def create_ui(
 
             sort_caption_btn.click(
                 fn=data_edition_handler(sort_caption),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1673,7 +1690,7 @@ def create_ui(
 
             formalize_caption_btn.click(
                 fn=data_edition_handler(formalize_caption),
-                inputs=[image_path, proc_opts, formalize_caption_dropdown],
+                inputs=[image_path, edit_opts, formalize_caption_dropdown],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1687,7 +1704,7 @@ def create_ui(
 
             deduplicate_caption_btn.click(
                 fn=data_edition_handler(deduplicate_caption),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1701,7 +1718,7 @@ def create_ui(
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deoverlap_caption),
-                inputs=[image_path, proc_opts],
+                inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1742,7 +1759,7 @@ def create_ui(
 
             defeature_caption_btn.click(
                 fn=lambda *args: data_edition_handler(defeature_caption)(*args, ref={}),
-                inputs=[image_path, proc_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
+                inputs=[image_path, edit_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1774,13 +1791,13 @@ def create_ui(
 
             wd14_run_btn.click(
                 fn=data_edition_handler(wd14_tagging),
-                inputs=[image_path, proc_opts, wd14_general_threshold, wd14_character_threshold, wd14_caption_proc_mode],
+                inputs=[image_path, edit_opts, wd14_general_threshold, wd14_character_threshold, wd14_caption_proc_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             # ========================================= Aesthetic predictor ========================================= #
-            def predict_aesthetic_score(batch, os_mode):
+            def predict_aesthetic_score(batch, os_mode) -> List[ImageInfo]:
                 if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
 
@@ -1810,7 +1827,7 @@ def create_ui(
 
             predict_aesthetic_score_btn.click(
                 fn=data_edition_handler(predict_aesthetic_score),
-                inputs=[cur_image_key, proc_opts, waifu_scorer_batch_size, waifu_scorer_os_mode],
+                inputs=[cur_image_key, edit_opts, waifu_scorer_batch_size, waifu_scorer_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
                 cancels=cancel_event,
@@ -1849,7 +1866,7 @@ def create_ui(
 
             label_aesthetic_btn.click(
                 fn=data_edition_handler(change_quality_according_to_aesthetic_score),
-                inputs=[cur_image_key, proc_opts, waifu_scorer_os_mode],
+                inputs=[cur_image_key, edit_opts, waifu_scorer_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1860,7 +1877,7 @@ def create_ui(
 
             clean_aesthetic_score_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_aesthetic_score, score=None)),
-                inputs=[cur_image_key, proc_opts],
+                inputs=[cur_image_key, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1885,7 +1902,7 @@ def create_ui(
 
             get_perceptual_hash_btn.click(
                 fn=data_edition_handler(get_perceptual_hash),
-                inputs=[cur_image_key, proc_opts, hasher_os_mode],
+                inputs=[cur_image_key, edit_opts, hasher_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1896,7 +1913,7 @@ def create_ui(
 
             clean_perceptual_hash_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_perceptual_hash, p_hash=None)),
-                inputs=[cur_image_key, proc_opts],
+                inputs=[cur_image_key, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1914,7 +1931,7 @@ def create_ui(
 
             def show_buffer():
                 return {
-                    buffer_df: buffer.df(),
+                    buffer_df: Dataset({img_key: univset[img_key] for img_key in buffer.keys()[:univargs.chunk_size]}).df(),
                     buffer_metadata_df: dataset_to_metadata_df(buffer),
                 }
 
@@ -1957,7 +1974,7 @@ def create_ui(
 
                     print(f"[{logu.blue(funcname)}] find: {len(resset)}/{len(queryset)}")
                     result = change_to_dataset(resset, sorting_methods=sorting_methods, reverse=reverse)
-                    result.update({log_box: f"{funcname} matches {len(resset)} images over {len(queryset)} images"})
+                    result.update({log_box: f"[{funcname}] find: {len(resset)}/{len(queryset)}"})
 
                     return result
                 return wrapper
@@ -2027,7 +2044,7 @@ def create_ui(
 
                 excl_set = set(subset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
                 join_set = joiner_func(incl_set, excl_set)  # join
-                resset = UIChunkedDataset({img_key: univset[img_key] for img_key in join_set}, chunk_size=univargs.chunk_size)
+                resset = queryset.make_subset(condition=lambda img_info: img_info.key in join_set)
 
                 # print(f"incl_set: {incl_set}")
                 # print(f"excl_set: {excl_set}")
@@ -2050,12 +2067,12 @@ def create_ui(
 
             def query_by_quality(queryset, quality):
                 if quality is None or len(quality) == 0:
-                    quality = set([None])
+                    quality = [None]
                 else:
                     if univargs.language != 'en':
                         quality = [translate(q, 'en') for q in quality]
-                    quality = set([q.lower() for q in quality])
-                resset = UIChunkedDataset(queryset, condition=lambda img_info: img_info.caption is not None and img_info.caption.quality in quality, chunk_size=univargs.chunk_size)
+                    quality = [q.lower() for q in quality]
+                resset = queryset.make_subset(condition=lambda img_info: img_info.caption is not None and img_info.caption.quality in set(quality))
                 return resset
 
             query_quality_btn.click(
@@ -2066,7 +2083,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def query_by_aesthetic_score(queryset, min_score, max_score):
+            def query_by_aesthetic_score(queryset: Dataset, min_score, max_score):
                 if min_score is None and max_score is None:
                     return queryset
                 if min_score is None:
@@ -2075,8 +2092,7 @@ def create_ui(
                     max_score = float('inf')
                 if min_score > max_score:
                     return None
-                resset = UIChunkedDataset(queryset, condition=lambda img_info: img_info.aesthetic_score is not None and min_score <=
-                                          img_info.aesthetic_score <= max_score, chunk_size=univargs.chunk_size)
+                resset = queryset.make_subset(condition=lambda img_info: img_info.aesthetic_score is not None and min_score <= img_info.aesthetic_score <= max_score)
                 return resset
 
             query_aes_score_btn.click(
@@ -2087,7 +2103,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def query_by_image_key(queryset, image_keys, do_regex):
+            def query_by_image_key(queryset: Dataset, image_keys, do_regex):
                 if image_keys is None or image_keys == '':
                     return None
                 if do_regex:
@@ -2097,7 +2113,7 @@ def create_ui(
                     matched_img_keys = [img_key for img_key in image_keys if img_key in queryset.keys()]
                 if len(matched_img_keys) == 0:
                     return None
-                resset = UIChunkedDataset({img_key: univset[img_key] for img_key in matched_img_keys}, chunk_size=univargs.chunk_size)
+                resset = queryset.make_subset(condition=lambda img_info: img_info.key in set(matched_img_keys))
                 return resset
 
             query_img_key_btn.click(

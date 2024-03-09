@@ -136,6 +136,6 @@ def download_from_url(url, cache_dir=None, verbose=True):
     split = url.split("/")
     username, repo_id, model_name = split[-3], split[-2], split[-1]
     if verbose:
-        print(f"downloading: {username}/{repo_id}/{model_name}")
+        print(f"[download_from_url]: {username}/{repo_id}/{model_name}")
     model_path = hf_hub_download(f"{username}/{repo_id}", model_name, cache_dir=cache_dir)
     return model_path

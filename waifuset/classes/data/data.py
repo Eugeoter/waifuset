@@ -1,35 +1,46 @@
 import json
+import time
 from PIL import Image
 from pathlib import Path
-from typing import Tuple, Literal
+from typing import Tuple, Literal, Iterable
+from collections import OrderedDict
 from ..caption import Caption, captionize
+from ...const import IMAGE_EXTS
 
 
 class ImageInfo:
+    # constant
     LAZY_READING = 0
 
     image_path: Path
     caption: Caption
-    nl_caption: str
+    description: str
     original_size: Tuple[int, int]
     aesthetic_score: float
+    safe_level: str
+    safe_rating: float
     perceptual_hash: str
 
     def __init__(
         self,
         image_path,
         caption=None,
-        nl_caption=None,
+        description=None,
         original_size=None,
         aesthetic_score=None,
+        safe_level=None,
+        safe_rating=None,
         perceptual_hash=None,
         **kwargs,
     ):
         self._image_path = Path(image_path).absolute()
         self._caption = caption if caption is None or caption is ImageInfo.LAZY_READING else Caption(caption)
-        self._nl_caption = nl_caption if nl_caption is not None else None
+
+        self._description = description if description is not None else None
         self._original_size = tuple(original_size) if original_size else None
         self._aesthetic_score = float(aesthetic_score) if aesthetic_score else None
+        self._safe_level = str(safe_level) if safe_level else None
+        self._safe_rating = float(safe_rating) if safe_rating else None
         self._perceptual_hash = str(perceptual_hash) if perceptual_hash else None
 
         if self._caption:
@@ -65,12 +76,12 @@ class ImageInfo:
         self._caption = ImageInfo.LAZY_READING if value == ImageInfo.LAZY_READING else Caption(value) if value is not None else None
 
     @property
-    def nl_caption(self):
-        return self._nl_caption
+    def description(self):
+        return self._description
 
-    @nl_caption.setter
-    def nl_caption(self, value):
-        self._nl_caption = str(value) if value is not None else None
+    @description.setter
+    def description(self, value):
+        self._description = str(value) if value is not None else None
 
     # @property
     # def image_size(self):
@@ -81,7 +92,7 @@ class ImageInfo:
 
     @property
     def original_size(self):
-        if not self.image_path.is_file():
+        if not self.image_path.is_file() or self.image_path.suffix not in IMAGE_EXTS:
             return None
         if not self._original_size:
             with Image.open(self.image_path) as image:
@@ -99,6 +110,22 @@ class ImageInfo:
     @aesthetic_score.setter
     def aesthetic_score(self, value):
         self._aesthetic_score = float(value) if value is not None else None
+
+    @property
+    def safe_level(self):
+        return self._safe_level
+
+    @safe_level.setter
+    def safe_level(self, value):
+        self._safe_level = str(value) if value is not None else None
+
+    @property
+    def safe_rating(self):
+        return self._safe_rating
+
+    @safe_rating.setter
+    def safe_rating(self, value):
+        self._safe_rating = float(value) if value is not None else None
 
     @property
     def perceptual_hash(self):
@@ -136,28 +163,31 @@ class ImageInfo:
             self._source = self.image_path.parent.parent
         return self._source
 
-    def dict(self, attrs: Tuple[Literal['image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash']] = None):
+    @property
+    def artist(self):
+        return self.caption.artist if self.caption else None
+
+    @property
+    def characters(self):
+        return self.caption.characters if self.caption else None
+
+    @property
+    def styles(self):
+        return self.caption.styles if self.caption else None
+
+    @property
+    def quality(self):
+        return self.caption.quality if self.caption else None
+
+    def dict(self, attrs: Tuple[str] = None):
         dic = {}
-        attrs = set(attrs or self._self_attrs)
-        if 'image_path' in attrs:
-            dic['image_path'] = self.image_path.absolute().as_posix()
+        attrs = attrs or self._self_attrs
+        for attr in attrs:
+            dic[attr] = jsonize(getattr(self, attr))
         if 'caption' in attrs:
-            dic['caption'] = str(self.caption) if self.caption else None
-        if 'nl_caption' in attrs:
-            dic['nl_caption'] = self.nl_caption
-        if 'original_size' in attrs:
-            dic['original_size'] = list(self.original_size) if self.original_size else None
-        if 'aesthetic_score' in attrs:
-            # keep 3 digits
-            dic['aesthetic_score'] = round(self.aesthetic_score, 3) if self.aesthetic_score is not None else None
-        if 'perceptual_hash' in attrs:
-            dic['perceptual_hash'] = self.perceptual_hash
-        if 'caption' in attrs:
-            for attr_key in self._caption_attrs:
-                attr_value = getattr(self.caption, attr_key) if self.caption else None
-                if attr_value:
-                    attr_value = captionize(attr_value)
-                dic[attr_key] = attr_value
+            for attr in self._caption_attrs:
+                value = getattr(self.caption, attr) if self.caption is not None else None
+                dic[attr] = captionize(value) if value is not None else None
         return dic
 
     def __eq__(self, other):
@@ -201,25 +231,38 @@ class ImageInfo:
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
         label_path.write_text(str(self.caption) if self.caption else '', encoding='utf-8')
 
-    def read_attrs(self, types: Literal['txt', 'waifuc'] = None, lazy=False):
-        attrs = get_attrs(self, types=types, lazy=lazy)
+    def read_attrs(self, types: Literal['txt', 'waifuc'] = None, lazy=True):
+        attrs = read_attrs(self, types=types, lazy=lazy)
         for attr, value in attrs.items():
-            if hasattr(self, attr):
+            if attr in self._self_attrs:
                 setattr(self, attr, value)
+            elif attr in self._caption_attrs:
+                setattr(self.caption, attr, value)
 
     def copy(self):
-        return ImageInfo(
-            image_path=self.image_path,
-            caption=self.caption.copy() if self.caption is not None else None,
-            nl_caption=self.nl_caption,
-            original_size=self.original_size,
-            aesthetic_score=self.aesthetic_score,
-            perceptual_hash=self.perceptual_hash,
-        )
+        from copy import deepcopy
+        return deepcopy(self)
 
-    _all_attrs = ('image_path', 'caption', 'nl_caption', 'quality', 'artist', 'styles', 'characters', 'original_size', 'aesthetic_score', 'perceptual_hash')
-    _self_attrs = ('image_path', 'caption', 'nl_caption', 'original_size', 'aesthetic_score', 'perceptual_hash')
-    _caption_attrs = ('quality', 'artist', 'styles', 'characters')
+
+ImageInfo._self_attrs = ImageInfo.__annotations__
+ImageInfo._caption_attrs = Caption.__annotations__
+ImageInfo._all_attrs = {**ImageInfo._self_attrs, **ImageInfo._caption_attrs}
+
+
+def jsonize(obj):
+    if obj is None:
+        return None
+    elif isinstance(obj, (int, str)):
+        return obj
+    elif isinstance(obj, float):
+        return round(obj, 3)
+    elif isinstance(obj, Caption):
+        return str(obj)
+    elif isinstance(obj, Path):
+        return obj.absolute().as_posix()
+    elif isinstance(obj, Iterable):
+        return [jsonize(item) for item in obj]
+    return obj
 
 
 def parse_waifuc_metadata(metadata):
@@ -227,25 +270,30 @@ def parse_waifuc_metadata(metadata):
     tags = metadata['tag_string'].split(' ')
     artist_tags = metadata['tag_string_artist'].split(' ')
     character_tags = metadata['tag_string_character'].split(' ')
+    meta_tags = set(metadata['tag_string_meta'].split(' '))
+    safe_level = metadata['rating']
+
+    tags = set(tag for tag in tags if tag not in meta_tags)
 
     for artist in artist_tags:
-        tags = [f"artist:{artist}" if tag == artist else tag for tag in tags]
+        tags = [f"artist: {artist}" if tag == artist else tag for tag in tags]
     for character in character_tags:
-        tags = [f"character:{character}" if tag == character else tag for tag in tags]
+        tags = [f"character: {character}" if tag == character else tag for tag in tags]
 
-    caption = ', '.join([tag.replace('_', ' ') for tag in tags])
-    artist_tags = [tag.replace(' ', '_') for tag in artist_tags]
-    character_tags = [tag.replace(' ', '_') for tag in character_tags]
+    tags = [tag.replace('_', ' ') for tag in tags]
+    artist_tags = [tag.replace('_', ' ') for tag in artist_tags]
+    character_tags = [tag.replace('_', ' ') for tag in character_tags]
 
     return {
-        'caption': caption,
-        'artist': artist_tags,
+        'caption': tags,
+        'artist': artist_tags[0] if len(artist_tags) > 0 else None,
         'characters': character_tags,
         'original_size': (metadata['image_width'], metadata['image_height']),
+        'safe_level': safe_level,
     }
 
 
-def get_attrs(img_info: ImageInfo, types: Literal['txt', 'waifuc'] = None, lazy=False):
+def read_attrs(img_info: ImageInfo, types: Literal['txt', 'waifuc'] = None, lazy=False):
     if isinstance(types, str):
         types = [types]
     types = types or ['txt', 'waifuc']

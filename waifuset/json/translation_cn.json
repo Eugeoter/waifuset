@@ -43,7 +43,7 @@
     "prepend": "前置",
     "color": "色彩",
     "detail": "细致",
-    "lowres": "低分辨率",
+    "lowres": "低分",
     "messy": "混乱",
     "aesthetic": "唯美",
     "beautiful": "美丽",
@@ -159,5 +159,7 @@
     "low": "低",
     "worst": "最差",
     "horrible": "可怕",
-    "description": "描述"
+    "description": "描述",
+    "buffer_information": "缓冲区信息",
+    "progress": "进度条"
 }

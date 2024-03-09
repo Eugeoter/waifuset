@@ -10,17 +10,20 @@ class Caption:
     Caption object supporting concise operations.
     """
 
-    _tags: List[str]
-    _cached_properties = ('artist', 'quality', 'characters', 'styles')
+    # tags: List[str]
+    artist: str
+    quality: str
+    characters: list
+    styles: list
 
     # if caption_or_tags is a Caption object, return caption_or_tags itself
-    def __new__(cls, caption_or_tags=None, sep=',', fix_typos: bool = True):
+    def __new__(cls, caption_or_tags=None, sep=', ', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
             return caption_or_tags
         else:
             return super(Caption, cls).__new__(cls)
 
-    def __init__(self, caption_or_tags=None, sep=',', fix_typos: bool = True):
+    def __init__(self, caption_or_tags=None, sep=', ', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
             tags = caption_or_tags._tags.copy()
         elif isinstance(caption_or_tags, (str, list)):
@@ -32,6 +35,7 @@ class Caption:
         else:
             raise TypeError(f"unsupported type for caption: {type(caption_or_tags).__name__}")
 
+        self._sep = sep
         self._tags = [tag.strip() for tag in tags if tag.strip() != '']
 
         # caches
@@ -43,7 +47,7 @@ class Caption:
     def load_cache(self, **kwargs):
         for key, value in kwargs.items():
             if key in self._cached_properties:
-                if isinstance(value, str) and ',' in value:
+                if value is not None and self._cached_properties[key] == list:
                     value = [v.strip() for v in value.split(',')]
                 setattr(self, f"_{key}", value)
 
@@ -52,11 +56,8 @@ class Caption:
             setattr(self, f"_{attr}", EMPTY_CACHE)
 
     def copy(self):
-        caption = Caption(self.tags.copy())
-        cache = {key: getattr(self, f"_{key}") for key in self._cached_properties}
-        cache = {key: value.copy() if isinstance(value, list) else value for key, value in cache.items()}
-        caption.load_cache(**cache)
-        return caption
+        from copy import deepcopy
+        return deepcopy(self)
 
     @property
     def tags(self):
@@ -64,16 +65,16 @@ class Caption:
 
     @tags.setter
     def tags(self, tags):
-        self._tags = tagify(tags)
+        self._tags = tagify(tags, sep=self._sep)
         self.clean_cache()
 
     @property
     def caption(self):
-        return captionize(self._tags)
+        return captionize(self._tags, sep=self._sep)
 
     @caption.setter
     def caption(self, value):
-        self.tags = tagify(value)
+        self.tags = tagify(value, sep=self._sep)
 
     def unique(self):
         r"""
@@ -368,7 +369,7 @@ class Caption:
         return self.__str__()
 
     def __add__(self, other):
-        return Caption(add_op(self.tags, preprocess(other)))
+        return Caption(add_op(self.tags, preprocess(other, sep=self._sep)))
 
     def __iadd__(self, other):
         self.tags = (self + other).tags
@@ -379,7 +380,7 @@ class Caption:
         return Caption(other) + self
 
     def __sub__(self, other):
-        return Caption(sub_op(self.tags, preprocess(other)))
+        return Caption(sub_op(self.tags, preprocess(other, sep=self._sep)))
 
     def __isub__(self, other):
         self.tags = (self - other).tags
@@ -390,7 +391,7 @@ class Caption:
         return Caption(other) - self
 
     def __and__(self, other):
-        return Caption(and_op(self.tags, preprocess(other)))
+        return Caption(and_op(self.tags, preprocess(other, sep=self._sep)))
 
     def __iand__(self, other):
         self.tags = (self & other).tags
@@ -401,7 +402,7 @@ class Caption:
         return Caption(other) & self
 
     def __or__(self, other):
-        return Caption(or_op(self.tags, preprocess(other)))
+        return Caption(or_op(self.tags, preprocess(other, sep=self._sep)))
 
     def __ior__(self, other):
         self.tags = (self | other).tags
@@ -412,7 +413,7 @@ class Caption:
         return Caption(other) | self
 
     def __matmul__(self, other):
-        return Caption(matmul_op(self.tags, tagify(other)))
+        return Caption(matmul_op(self.tags, tagify(other, sep=self._sep), sep=self._sep))
 
     def __imatmul__(self, other):
         self.tags = (self @ other).tags
@@ -488,6 +489,9 @@ class Caption:
         return hash(self.caption)
 
 
+Caption._cached_properties = Caption.__annotations__
+
+
 def tagify(caption_or_tags, sep=','):
     if isinstance(caption_or_tags, list):
         return caption_or_tags
@@ -528,9 +532,9 @@ def preprocess_tag(tag):
     return tag
 
 
-def preprocess(caption):
+def preprocess(caption, sep=','):
     if isinstance(caption, (Caption, str, list)):
-        return tagify(caption)
+        return tagify(caption, sep=sep)
     elif isinstance(caption, re.Pattern):
         return [caption]
     elif isinstance(caption, (set, tuple)):
@@ -578,7 +582,7 @@ def or_op(self, other):
     return add_op(self, sub_op(other, self))
 
 
-def matmul_op(self, other):
+def matmul_op(self, other, sep=','):
     prior = []
     for pattern in other:
         level = []
@@ -589,4 +593,4 @@ def matmul_op(self, other):
             for tag in level:
                 self.remove(tag)
             prior.append(level)
-    return ', '.join([', '.join(level) for level in prior] + self)
+    return sep.join([sep.join(level) for level in prior] + self)

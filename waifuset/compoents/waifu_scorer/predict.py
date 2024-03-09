@@ -8,9 +8,9 @@ from .mlp import MLP
 from ...utils import log_utils as logu
 from ...utils.file_utils import download_from_url
 
-MLP_MODEL_URL = "https://huggingface.co/Eugeoter/waifu-scorer/waifu-scorer-v1-large.pth"
+MLP_MODEL_URL = "https://huggingface.co/Eugeoter/waifu-scorer-v2/waifu-scorer-v2-1.pth"
 MLP_CACHE_DIR = "./models/laion/"
-MLP_MODEL_PATH = './models/laion/waifu-scorer-v1-large.pth'
+MLP_MODEL_PATH = "./models/laion/waifu-scorer-v2-1.pth"
 
 
 class WaifuScorer:
@@ -18,12 +18,12 @@ class WaifuScorer:
         self.verbose = verbose
         if model_path is None:
             if self.verbose:
-                logu.info(f"model path is None, switch to default: `{MLP_MODEL_PATH}`")
+                print(f"[{logu.blue('waifu-scorer')}] model path not set, switch to default: `{MLP_MODEL_PATH}`")
             model_path = MLP_MODEL_PATH
 
         if self.verbose:
             tic = time.time()
-            logu.info(f"loading pretrained model from `{logu.stylize(model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
+            logu.info(f"[{logu.blue('waifu-scorer')}] loading pretrained model from `{logu.stylize(model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
 
         if not os.path.isfile(model_path):
             model_path = download_from_url(MLP_MODEL_URL, cache_dir=MLP_CACHE_DIR)
@@ -37,7 +37,7 @@ class WaifuScorer:
 
         if self.verbose:
             toc = time.time()
-            logu.info(f"model loaded: time_cost={toc-tic:.2f} | device={self.device} | dtype={self.dtype}")
+            print(f"[{logu.blue('waifu-scorer')}] model loaded: time_cost={toc-tic:.2f} | device={self.device} | dtype={self.dtype}")
 
     @torch.no_grad()
     def __call__(self, images: List[Image.Image]) -> Union[List[float], float]:
