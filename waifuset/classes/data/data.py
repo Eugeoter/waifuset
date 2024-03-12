@@ -231,13 +231,19 @@ class ImageInfo:
         label_path = Path(label_path or self.image_path.with_suffix('.txt'))
         label_path.write_text(str(self.caption) if self.caption else '', encoding='utf-8')
 
-    def read_attrs(self, types: Literal['txt', 'waifuc'] = None, lazy=True):
-        attrs = read_attrs(self, types=types, lazy=lazy)
+    def read_attrs(self, types: Literal['txt', 'danbooru'] = None, lazy=True):
+        try:
+            attrs = read_attrs(self, types=types, lazy=lazy)
+        except Exception as e:
+            print(f"failed to read attrs for {self.image_path}: {e}")
+            return None
+        if not attrs:
+            return
         for attr, value in attrs.items():
             if attr in self._self_attrs:
                 setattr(self, attr, value)
-            elif attr in self._caption_attrs:
-                setattr(self.caption, attr, value)
+            elif attr == 'caption':
+                self.caption.tags = value
 
     def copy(self):
         from copy import deepcopy
@@ -265,8 +271,7 @@ def jsonize(obj):
     return obj
 
 
-def parse_waifuc_metadata(metadata):
-    metadata = metadata['danbooru']
+def parse_danbooru_metadata(metadata):
     tags = metadata['tag_string'].split(' ')
     artist_tags = metadata['tag_string_artist'].split(' ')
     character_tags = metadata['tag_string_character'].split(' ')
@@ -293,21 +298,31 @@ def parse_waifuc_metadata(metadata):
     }
 
 
-def read_attrs(img_info: ImageInfo, types: Literal['txt', 'waifuc'] = None, lazy=False):
+def read_attrs(img_info: ImageInfo, types: Literal['txt', 'danbooru'] = None, lazy=False):
     if isinstance(types, str):
         types = [types]
-    types = types or ['txt', 'waifuc']
+    types = types or ['txt', 'danbooru']
     img_path = img_info.image_path
-    if 'txt' in types and (txt_path := img_path.with_suffix('.txt')).is_file():
+
+    txt_path = img_path.with_suffix('.txt')
+    if 'txt' in types and txt_path.is_file():
         caption = txt_path.read_text(encoding='utf-8') if not lazy else ImageInfo.LAZY_READING
         attrs = {
             'image_path': img_path,
             'caption': caption,
         }
-    elif 'waifuc' in types and (waifuc_md_path := img_path.with_name(f".{img_path.stem}_meta.json")).is_file():
-        with open(waifuc_md_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-        attrs = parse_waifuc_metadata(metadata)
-    else:
-        attrs = {}
-    return attrs
+        return attrs
+
+    if 'danbooru' in types:
+        if (waifuc_md_path := img_path.with_name(f".{img_path.stem}_meta.json")).is_file():  # waifuc naming format
+            with open(waifuc_md_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            attrs = parse_danbooru_metadata(metadata['danbooru'])
+            return attrs
+        elif (gallery_dl_md_path := img_path.with_name(f"{img_path.name}.json")).is_file():
+            with open(gallery_dl_md_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            attrs = parse_danbooru_metadata(metadata)
+            return attrs
+
+    return None

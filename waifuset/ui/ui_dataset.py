@@ -337,6 +337,10 @@ class UIDataset(UIChunkedDataset):
 
         if kwargs.get('formalize_caption', False):
             self.buffer.update(self)
+        elif not same_io or write_to_txt:
+            for img_key in tqdm(self, desc='initializing buffer'):
+                if img_key not in database:
+                    self.buffer[img_key] = self[img_key]
 
     def make_subset(self, *args, **kwargs):
         kwargs['cls'] = UIChunkedDataset
@@ -464,7 +468,7 @@ class UIDataset(UIChunkedDataset):
 
     def save(self, progress=gr.Progress(track_tqdm=True)):
         if self.verbose:
-            logu.info(f'Saving dataset...')
+            logu.info(f'saving dataset: {len(self.buffer)}/{len(self)}')
 
         if self.write_to_database:
             if self.verbose:
@@ -499,16 +503,14 @@ class UIDataset(UIChunkedDataset):
                 toc = time.time()
                 time_cost2 = toc - tic
 
-        if self.verbose:
-            logu.info(f"revised total {len(self.buffer)} items.")
         self.buffer.clear()
 
         if self.verbose:
             toc = time.time()
             if self.write_to_database:
-                logu.success(f'Write to database: saved to `{logu.yellow(self.database_file)}`: time_cost={time_cost1:.2f}s.')
+                logu.success(f'write to database: `{logu.yellow(self.database_file)}` | time_cost={time_cost1:.2f}s.')
             if self.write_to_txt:
-                logu.success(f'Write to txt: time_cost={time_cost2:.2f}s.')
+                logu.success(f'write to txt | time_cost={time_cost2:.2f}s.')
 
 
 def backup(image_info):

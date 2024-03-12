@@ -1074,7 +1074,7 @@ def create_ui(
 
             cur_image_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, nl_caption, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
             CAPTION_MD_KEYS = tuple(ImageInfo._caption_attrs)
-            OTHER_MD_KEYS = ('aesthetic_score', 'perceptual_hash')
+            OTHER_MD_KEYS = ('aesthetic_score', 'perceptual_hash', 'safe_level', 'safe_rating')
 
             def get_caption(image_key):
                 if image_key is None or image_key == '':
@@ -1546,7 +1546,7 @@ def create_ui(
             )
 
             tagging_horrible_btn.click(
-                fn=data_edition_handler(kwargs_setter(add_tags, tags='horrible')),
+                fn=data_edition_handler(kwargs_setter(change_quality, quality='horrible')),
                 inputs=[image_path, edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,

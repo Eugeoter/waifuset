@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 from typing import Literal
@@ -45,11 +47,11 @@ class Waifuc:
             already_exist = len([f for f in os.listdir(output_dir) if f.startswith('.') and f.endswith('.json')])
             max_this_tag = max_per_tag - already_exist
             if max_this_tag <= 0:
-                print(log_utils.yellow("skip {tag} because already exist {already_exist} images"))
+                print(log_utils.blue(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"), log_utils.yellow("skip {tag} because already exist {already_exist} images"))
                 pbar.update(1)
                 continue
             else:
-                print(log_utils.yellow(f"downloading {max_this_tag} images for {tag}"))
+                print(log_utils.blue(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"), log_utils.yellow(f"downloading {max_this_tag} images for {tag}"))
 
             logs['tag'] = tag
             pbar.set_postfix(logs)

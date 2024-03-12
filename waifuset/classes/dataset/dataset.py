@@ -14,17 +14,17 @@ COLORS = [logu.ANSI.WHITE, logu.ANSI.YELLOW, logu.ANSI.CYAN, logu.ANSI.WHITE, lo
 
 try:
     from torch.utils.data import dataset as torch_dataset
-    _father_class = torch_dataset.Dataset
+    _super_class = torch_dataset.Dataset
 except ImportError:
-    _father_class = object
+    _super_class = object
 
 
-class Dataset(_father_class):
+class Dataset(_super_class):
 
     verbose: bool
     exts: set
 
-    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
+    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'danbooru'] = None, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
         self.verbose = verbose
         self.exts = exts
         key_condition = key_condition or (lambda x: True)
@@ -33,6 +33,7 @@ class Dataset(_father_class):
         # if self.verbose:
         #     tic = time.time()
         #     logu.info(f'loading dataset')
+
         dic = {}
         for src in source:
             if isinstance(src, (str, Path)):
@@ -310,19 +311,6 @@ class Dataset(_father_class):
     def __contains__(self, image_key):
         return image_key in self._data
 
-    def __add__(self, other):
-        if isinstance(other, Dataset):
-            return Dataset(list(self._data.values()) + list(other._data.values()))
-        else:
-            raise TypeError(f'Invalid type {type(other)} for addition.')
-
-    def __iadd__(self, other):
-        if isinstance(other, Dataset):
-            self._data.update(other._data)
-            return self
-        else:
-            raise TypeError(f'Invalid type {type(other)} for addition.')
-
     def to_csv(self, fp, mode='w', sep=','):
         if self.verbose:
             tic = time.time()
@@ -387,6 +375,34 @@ class Dataset(_father_class):
             random.shuffle(keys)
         batches = [[self[key] for key in keys[i:i + batch_size]] for i in range(0, len(keys), batch_size)]
         return batches
+
+    def __add__(self, other):
+        return Dataset({**self._data, **other._data})
+
+    def __iadd__(self, other):
+        self._data.update(other._data)
+        return self
+
+    def __and__(self, other):
+        return Dataset({key: image_info for key, image_info in self.items() if key in other})
+
+    def __iand__(self, other):
+        self._data = {key: image_info for key, image_info in self.items() if key in other}
+        return self
+
+    def __or__(self, other):
+        return Dataset({**other._data, **self._data})
+
+    def __ior__(self, other):
+        self._data = {**other._data, **self._data}
+        return self
+
+    def __sub__(self, other):
+        return Dataset({key: image_info for key, image_info in self.items() if key not in other})
+
+    def __isub__(self, other):
+        self._data = {key: image_info for key, image_info in self.items() if key not in other}
+        return self
 
 
 def dump_as_json(source, fp, mode='a', indent=4, sort_keys=False, verbose=False):
