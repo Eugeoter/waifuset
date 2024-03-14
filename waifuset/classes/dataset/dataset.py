@@ -1,11 +1,14 @@
 import time
 import math
+import json
 import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
 from pathlib import Path
 from typing import List, Dict, Callable, Literal
 from ..data import ImageInfo
+from ..caption import Caption
+from ..data.data import jsonize
 from ...utils.file_utils import listdir, smart_name
 from ...const import IMAGE_EXTS
 from ...utils import log_utils as logu
@@ -247,6 +250,23 @@ class Dataset(_super_class):
 
         return self
 
+    def load_minimap(self, fp, attr):
+        with open(fp, 'r') as f:
+            minimap = json.load(f)
+        if attr in ImageInfo._caption_attrs or attr in ('caption', 'tags'):
+            for image_key, value in tqdm(minimap.items(), desc='loading minimap', smoothing=1, disable=not self.verbose):
+                if image_key in self:
+                    info = self[image_key]
+                    if info.caption is None:
+                        info.caption = Caption()
+                    info.caption.__setattr__(attr, value)
+        elif attr in ImageInfo._self_attrs:
+            for image_key, value in tqdm(minimap.items(), desc='loading minimap', smoothing=1, disable=not self.verbose):
+                if image_key in self:
+                    setattr(self[image_key], attr, value)
+        else:
+            raise ValueError(f'Invalid attribute {attr}.')
+
     def with_map(self, func, *args, max_workers=1, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=True, **kwargs):
         if verbose:
             tic = time.time()
@@ -311,38 +331,54 @@ class Dataset(_super_class):
     def __contains__(self, image_key):
         return image_key in self._data
 
+    def to_minimap(self, fp, attr):
+        if self.verbose:
+            tic = time.time()
+            logu.info(f'dumping dataset to minimap `{logu.yellow(Path(fp).absolute())}`...')
+
+        minimap = {}
+        for image_key, image_info in self.items():
+            minimap[image_key] = jsonize(getattr(image_info, attr))
+        with open(fp, 'w') as f:
+            import json
+            json.dump(minimap, f, indent=4, ensure_ascii=False)
+
+        if self.verbose:
+            toc = time.time()
+            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
+
     def to_csv(self, fp, mode='w', sep=','):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
+            logu.info(f'dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
 
         dump_as_csv(self, fp, mode=mode, sep=sep, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def to_json(self, fp, mode='w', indent=4, sort_keys=False):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
+            logu.info(f'dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
 
         dump_as_json(self, fp, mode=mode, indent=indent, sort_keys=sort_keys, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def to_txts(self):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to txt...')
+            logu.info(f'dumping dataset to txt...')
 
         dump_as_txts(self, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def split(self, *ratio, shuffle=True) -> List['Dataset']:
         keys = list(self.keys())
@@ -410,7 +446,9 @@ def dump_as_json(source, fp, mode='a', indent=4, sort_keys=False, verbose=False)
     dataset = Dataset(source)
     if mode == 'a' and Path(fp).is_file():
         dataset = Dataset(fp, verbose=verbose).update(dataset)
-    json_data = {image_key: image_info.dict() for image_key, image_info in tqdm(dataset.items(), desc='Converting to dict', smoothing=1, disable=not dataset.verbose)}
+    json_data = {}
+    for image_key, image_info in tqdm(dataset.items(), desc='Converting to dict', smoothing=1, disable=not verbose):
+        json_data[image_key] = image_info.dict()
     with open(fp, mode='w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=indent, sort_keys=sort_keys)
 

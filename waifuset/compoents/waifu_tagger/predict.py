@@ -6,92 +6,119 @@ from PIL import Image
 from typing import Dict, List, Union
 from ..loaders import OnnxModelLoader
 from ...utils import log_utils as logu, image_utils as imgu
-from ...const import StrPath
 
-WD_MODEL_URL = os.getenv(
-    "WD_MODEL_URL",
-    "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/model.onnx"
-)
-
-WD_LABEL_URL = os.getenv(
-    "WD_LABEL_URL",
-    "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/selected_tags.csv"
-)
+WD_MODEL_REPO = "SmilingWolf/wd-swinv2-tagger-v3"
 
 WD_CACHE_DIR = "./models/wd/"
-WD_MODEL_PATH = "./models/wd/swinv2.onnx"
-WD_LABEL_PATH = "./models/wd/selected_tags.csv"
 
 
 class WaifuTagger(OnnxModelLoader):
-    def __init__(self, model_path=WD_MODEL_PATH, label_path=WD_LABEL_PATH, cache_dir=WD_CACHE_DIR, device='cuda', verbose=False):
+    def __init__(self, model_path=None, label_path=None, cache_dir=WD_CACHE_DIR, device='cuda', verbose=False):
         import pandas as pd
 
         if model_path is None:
-            logu.info(f"model path is None, switch to default: `{WD_MODEL_PATH}`")
-            model_path = WD_MODEL_PATH
+            model_path = WD_MODEL_REPO + '/model.onnx'
+            logu.info(f"model path is None, switch to default: `{model_path}`")
         if label_path is None:
-            logu.info(f"label path is None, switch to default: `{WD_LABEL_PATH}`")
-            label_path = WD_LABEL_PATH
+            label_path = WD_MODEL_REPO + '/selected_tags.csv'
+            logu.info(f"label path is None, switch to default: `{label_path}`")
+        print(f"[waifu_tagger] model_path: {model_path}")
 
-        super().__init__(model_path=model_path, model_url=WD_MODEL_URL, cache_dir=cache_dir, device=device, verbose=verbose)
+        super().__init__(model_path=model_path, model_url=model_path, cache_dir=cache_dir, device=device, verbose=verbose)
 
         self.label_path = Path(label_path)
         if not os.path.isfile(self.label_path):
             from ...utils.file_utils import download_from_url
-            self.label_path = download_from_url(WD_LABEL_URL, cache_dir=cache_dir)
+            self.label_path = download_from_url(label_path, cache_dir=cache_dir)
 
         # Load labels
         df = pd.read_csv(self.label_path)  # Read csv file
-        self._tag_names = df["name"].tolist()
-        self._general_indexes = list(np.where(df["category"] == 0)[0])
-        self._character_indexes = list(np.where(df["category"] == 4)[0])
+        self.tag_names = df["name"].tolist()
+        self.general_indexes = list(np.where(df["category"] == 0)[0])
+        self.character_indexes = list(np.where(df["category"] == 4)[0])
 
         # Load other parameters
-        self._input_name = self.model.get_inputs()[0].name
-        self._label_name = self.model.get_outputs()[0].name
-        self._size = self.model.get_inputs()[0].shape[1]
+        self.input_name = self.model.get_inputs()[0].name
+        self.label_name = self.model.get_outputs()[0].name
+        self.model_target_size = self.model.get_inputs()[0].shape[1]
 
         if self.verbose:
             logu.info(f"label loaded.")
 
     def __call__(
         self,
-        image: Union[StrPath, np.ndarray, Image.Image],
+        images: Union[List[Image.Image], Image.Image],
         general_threshold: float = 0.35,
         character_threshold: float = 0.35,
-    ) -> str:
+    ) -> List[str]:
         import torch
-        batch_inputs = preprocess_image(image, self._size)
+        if not isinstance(images, list):
+            images = [images]
+        batch_inputs = np.concatenate([self.prepare_image(img) for img in images])
 
         # Run model
         with torch.no_grad():
-            probs = self.model.run(
-                [self._label_name],
-                {self._input_name: batch_inputs}
+            batch_probs = self.model.run(
+                [self.label_name],
+                {self.input_name: batch_inputs}
             )[0]
 
-        labels = list(zip(self._tag_names, probs[0].astype(float)))
+        batch_captions = []
+        batch_labels = [list(zip(self.tag_names, batch_probs[i].astype(float))) for i in range(len(batch_probs))]
 
-        # Get general and character tags
-        general_tags = get_tags(
-            labels,
-            self._general_indexes,
-            general_threshold
-        )
-        character_tags = get_tags(
-            labels,
-            self._character_indexes,
-            character_threshold
-        )
+        for labels in batch_labels:
+            # Get general and character tags
+            general_tags = get_tags(
+                labels,
+                self.general_indexes,
+                general_threshold
+            )
+            character_tags = get_tags(
+                labels,
+                self.character_indexes,
+                character_threshold
+            )
 
-        # Get top general tag
-        general_tags = postprocess_tags(general_tags)
-        character_tags = postprocess_tags(character_tags)
+            # Get top general tag
+            general_tags = postprocess_tags(general_tags)
+            character_tags = postprocess_tags(character_tags)
 
-        caption = ', '.join(character_tags + general_tags)
+            caption = ', '.join(character_tags + general_tags)
+            batch_captions.append(caption)
 
-        return caption
+        return batch_captions
+
+    def prepare_image(self, image: Image.Image):
+        target_size = self.model_target_size
+
+        image = image.convert("RGBA")
+        canvas = Image.new("RGBA", image.size, (255, 255, 255))
+        canvas.alpha_composite(image)
+        image = canvas.convert("RGB")
+
+        # Pad image to square
+        image_shape = image.size
+        max_dim = max(image_shape)
+        pad_left = (max_dim - image_shape[0]) // 2
+        pad_top = (max_dim - image_shape[1]) // 2
+
+        padded_image = Image.new("RGB", (max_dim, max_dim), (255, 255, 255))
+        padded_image.paste(image, (pad_left, pad_top))
+
+        # Resize
+        if max_dim != target_size:
+            padded_image = padded_image.resize(
+                (target_size, target_size),
+                Image.BICUBIC,
+            )
+
+        # Convert to numpy array
+        image_array = np.asarray(padded_image, dtype=np.float32)
+
+        # Convert PIL-native RGB to BGR
+        image_array = image_array[:, :, ::-1]
+
+        return np.expand_dims(image_array, axis=0)
 
 
 def preprocess_image(image, size: int):

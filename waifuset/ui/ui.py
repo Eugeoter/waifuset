@@ -94,19 +94,19 @@ def prepare_dataset(
         verbose=True,
     )
 
-    if args.change_source:
-        old_img_src = args.old_source
-        new_img_src = args.new_source
+    # if args.change_source:
+    #     old_img_src = args.old_source
+    #     new_img_src = args.new_source
 
-        def change_source(image_info):
-            nonlocal old_img_src, new_img_src
-            old_src = image_info.source.name
-            new_src = old_img_src if old_src == new_img_src else None
-            if new_src:
-                image_info.image_path = image_info.source.parent / new_src / image_info.image_path.relative_to(image_info.source)
-            return image_info
+    #     def change_source(image_info):
+    #         nonlocal old_img_src, new_img_src
+    #         old_src = image_info.source.name
+    #         new_src = old_img_src if old_src == new_img_src else None
+    #         if new_src:
+    #             image_info.image_path = image_info.source.parent / new_src / image_info.image_path.relative_to(image_info.source)
+    #         return image_info
 
-        dataset.apply_map(change_source)
+    #     dataset.apply_map(change_source)
 
     return dataset
 
@@ -356,6 +356,7 @@ def create_ui(
                                     container=True,
                                     object_fit='scale-down',
                                     height=512,
+                                    visible=not univargs.hide_showcase,
                                 )
                             with gr.Row():
                                 load_pre_chunk_btn = cc.EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
@@ -456,7 +457,7 @@ def create_ui(
                                 save_btn = cc.EmojiButton(Emoji.floppy_disk, variant='primary', visible=univargs.write_to_database or univargs.write_to_txt)
                                 cancel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', visible=univargs.max_workers == 1)
                             with gr.Row():
-                                edit_opts = gr.CheckboxGroup(
+                                general_edit_opts = gr.CheckboxGroup(
                                     label=translate('Process options', univargs.language),
                                     choices=translate(['Batch', 'Append', 'Regex', 'Progress'], univargs.language),
                                     value=None,
@@ -665,30 +666,41 @@ def create_ui(
 
                                 with gr.Tab(label=translate('Tagger', univargs.language)):
                                     with gr.Row(variant='compact'):
-                                        wd14_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                        wd_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+
                                     with gr.Row(variant='compact'):
-                                        wd14_general_threshold = gr.Slider(
-                                            label=translate('General Threshold', univargs.language),
-                                            value=0.35,
-                                            minimum=0,
-                                            maximum=1,
-                                            step=0.01,
+                                        wd_batch_size = gr.Number(
+                                            value=1,
+                                            label=translate('Batch Size', univargs.language),
+                                            min_width=128,
+                                            precision=0,
+                                            scale=1,
                                         )
-                                        wd14_character_threshold = gr.Slider(
-                                            label=translate('Character Threshold', univargs.language),
-                                            value=0.35,
-                                            minimum=0,
-                                            maximum=1,
-                                            step=0.01,
-                                        )
-                                    with gr.Row(variant='compact'):
-                                        wd14_caption_proc_mode = gr.Radio(
+
+                                        wd_proc_mode = gr.Radio(
                                             label=translate('Overwrite mode', univargs.language),
                                             choices=translate(['overwrite', 'append', 'prepend', 'ignore'], univargs.language),
                                             value=translate('overwrite', univargs.language),
                                             scale=1,
                                             min_width=128,
                                         )
+                                        
+                                    with gr.Row(variant='compact'):
+                                        wd_general_threshold = gr.Slider(
+                                            label=translate('General Threshold', univargs.language),
+                                            value=0.35,
+                                            minimum=0,
+                                            maximum=1,
+                                            step=0.01,
+                                        )
+                                        wd_character_threshold = gr.Slider(
+                                            label=translate('Character Threshold', univargs.language),
+                                            value=0.35,
+                                            minimum=0,
+                                            maximum=1,
+                                            step=0.01,
+                                        )
+                                    
 
                                 with gr.Tab(label=translate('Scorer', univargs.language)):
                                     with gr.Row(variant='compact'):
@@ -703,7 +715,7 @@ def create_ui(
                                             precision=0,
                                             scale=1,
                                         )
-                                        waifu_scorer_os_mode = gr.Radio(
+                                        waifu_scorer_proc_mode = gr.Radio(
                                             label=translate('Overwrite mode', univargs.language),
                                             choices=translate(['overwrite', 'ignore'], univargs.language),
                                             value=translate('overwrite', univargs.language),
@@ -1085,7 +1097,7 @@ def create_ui(
                 return str(img_info.caption)
 
             def get_metadata_df(image_key, keys):
-                if univargs.render_mode == 'partial' and ui_data_tab.tab is not metadata_tab:
+                if univargs.render == 'partial' and ui_data_tab.tab is not metadata_tab:
                     return None
                 if image_key is None or image_key == '' or image_key not in univset:
                     return None
@@ -1126,7 +1138,7 @@ def create_ui(
 
                 reso = f"{img_info.original_size[0]}x{img_info.original_size[1]}"
 
-                if univargs.render_mode == 'full':
+                if univargs.render == 'full':
                     pos_pmt, neg_pmt, param_df = get_gen_info(img_key)
                     res = {
                         image_path: img_path,
@@ -1170,7 +1182,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            if univargs.render_mode == 'partial':
+            if univargs.render == 'partial':
                 caption_tab.select(
                     fn=change_activating_tab(ui_data_tab, caption_tab, get_caption),
                     inputs=[cur_image_key],
@@ -1323,7 +1335,7 @@ def create_ui(
                     results = []
                     if do_batch:
                         editset = subset
-                        if func in (predict_aesthetic_score,):
+                        if func in (predict_aesthetic_score, wd_tagging):
                             batch_size, args = args[0], args[1:]  # first arg is batch size
                             batches = [editset.values()[i:i + batch_size] for i in range(0, len(editset), batch_size)]
                         else:
@@ -1398,7 +1410,7 @@ def create_ui(
 
             caption.blur(
                 fn=data_edition_handler(write_caption),
-                inputs=[image_path, edit_opts, caption],
+                inputs=[image_path, general_edit_opts, caption],
                 outputs=cur_image_key_change_listeners,
                 cancels=cancel_event,
                 concurrency_limit=1,
@@ -1410,7 +1422,7 @@ def create_ui(
 
             undo_btn.click(
                 fn=data_edition_handler(undo),
-                inputs=[cur_image_key, edit_opts],
+                inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1421,7 +1433,7 @@ def create_ui(
 
             redo_btn.click(
                 fn=data_edition_handler(redo),
-                inputs=[cur_image_key, edit_opts],
+                inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1447,35 +1459,35 @@ def create_ui(
 
             tagging_best_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='best')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_high_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='high')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_normal_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='normal')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_low_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='low')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_worst_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='worst')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1526,56 +1538,56 @@ def create_ui(
 
             tagging_color_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='beautiful color')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_detailed_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='detailed')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_lowres_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='lowres')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_horrible_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='horrible')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_messy_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='messy')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_aesthetic_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='aesthetic')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_beautiful_btn.click(
                 fn=data_edition_handler(kwargs_setter(add_tags, tags='beautiful')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             tagging_amazing_quality_btn.click(
                 fn=data_edition_handler(kwargs_setter(change_quality, quality='amazing')),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1585,13 +1597,13 @@ def create_ui(
             for add_tag_btn, tag_selector, remove_tag_btn in zip(add_tag_btns, tag_selectors, remove_tag_btns):
                 add_tag_btn.click(
                     fn=data_edition_handler(add_tags),
-                    inputs=[image_path, edit_opts, tag_selector],
+                    inputs=[image_path, general_edit_opts, tag_selector],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
                 remove_tag_btn.click(
                     fn=data_edition_handler(remove_tags),
-                    inputs=[image_path, edit_opts, tag_selector],
+                    inputs=[image_path, general_edit_opts, tag_selector],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
@@ -1617,7 +1629,7 @@ def create_ui(
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
                     fn=data_edition_handler(replace_tag),
-                    inputs=[image_path, edit_opts, old_tag_selector, new_tag_selector, match_tag_checkbox],
+                    inputs=[image_path, general_edit_opts, old_tag_selector, new_tag_selector, match_tag_checkbox],
                     outputs=cur_image_key_change_listeners,
                     concurrency_limit=1,
                 )
@@ -1669,7 +1681,7 @@ def create_ui(
 
             sort_caption_btn.click(
                 fn=data_edition_handler(sort_caption),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1689,7 +1701,7 @@ def create_ui(
 
             formalize_caption_btn.click(
                 fn=data_edition_handler(formalize_caption),
-                inputs=[image_path, edit_opts, formalize_caption_dropdown],
+                inputs=[image_path, general_edit_opts, formalize_caption_dropdown],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1703,7 +1715,7 @@ def create_ui(
 
             deduplicate_caption_btn.click(
                 fn=data_edition_handler(deduplicate_caption),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1717,7 +1729,7 @@ def create_ui(
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deoverlap_caption),
-                inputs=[image_path, edit_opts],
+                inputs=[image_path, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1758,39 +1770,43 @@ def create_ui(
 
             defeature_caption_btn.click(
                 fn=lambda *args: data_edition_handler(defeature_caption)(*args, ref={}),
-                inputs=[image_path, edit_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
+                inputs=[image_path, general_edit_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
             # ========================================= WD14 ========================================= #
 
-            def wd14_tagging(image_info, general_threshold, character_threshold, os_mode):
+            def wd_tagging(image_infos, general_threshold, character_threshold, os_mode):
                 if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
                 nonlocal waifu_tagger
-                old_caption = image_info.caption
-                if old_caption is not None and os_mode == 'ignore':
-                    return image_info
+                if os_mode == 'ignore':
+                    image_infos = [info for info in image_infos if info.caption is None]
+                    if len(image_infos) == 0:
+                        return []
+
                 if waifu_tagger is None:
                     from waifuset.compoents import WaifuTagger
                     waifu_tagger = WaifuTagger(model_path=univargs.wd14_model_path, label_path=univargs.wd14_label_path, verbose=True)
-                image = Image.open(image_info.image_path)
-                wd14_caption = waifu_tagger(image, general_threshold=general_threshold, character_threshold=character_threshold)
-                if os_mode == 'overwrite' or os_mode == 'ignore':
-                    caption = wd14_caption
-                elif os_mode == 'append':
-                    caption = old_caption | wd14_caption
-                elif os_mode == 'prepend':
-                    caption = wd14_caption | old_caption
-                else:
-                    raise ValueError(f"invalid os_mode: {os_mode}")
-                image_info.caption = caption
-                return image_info
 
-            wd14_run_btn.click(
-                fn=data_edition_handler(wd14_tagging),
-                inputs=[image_path, edit_opts, wd14_general_threshold, wd14_character_threshold, wd14_caption_proc_mode],
+                images = [Image.open(img_info.image_path) for img_info in image_infos]
+                pred_captions = waifu_tagger(images, general_threshold=general_threshold, character_threshold=character_threshold)
+                for img_info, pred_caption in zip(image_infos, pred_captions):
+                    if os_mode == 'overwrite' or os_mode == 'ignore':
+                        caption = pred_caption
+                    elif os_mode == 'append':
+                        caption = img_info.caption | pred_caption
+                    elif os_mode == 'prepend':
+                        caption = pred_caption | img_info.caption
+                    else:
+                        raise ValueError(f"invalid os_mode: {os_mode}")
+                    img_info.caption = caption
+                return image_infos
+
+            wd_run_btn.click(
+                fn=data_edition_handler(wd_tagging),
+                inputs=[image_path, general_edit_opts, wd_batch_size, wd_general_threshold, wd_character_threshold, wd_proc_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1826,7 +1842,7 @@ def create_ui(
 
             predict_aesthetic_score_btn.click(
                 fn=data_edition_handler(predict_aesthetic_score),
-                inputs=[cur_image_key, edit_opts, waifu_scorer_batch_size, waifu_scorer_os_mode],
+                inputs=[cur_image_key, general_edit_opts, waifu_scorer_batch_size, waifu_scorer_proc_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
                 cancels=cancel_event,
@@ -1865,7 +1881,7 @@ def create_ui(
 
             label_aesthetic_btn.click(
                 fn=data_edition_handler(change_quality_according_to_aesthetic_score),
-                inputs=[cur_image_key, edit_opts, waifu_scorer_os_mode],
+                inputs=[cur_image_key, general_edit_opts, waifu_scorer_proc_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1876,7 +1892,7 @@ def create_ui(
 
             clean_aesthetic_score_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_aesthetic_score, score=None)),
-                inputs=[cur_image_key, edit_opts],
+                inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1901,7 +1917,7 @@ def create_ui(
 
             get_perceptual_hash_btn.click(
                 fn=data_edition_handler(get_perceptual_hash),
-                inputs=[cur_image_key, edit_opts, hasher_os_mode],
+                inputs=[cur_image_key, general_edit_opts, hasher_os_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1912,7 +1928,7 @@ def create_ui(
 
             clean_perceptual_hash_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_perceptual_hash, p_hash=None)),
-                inputs=[cur_image_key, edit_opts],
+                inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -2156,6 +2172,7 @@ def create_ui(
                     patterns.extend(tags)
                     tp = TagPriority(name, patterns, level)
                     tag_priority_manager[name] = tp
+                    print(f"set {name}: level={level}")
                     return f"priority {name} updated"
                 return wrapper
 

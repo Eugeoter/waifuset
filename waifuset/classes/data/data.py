@@ -187,7 +187,7 @@ class ImageInfo:
         if 'caption' in attrs:
             for attr in self._caption_attrs:
                 value = getattr(self.caption, attr) if self.caption is not None else None
-                dic[attr] = captionize(value) if value is not None else None
+                dic[attr] = ', '.join(value) if isinstance(value, list) else value
         return dic
 
     def __eq__(self, other):

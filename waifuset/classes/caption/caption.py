@@ -168,11 +168,13 @@ class Caption:
     def spaced(self):
         return self.replace('_', ' ')
 
-    def sort(self, key=None, reverse=False):
-        self.tags.sort(key=key, reverse=reverse)
+    def sort(self, key=tagging.get_tag_priority, reverse=False):
+        self._tags.sort(key=key, reverse=reverse)  # sorting will not change cached properties
 
-    def sorted(self, key=None, reverse=False):
-        return Caption(sorted(self.tags, key=key, reverse=reverse))
+    def sorted(self, key=tagging.get_tag_priority, reverse=False):
+        caption = self.copy()
+        caption.sort(key=key, reverse=reverse)
+        return caption
 
     def deovlped(self):
         tagging.init_overlap_table()
@@ -187,20 +189,23 @@ class Caption:
         return (caption - tags_to_remove).spaced().escaped()
 
     def copy(self):
-        return Caption(self.tags.copy())
+        from copy import deepcopy
+        return deepcopy(self)
 
     def formalized(self):
+        # formalize will not change cached properties
         caption = self.spaced().escaped()
         for i, tag in enumerate(caption):
-            if tagging.REGEX_ARTIST_TAG.match(tag):
-                caption.tags[i] = f"artist: {tag[3:]}"
+            if tag.startswith('by '):
+                caption._tags[i] = f"artist: {tag[3:]}"
             elif tag in tagging.STYLE_TAGS:
-                caption.tags[i] = f"style: {tag}"
-            elif tagging.REGEX_CHARACTER_TAGS.match(tag):
-                caption.tags[i] = f"character: {tag}"
+                caption._tags[i] = f"style: {tag}"
+            elif tag.replace('\\', '').replace('_', ' ').strip() in tagging.CHARACTER_TAGS:
+                caption._tags[i] = f"character: {tag}"
         return Caption(caption)
 
     def deformalized(self):
+        # deformalize will not change cached properties
         caption = self.spaced().escaped()
         for i, tag in enumerate(caption):
             if tagging.REGEX_ARTIST.match(tag):
@@ -212,6 +217,7 @@ class Caption:
         return Caption(caption)
 
     def defeatured(self, ref, freq_thres=0.3, count_thres=1):
+        # print(f"defeature: character: {self.characters} | _character: {self._characters}")
         caption = self.copy()
         if caption.characters and len(caption.characters) > 0:
             for char_tag in caption.characters:

@@ -92,8 +92,8 @@ def smart_name(
     return return_type(filename_pattern)
 
 
-def smart_path(root, name, exts: Optional[Iterable[str]] = tuple()):
-    return_type = type(name)
+def smart_path(root, name, exts: Optional[Iterable[str]] = tuple(), return_type: Optional[type] = None):
+    return_type = return_type or type(name)
     if isinstance(name, Path):
         name = str(name)
     name = name.replace('%datetime%', time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()))
@@ -134,7 +134,8 @@ def formalize_name(s):
 def download_from_url(url, cache_dir=None, verbose=True):
     from huggingface_hub import hf_hub_download
     split = url.split("/")
-    username, repo_id, model_name = split[-3], split[-2], split[-1]
+    if len(split) >= 3:
+        username, repo_id, model_name = split[-3], split[-2], split[-1]
     if verbose:
         print(f"[download_from_url]: {username}/{repo_id}/{model_name}")
     model_path = hf_hub_download(f"{username}/{repo_id}", model_name, cache_dir=cache_dir)

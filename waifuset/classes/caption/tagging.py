@@ -105,6 +105,21 @@ def init_wd14_tags():
 
 WD_TAGS, WD_GENERAL_TAGS, WD_CHARACTER_TAGS = None, None, None
 
+TAG_TABLE = None
+TAG_TABLE_PATH = './waifuset/json/tag_table.json'
+
+
+def init_tag_table():
+    global TAG_TABLE
+    if TAG_TABLE is not None:
+        return
+    try:
+        with open(TAG_TABLE_PATH, 'r') as f:
+            TAG_TABLE = json.load(f)
+    except Exception as e:
+        TAG_TABLE = {}
+        print(f'failed to load tag table: {e}')
+
 
 def init_priority_tags():
     global PRIORITY, PRIORITY_REGEX, PATTERN_CHARACTER_TAGS, REGEX_CHARACTER_TAGS
@@ -113,19 +128,19 @@ def init_priority_tags():
 
     # ! spacing captions only.
     PRIORITY = {
-        # Artist
+        # Artist 0
         'artist': [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
-        # Role
+        # Role 1
         'role': [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
-        # Character
+        # Character 2
         'copyright': ['|'.join(GAME_TAGS)],
-        'character': [PATTERN_CHARACTER_TAGS, PATTERN_CHARACTER, 'cosplay'],
+        'character': [PATTERN_CHARACTER, 'cosplay'],
         'race': [r'(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling) (female|male|girl|boy)s?',
                  'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
         'solo': ['solo'],
-        # Subject
+        # Subject 6
         'subject': ['portrait', 'scenery', 'out-of-frame'],
-        # Style
+        # Style 7
         'style': [PATTERN_STYLE_TAGS, PATTERN_STYLE],
         # Theme
         'theme': [r'.*\b(theme)\b.*', 'science fiction', 'fantasy'],
@@ -145,7 +160,7 @@ def init_priority_tags():
         'expression': [r'.*\b(happy|sad|angry|grin|surprised|scared|embarrassed|shy|smiling|smile|frowning|crying|laughing|blushing|sweating|blush|:3|:o|expression|expressionless)\b.*'],
 
         # Skin
-        'skin': [r'[\w\-]+ skin', r'dark-skinned (?:female|male)', r'.*\b(tan|figure)\b.*'],
+        'skin': [r'dark-skinned (?:female|male)', r'.*\b(tan|figure|skin)\b.*'],
 
         # Features
         'face_feature': [r'.*\b(ear|horn|tail|mouth|lip|teeth|tongue|fang|saliva|kemonomimi mode|mustache|beard|sweatdrop)s?\b.*'],
@@ -169,7 +184,7 @@ def init_priority_tags():
         'nipple': [r'.*\b(nipple|areola|areolae)s?\b.*'],
 
         # Pussy
-        'pussy': [r'.*\b(pussy|vaginal|penis)\b.*'],
+        'pussy': [r'.*\b(pussy|vaginal|penis|anus)\b.*'],
         'mosaic': [r'.*\b(uncensor|censor)(ed|ing)?\b.*'],
 
         # Bodies
@@ -209,3 +224,39 @@ PATTERN_CHARACTER_FEATURES = [
     r"\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling)([\s_](girl|boy|other|male|female))?\b"
 ]
 REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for pattern in PATTERN_CHARACTER_FEATURES]
+
+
+def get_key_index(key):
+    return list(PRIORITY.keys()).index(key)
+
+
+def get_tag_priority(tag):
+    if tag.startswith("artist:"):
+        return get_key_index('artist')
+    elif tag.startswith("character:"):
+        return get_key_index('character')
+    elif tag.startswith("style:"):
+        return get_key_index('style')
+    elif 'quality' in tag:
+        return get_key_index('quality')
+    elif tag in AESTHETIC_TAGS:
+        return get_key_index('aesthetic')
+    else:
+        tag = preprocess_tag(tag)
+        if tag in TAG_TABLE:
+            if TAG_TABLE is None:
+                init_tag_table()
+            return TAG_TABLE[tag]['priority']
+        else:
+            return len(PRIORITY_REGEX)
+
+
+def preprocess_tag(tag):
+    tag = tag.strip().lower()
+    tag = tag.replace('\\', '')
+    tag = tag.replace(' ', '_')
+    return tag
+
+
+def sort_tags(tags):
+    return sorted(tags, key=lambda x: get_tag_priority(x))

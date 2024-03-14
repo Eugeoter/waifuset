@@ -176,3 +176,5 @@ launch.bat
 /waifuset/json/custom*
 aid_*
 tmp_*
+/waifuset/json/tag_list.json
+/waifuset/json/tag_table.json
