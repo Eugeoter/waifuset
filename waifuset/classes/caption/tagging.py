@@ -260,3 +260,10 @@ def preprocess_tag(tag):
 
 def sort_tags(tags):
     return sorted(tags, key=lambda x: get_tag_priority(x))
+
+
+def query_tag_table(tag, default=None):
+    if TAG_TABLE is None:
+        init_tag_table()
+    tag = tag.lower().replace('\\', '').replace(' ', '_').strip('_')
+    return TAG_TABLE.get(tag, default)
