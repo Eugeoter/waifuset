@@ -1,10 +1,8 @@
 import json
-import time
 from PIL import Image
 from pathlib import Path
 from typing import Tuple, Literal, Iterable
-from collections import OrderedDict
-from ..caption import Caption, captionize
+from ..caption import Caption
 from ...const import IMAGE_EXTS
 
 

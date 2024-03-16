@@ -227,6 +227,8 @@ REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for patte
 
 
 def get_key_index(key):
+    if not PRIORITY:
+        init_priority_tags()
     return list(PRIORITY.keys()).index(key)
 
 
@@ -243,6 +245,8 @@ def get_tag_priority(tag):
         return get_key_index('aesthetic')
     else:
         tag = preprocess_tag(tag)
+        if not TAG_TABLE:
+            init_tag_table()
         if tag in TAG_TABLE:
             if TAG_TABLE is None:
                 init_tag_table()

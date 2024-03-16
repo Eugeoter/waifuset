@@ -684,7 +684,7 @@ def create_ui(
                                             scale=1,
                                             min_width=128,
                                         )
-                                        
+
                                     with gr.Row(variant='compact'):
                                         wd_general_threshold = gr.Slider(
                                             label=translate('General Threshold', univargs.language),
@@ -700,7 +700,6 @@ def create_ui(
                                             maximum=1,
                                             step=0.01,
                                         )
-                                    
 
                                 with gr.Tab(label=translate('Scorer', univargs.language)):
                                     with gr.Row(variant='compact'):
@@ -1132,6 +1131,8 @@ def create_ui(
                     univset.select((univset.selected.index, img_key))
 
                 img_info = univset.get(img_key)
+                if not img_info:
+                    return {log_box: f"missing image info: {img_key}"}
                 img_path = img_info.image_path
                 if not img_path.is_file():
                     return {log_box: f"image `{img_path}` not found"}
@@ -1365,7 +1366,7 @@ def create_ui(
 
                         pbar.close()
                     else:
-                        if func in (predict_aesthetic_score,):
+                        if func in (predict_aesthetic_score, wd_tagging):
                             args = args[1:]
                         res = edit(univset[image_key], *args, **kwargs)
                         if isinstance(res, ImageInfo):
@@ -1781,6 +1782,8 @@ def create_ui(
                 if univargs.language != 'en':
                     os_mode = translate(os_mode, 'en')
                 nonlocal waifu_tagger
+                if isinstance(image_infos, ImageInfo):  # single input
+                    image_infos = [image_infos]
                 if os_mode == 'ignore':
                     image_infos = [info for info in image_infos if info.caption is None]
                     if len(image_infos) == 0:

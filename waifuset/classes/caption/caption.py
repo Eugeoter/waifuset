@@ -197,11 +197,11 @@ class Caption:
         caption = self.spaced().escaped()
         for i, tag in enumerate(caption):
             if tag.startswith('by '):
-                caption._tags[i] = f"artist: {tag[3:]}"
+                caption.tags[i] = f"artist: {tag[3:]}"
             elif tag in tagging.STYLE_TAGS:
-                caption._tags[i] = f"style: {tag}"
+                caption.tags[i] = f"style: {tag}"
             elif tag.replace('\\', '').replace('_', ' ').strip() in tagging.CHARACTER_TAGS:
-                caption._tags[i] = f"character: {tag}"
+                caption.tags[i] = f"character: {tag}"
         return Caption(caption)
 
     def deformalized(self):

@@ -5,7 +5,7 @@ import pandas as pd
 import concurrent.futures as cf
 from tqdm import tqdm
 from pathlib import Path
-from typing import List, Dict, Callable, Literal
+from typing import List, Callable, Literal
 from ..data import ImageInfo
 from ..caption import Caption
 from ..data.data import jsonize

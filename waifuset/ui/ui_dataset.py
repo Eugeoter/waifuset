@@ -314,7 +314,7 @@ class UIDataset(UIChunkedDataset):
         self.database_file = Path(database_file).absolute() if database_file else None
         self.backup_dir = Path(backup_dir or './backups').absolute()
 
-        same_io = source is not None and len(source) == 1 and (write_to_database and self.database_file.samefile(source[0]))
+        same_io = source is not None and len(source) == 1 and (write_to_database and self.database_file and self.database_file.is_file() and self.database_file.samefile(source[0]))
         if same_io:
             print(f"[ui_dataset] same io")
             super().__init__(source, *args, **kwargs)
@@ -338,7 +338,7 @@ class UIDataset(UIChunkedDataset):
         if write_to_database or write_to_txt:
             if kwargs.get('formalize_caption', False):
                 self.buffer.update(self)
-            elif not same_io or write_to_txt:
+            elif (not same_io or write_to_txt) and database:
                 for img_key in tqdm(self, desc='initializing buffer'):
                     if database is None or img_key not in database:
                         self.buffer[img_key] = self[img_key]
