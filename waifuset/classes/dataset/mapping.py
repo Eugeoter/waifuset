@@ -1,6 +1,7 @@
 from typing import Dict
+from pathlib import Path
 from .. import ImageInfo
-from ...utils import log_utils as logu
+from ...utils import log_utils as logu, file_utils
 
 
 def track_rename(image_info: ImageInfo, stem_map: Dict[str, str]):
@@ -10,14 +11,19 @@ def track_rename(image_info: ImageInfo, stem_map: Dict[str, str]):
     return image_info
 
 
-def track_path(image_info: ImageInfo, dataset):
-    image_key = image_info.key
-    if image_key in dataset:
+def track_image_path(image_info: ImageInfo, dataset):
+    if isinstance(dataset, (str, Path)):
+        from ...const import IMAGE_EXTS
+        dataset = file_utils.listdir(dataset, recur=True, return_path=True, return_type=Path, ext=IMAGE_EXTS)
+        dataset = {p.stem: p for p in dataset}
+    img_key = image_info.key
+    if img_key in dataset:
         old = image_info.image_path
-        new = dataset[image_key].image_path
+        new = dataset[img_key]
+        new = new.image_path if isinstance(new, ImageInfo) else new
         if old != new:
             image_info.image_path = new
-            print(f"[path] `{logu.blue(image_key)}` `{logu.yellow(old)}` -> `{logu.green(new)}`.")
+            print(f"[path] `{logu.blue(img_key)}` `{logu.yellow(old)}` -> `{logu.green(new)}`.")
     return image_info
 
 
@@ -57,7 +63,7 @@ def track_styles(image_info: ImageInfo):
 
 
 def track_everything(image_info: ImageInfo, dataset):
-    image_info = track_path(image_info, dataset)
+    image_info = track_image_path(image_info, dataset)
     image_info = track_caption(image_info, dataset)
     image_info = track_artist(image_info)
     image_info = track_characters(image_info)

@@ -2,7 +2,8 @@ import re
 from typing import Union, List
 from . import tagging
 
-EMPTY_CACHE = 0
+LAZY_READING = 999
+LAZY_LOADING = 998
 
 
 class Caption:
@@ -25,7 +26,8 @@ class Caption:
 
     def __init__(self, caption_or_tags=None, sep=', ', fix_typos: bool = True):
         if isinstance(caption_or_tags, Caption):
-            tags = caption_or_tags._tags.copy()
+            self = caption_or_tags
+            return
         elif isinstance(caption_or_tags, (str, list)):
             if fix_typos and isinstance(caption_or_tags, str):
                 caption_or_tags = caption_or_tags.replace('，', ',')
@@ -35,14 +37,14 @@ class Caption:
         else:
             raise TypeError(f"unsupported type for caption: {type(caption_or_tags).__name__}")
 
-        self._sep = sep
+        self._sep = sep  # separator
         self._tags = [tag.strip() for tag in tags if tag.strip() != '']
 
         # caches
-        self._artist: str = EMPTY_CACHE
-        self._quality: str = EMPTY_CACHE
-        self._characters: List[str] = EMPTY_CACHE
-        self._styles: List[str] = EMPTY_CACHE
+        self._artist: str = LAZY_LOADING
+        self._quality: str = LAZY_LOADING
+        self._characters: List[str] = LAZY_LOADING
+        self._styles: List[str] = LAZY_LOADING
 
     def load_cache(self, **kwargs):
         for key, value in kwargs.items():
@@ -53,7 +55,7 @@ class Caption:
 
     def clean_cache(self):
         for attr in self._cached_properties:
-            setattr(self, f"_{attr}", EMPTY_CACHE)
+            setattr(self, f"_{attr}", LAZY_LOADING)
 
     def copy(self):
         from copy import deepcopy
@@ -169,6 +171,7 @@ class Caption:
         return self.replace('_', ' ')
 
     def sort(self, key=None, reverse=False):
+        key = key or tagging.tag2priority
         self.tags.sort(key=key, reverse=reverse)
 
     def sorted(self, key=None, reverse=False):
@@ -237,7 +240,7 @@ class Caption:
 
     @property
     def artist(self):
-        if self._artist == EMPTY_CACHE:
+        if self._artist == LAZY_LOADING:
             return self.get_artist()
         else:
             return self._artist
@@ -268,7 +271,7 @@ class Caption:
 
     @property
     def quality(self):
-        if self._quality == EMPTY_CACHE:
+        if self._quality == LAZY_LOADING:
             return self.get_quality()
         else:
             return self._quality
@@ -304,7 +307,7 @@ class Caption:
 
     @property
     def characters(self):
-        if self._characters == EMPTY_CACHE:
+        if self._characters == LAZY_LOADING:
             return self.get_characters()
         else:
             return self._characters
@@ -341,7 +344,7 @@ class Caption:
 
     @property
     def styles(self):
-        if self._styles == EMPTY_CACHE:
+        if self._styles == LAZY_LOADING:
             return self.get_styles()
         else:
             return self._styles
@@ -361,6 +364,14 @@ class Caption:
         caption = self.copy()
         caption.styles = styles
         return caption
+
+    def attr_dict(self):
+        return {
+            'artist': self.artist,
+            'quality': self.quality,
+            'characters': captionize(self.characters),
+            'styles': captionize(self.styles),
+        }
 
     def __str__(self):
         return self.caption
@@ -519,6 +530,13 @@ def captionize(caption_or_tags, sep=', '):
 
 
 def preprocess_tag(tag):
+    r"""
+    Process a tag to:
+    - lower case
+    - remove underscores
+    - escape brackets
+    - remove prefixes
+    """
     tag = tag.lower().replace('_', ' ').strip()
     if '(' in tag and ')' in tag:
         tag = tagging.REGEX_UNESCAPED_BRACKET.sub(r'\\\1', tag)

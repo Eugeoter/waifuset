@@ -5,13 +5,12 @@ import os
 import json
 import time
 from tqdm import tqdm
-from typing import Union, Callable, Tuple
+from typing import Union, Tuple, Iterable
 from pathlib import Path
 from typing import List, Dict
 from ..classes import Dataset, ImageInfo, Caption
 from ..classes.caption.caption import preprocess_tag
 from ..utils import log_utils as logu
-from ..utils.file_utils import listdir
 
 
 class UISelectData:
@@ -253,6 +252,21 @@ class UITab:
 class UITagTable:
     def __init__(self):
         self._table: Dict[str, set] = {}
+        self._artist = set()
+        self._character = set()
+        self._style = set()
+
+    def get_tag_type(self, tag):
+        if ':' not in tag:
+            return None
+        if tag.startswith('artist:'):
+            return 'artist'
+        elif tag.startswith('character:'):
+            return 'character'
+        elif tag.startswith('style:'):
+            return 'style'
+        else:
+            return None
 
     def query(self, tag):
         return self._table.get(tag, set())
@@ -262,25 +276,40 @@ class UITagTable:
             if key in key_set:
                 key_set.remove(key)
 
-    def add(self, tag, key, preprocess=True):
+    def add(self, tag, key, tagtype=None, preprocess=True):
         if preprocess:
-            tag = preprocess_tag(tag)
-        if tag not in self._table:
-            self._table[tag] = set()
-        self._table[tag].add(key)
-        # if 'jinx' in tag:
-        #     print(f"table[{tag}] += {key}")
+            proc_tag = preprocess_tag(tag)
+        else:
+            proc_tag = tag
+        if proc_tag not in self._table:
+            self._table[proc_tag] = set()
+        if tagtype or (tagtype := self.get_tag_type(tag)):
+            if tagtype == 'artist':
+                self._artist.add(proc_tag)
+            elif tagtype == 'character':
+                self._character.add(proc_tag)
+            elif tagtype == 'style':
+                self._style.add(proc_tag)
+
+        self._table[proc_tag].add(key)
 
     def remove(self, tag, key, preprocess=True):
         if preprocess:
-            tag = preprocess_tag(tag)
-        if tag not in self._table:
+            proc_tag = preprocess_tag(tag)
+        else:
+            proc_tag = tag
+        if proc_tag not in self._table:
             return
-        self._table[tag].remove(key)
-        if len(self._table[tag]) == 0:
-            del self._table[tag]
-        # if 'jinx' in tag:
-        #     print(f"table[{tag}] -= {key}")
+        self._table[proc_tag].remove(key)
+        if len(self._table[proc_tag]) == 0:
+            del self._table[proc_tag]
+            if tagtype := self.get_tag_type(tag):
+                if tagtype == 'artist':
+                    self._artist.remove(proc_tag)
+                elif tagtype == 'character':
+                    self._character.remove(proc_tag)
+                elif tagtype == 'style':
+                    self._style.remove(proc_tag)
 
     def __contains__(self, tag):
         return tag in self._table
@@ -300,6 +329,18 @@ class UITagTable:
     def values(self):
         return self._table.values()
 
+    @property
+    def artist_table(self):
+        return {tag: self._table[tag] for tag in self._artist}
+
+    @property
+    def character_table(self):
+        return {tag: self._table[tag] for tag in self._character}
+
+    @property
+    def style_table(self):
+        return {tag: self._table[tag] for tag in self._style}
+
 
 class UIDataset(UIChunkedDataset):
     selected: UISelectData
@@ -308,16 +349,19 @@ class UIDataset(UIChunkedDataset):
     def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, backup_dir=None, *args, **kwargs):
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
+        if not isinstance(source, Iterable):
+            source = [source]
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
         self.backup_dir = Path(backup_dir or './backups').absolute()
 
-        same_io = source and len(source) == 1 and write_to_database and self.database_file.samefile(source[0])
+        same_io = len(source) == 1 and write_to_database and self.database_file.is_file() and self.database_file.samefile(source[0])
         if same_io:
             print(f"[ui_dataset] same io")
             super().__init__(source, *args, **kwargs)
+            database = None
         else:
             print(f"[ui_dataset] overload: {logu.yellow(source)} -> {logu.yellow(self.database_file)}")
             if self.database_file and self.database_file.is_file():
@@ -337,7 +381,7 @@ class UIDataset(UIChunkedDataset):
 
         if kwargs.get('formalize_caption', False):
             self.buffer.update(self)
-        elif not same_io or write_to_txt:
+        elif database is not None:  # <=> async io, load new data into buffer
             for img_key in tqdm(self, desc='initializing buffer'):
                 if img_key not in database:
                     self.buffer[img_key] = self[img_key]
@@ -356,6 +400,7 @@ class UIDataset(UIChunkedDataset):
                 continue
             for tag in caption:
                 self.tag_table.add(tag, image_key)
+        print(f"[ui_dataset] tag_table: total={len(self.tag_table)} | artist={len(self.tag_table.artist_table)} | character={len(self.tag_table.character_table)} | style={len(self.tag_table.style_table)}")
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):
@@ -407,10 +452,10 @@ class UIDataset(UIChunkedDataset):
             new_caption.tags = [preprocess_tag(tag) for tag in new_caption.tags]
             # print(f"add tags: {new_caption - orig_caption}")
             for tag in new_caption - orig_caption:  # introduce new tags
-                self.tag_table.add(tag, key, preprocess=False)
+                self.tag_table.add(tag, key, preprocess=True)
             # print(f"remove tags: {orig_caption - new_caption}")
             for tag in orig_caption - new_caption:  # remove old tags
-                self.tag_table.remove(tag, key, preprocess=False)
+                self.tag_table.remove(tag, key, preprocess=True)
 
         super().__setitem__(key, value)
 

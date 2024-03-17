@@ -59,3 +59,10 @@ class Emoji:
 
     plus_sign = u'\U00002795'  # ➕
     minus_sign = u'\U00002796'  # ➖
+
+    # faces
+    smile = u'\U0001F604'  # 😄
+    smiley = u'\U0001F603'  # 😃
+
+    artist_palette = u'\U0001F3A8'  # 🎨
+    female_artist = u'\U0001F469\U0000200D\U0001F3A8'  # 👩‍🎨

@@ -407,10 +407,12 @@ class Dataset(_super_class):
 
 def dump_as_json(source, fp, mode='a', indent=4, sort_keys=False, verbose=False):
     import json
-    dataset = Dataset(source)
+    dataset = Dataset(source) if not isinstance(source, Dataset) else source
     if mode == 'a' and Path(fp).is_file():
         dataset = Dataset(fp, verbose=verbose).update(dataset)
-    json_data = {image_key: image_info.dict() for image_key, image_info in tqdm(dataset.items(), desc='Converting to dict', smoothing=1, disable=not dataset.verbose)}
+    json_data = {}
+    for image_key, image_info in tqdm(dataset.items(), desc='Converting to dict', smoothing=1, disable=not dataset.verbose):
+        json_data[image_key] = image_info.dict()
     with open(fp, mode='w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=indent, sort_keys=sort_keys)
 
