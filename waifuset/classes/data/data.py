@@ -253,7 +253,7 @@ class ImageInfo:
 
     def dict(self, attrs: Tuple[str] = None):
         self._dict = {k: auto_convert(v, self.__dicttype__[k]) for k, v in self._dict.items()}
-        self._dict.update(self.caption.attr_dict())
+        self._dict.update(self.caption.attr_dict() if self.caption is not None else {'artist': None, 'characters': None, 'styles': None, 'quality': None})
         return self._dict if attrs is None else {attr: self._dict[attr] for attr in attrs}
 
     def __eq__(self, other):
