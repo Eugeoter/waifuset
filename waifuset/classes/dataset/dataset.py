@@ -32,7 +32,7 @@ class Dataset(_super_class):
             source = [source]
         # if self.verbose:
         #     tic = time.time()
-        #     logu.info(f'loading dataset')
+        #     self.log(f'loading dataset')
 
         dic = {}
         for src in source:
@@ -56,7 +56,7 @@ class Dataset(_super_class):
                         import json
                         with open(src, 'r', encoding='utf-8') as f:
                             json_data = json.load(f)
-                        for image_key, image_info in tqdm(json_data.items(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
+                        for image_key, image_info in tqdm(json_data.items(), desc=logu.magenta('[dataset] ') + f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             if image_key in dic or not key_condition(image_key):
                                 continue
                             if cacheset and image_key in cacheset:
@@ -67,7 +67,7 @@ class Dataset(_super_class):
                     elif suffix == '.csv':  # 3. csv file
                         df = pd.read_csv(src)
                         df = df.applymap(lambda x: None if pd.isna(x) else x)
-                        for _, row in tqdm(df.iterrows(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
+                        for _, row in tqdm(df.iterrows(), desc=logu.magenta('[dataset] ') + f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             image_key = row['image_key']
                             if image_key in dic or not key_condition(image_key):
                                 continue
@@ -83,7 +83,7 @@ class Dataset(_super_class):
 
                 elif src.is_dir():  # 4. directory
                     files = listdir(src, exts=exts, return_path=True, return_type=Path, recur=recur)
-                    for file in tqdm(files, desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
+                    for file in tqdm(files, desc=logu.magenta('[dataset] ') + f"reading `{src.name}`", smoothing=1, disable=not verbose):
                         image_key = file.stem
                         if image_key in dic or not key_condition(image_key):
                             # logu.warn(f'Duplicated image key `{image_key}`: path_1: `{dic[image_key].image_path}`, path_2: `{file}`.')
@@ -155,16 +155,21 @@ class Dataset(_super_class):
 
         # if self.verbose:
         #     toc = time.time()
-        #     logu.success(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
+        #     self.log(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
 
         # end init
 
     def make_subset(self, condition: Callable[[ImageInfo], bool] = None, cls=None, *args, **kwargs):
         import inspect
         cls = cls or self.__class__
+        verbose = kwargs.get('verbose', self.verbose)
         init_params = inspect.signature(cls.__init__).parameters.keys()
         attrs_kwargs = {k: getattr(self, k) for k in cls.__annotations__ if k in init_params and k not in kwargs}
-        return cls({img_key: img_info for img_key, img_info in self.items() if condition(img_info)}, *args, **kwargs, **attrs_kwargs)
+        data = {}
+        for image_key, image_info in tqdm(self.items(), desc='making subset', smoothing=1, disable=not verbose):
+            if condition(image_info):
+                data[image_key] = image_info
+        return cls(data, *args, **kwargs, **attrs_kwargs)
 
     def update(self, other, recur=False):
         other = Dataset(other, recur=recur)
@@ -188,6 +193,10 @@ class Dataset(_super_class):
     def __delitem__(self, image_key):
         self.pop(image_key)
 
+    def log(self, msg, prefix='dataset'):
+        if self.verbose:
+            print('[' + logu.magenta(prefix) + '] ', msg)
+
     def get(self, image_key, default=None):
         return self._data.get(image_key, default)
 
@@ -203,7 +212,7 @@ class Dataset(_super_class):
     def df(self):
         headers = ['image_key'] + [name for name in ImageInfo._all_attrs]
         data = []
-        for image_key, image_info in tqdm(self.items(), desc='Converting to DataFrame', smoothing=1, disable=not self.verbose):
+        for image_key, image_info in tqdm(self.items(), desc='converting DataFrame', smoothing=1, disable=not self.verbose):
             row = dict(
                 image_key=image_key,
                 **image_info.dict()
@@ -222,12 +231,13 @@ class Dataset(_super_class):
         from copy import deepcopy
         return deepcopy(self)
 
-    def apply_map(self, func, *args, max_workers=1, **kwargs):
-        if self.verbose:
+    def apply_map(self, func, *args, max_workers=1, verbose=None, **kwargs):
+        verbose = verbose if verbose is not None else self.verbose
+        if verbose:
             tic = time.time()
-            logu.info(f'Applying map `{logu.yellow(func.__name__)}`...')
+            self.log(f'apply map `{logu.yellow(func.__name__)}`...')
 
-        pbar = tqdm(self.items(), desc=f'Applying map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
+        pbar = tqdm(self.items(), desc=logu.magenta('[dataset] ') + f'applying map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not verbose)
         func_ = logu.track_tqdm(pbar)(func)
         if max_workers == 1:
             for image_key, image_info in self.items():
@@ -241,18 +251,19 @@ class Dataset(_super_class):
                     self[image_info.key] = image_info
 
         pbar.close()
-        if self.verbose:
+        if verbose:
             toc = time.time()
-            logu.success(f'Map applied: time_cost={toc - tic:.2f}s.')
+            self.log(f'map applied: time_cost={toc - tic:.2f}s.')
 
         return self
 
-    def with_map(self, func, *args, max_workers=1, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=True, **kwargs):
+    def with_map(self, func, *args, max_workers=1, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=None, **kwargs):
+        verbose = verbose if verbose is not None else self.verbose
         if verbose:
             tic = time.time()
-            logu.info(f'With map `{logu.yellow(func.__name__)}`...')
+            self.log(f'With map `{logu.yellow(func.__name__)}`...')
 
-        pbar = tqdm(self.items(), desc=f'With map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
+        pbar = tqdm(self.items(), desc=logu.magenta('[dataset] ') + f'with map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not verbose)
         func_ = logu.track_tqdm(pbar)(func)
         if max_workers == 1:
             result = [func_(image_info.copy(), *args, **kwargs) for image_info in self.values()]
@@ -264,7 +275,7 @@ class Dataset(_super_class):
         pbar.close()
         if verbose:
             toc = time.time()
-            logu.success(f'With map applied: time_cost={toc - tic:.2f}s.')
+            self.log(f'with map applied: time_cost={toc - tic:.2f}s.')
 
         return Dataset(result, key_condition=condition, read_attrs=read_attrs, read_types=read_types, lazy_reading=lazy_reading, formalize_caption=formalize_caption, recur=recur, verbose=verbose)
 
@@ -314,35 +325,35 @@ class Dataset(_super_class):
     def to_csv(self, fp, mode='w', sep=','):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
+            self.log(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
 
         dump_as_csv(self, fp, mode=mode, sep=sep, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            self.log(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def to_json(self, fp, mode='w', indent=4, sort_keys=False):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
+            self.log(f'Dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
 
         dump_as_json(self, fp, mode=mode, indent=indent, sort_keys=sort_keys, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            self.log(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def to_txts(self):
         if self.verbose:
             tic = time.time()
-            logu.info(f'Dumping dataset to txt...')
+            self.log(f'Dumping dataset to txt...')
 
         dump_as_txts(self, verbose=self.verbose)
 
         if self.verbose:
             toc = time.time()
-            logu.success(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
+            self.log(f'Dataset dumped: time_cost={toc - tic:.2f}s.')
 
     def split(self, *ratio, shuffle=True) -> List['Dataset']:
         keys = list(self.keys())

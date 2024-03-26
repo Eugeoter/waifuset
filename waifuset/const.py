@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Union
 
+ROOT = Path(__file__).parent
+
 StrPath = Union[str, Path]
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.jfif', '.webp'}

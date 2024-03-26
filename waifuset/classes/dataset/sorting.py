@@ -1,5 +1,4 @@
-from typing import Literal, Union, List, Callable
-from .. import ImageInfo, Caption, Dataset
+from .. import ImageInfo
 
 
 def key(image_info: ImageInfo):

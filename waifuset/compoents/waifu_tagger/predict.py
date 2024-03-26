@@ -4,25 +4,29 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from typing import Dict, List, Union
+from ...const import ROOT
 from ..loaders import OnnxModelLoader
-from ...utils import log_utils as logu, image_utils as imgu
+from ...utils import image_utils as imgu
 
 WD_MODEL_REPO = "SmilingWolf/wd-swinv2-tagger-v3"
-
-WD_CACHE_DIR = "./models/wd/"
+WD_CACHE_DIR = os.path.join(ROOT, "/models/wd/")
 
 
 class WaifuTagger(OnnxModelLoader):
     def __init__(self, model_path=None, label_path=None, cache_dir=WD_CACHE_DIR, device='cuda', verbose=False):
+        self.verbose = verbose
         import pandas as pd
 
         if model_path is None:
             model_path = WD_MODEL_REPO + '/model.onnx'
-            logu.info(f"model path is None, switch to default: `{model_path}`")
+            self.log(f"model path is None, switch to default: `{model_path}`")
+        else:
+            self.log(f"model_path: {model_path}")
         if label_path is None:
             label_path = WD_MODEL_REPO + '/selected_tags.csv'
-            logu.info(f"label path is None, switch to default: `{label_path}`")
-        print(f"[waifu_tagger] model_path: {model_path}")
+            self.log(f"label path is None, switch to default: `{label_path}`")
+        else:
+            self.log(f"label_path: {label_path}")
 
         super().__init__(model_path=model_path, model_url=model_path, cache_dir=cache_dir, device=device, verbose=verbose)
 
@@ -43,7 +47,10 @@ class WaifuTagger(OnnxModelLoader):
         self.model_target_size = self.model.get_inputs()[0].shape[1]
 
         if self.verbose:
-            logu.info(f"label loaded.")
+            self.log(f"label loaded.")
+
+    def log(self, msg, prefix='waifu_tagger'):
+        return super().log(msg, prefix=prefix)
 
     def __call__(
         self,

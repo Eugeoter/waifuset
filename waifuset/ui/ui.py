@@ -136,16 +136,16 @@ def create_ui(
         )
         return df
 
-    def import_priority_config():
-        import json
-        nonlocal tag_priority_manager
-        with open(univargs.tag_priority_config_path, 'r') as f:
-            config = json.load(f)
-        for name, patterns in tagging.PRIORITY.items():
-            if name in config:
-                config[name].extend(patterns)
-        tag_priority_manager = UITagPriorityManager(config)
-        return f"priority config loaded"
+    # def import_priority_config():
+    #     import json
+    #     nonlocal tag_priority_manager
+    #     with open(univargs.tag_priority_config_path, 'r') as f:
+    #         config = json.load(f)
+    #     for name, patterns in tagging.PRIORITY.items():
+    #         if name in config:
+    #             config[name].extend(patterns)
+    #     tag_priority_manager = UITagPriorityManager(config)
+    #     return f"priority config loaded"
 
     def init_everything():
         # args validation
@@ -158,15 +158,15 @@ def create_ui(
             logu.warn("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
 
         # import priority config
-        tagging.init_priority_tags()
-        tag_priority_manager = None
+        # tagging.init_priority_tags()
+        # tag_priority_manager = None
 
-        try:
-            import_priority_config()
-            assert tag_priority_manager is not None
-        except Exception as e:
-            logu.error(f"failed to load priority config: {e}")
-            tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
+        # try:
+        #     import_priority_config()
+        #     assert tag_priority_manager is not None
+        # except Exception as e:
+        #     logu.error(f"failed to load priority config: {e}")
+        #     tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
 
         # init dataset
         main_dataset = prepare_dataset(univargs)
@@ -179,9 +179,9 @@ def create_ui(
         waifu_tagger = None
         waifu_scorer = None
 
-        return main_dataset, buffer, sample_history, tag_priority_manager, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table
+        return main_dataset, buffer, sample_history, cur_dataset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table
 
-    univset, buffer, sample_history, tag_priority_manager, subset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
+    univset, buffer, sample_history, subset, waifu_tagger, waifu_scorer, tag_table, tag_feature_table = init_everything()
 
     # demo
     with gr.Blocks() as demo:
@@ -809,24 +809,24 @@ def create_ui(
                         max_lines=1,
                     )
 
-                with gr.Tab(translate('Tag Order', univargs.language)):
-                    with gr.Row():
-                        export_tag_priority_config_btn = cc.EmojiButton(Emoji.floppy_disk)
-                        import_priority_config_btn = cc.EmojiButton(Emoji.inbox_tray)
+                # with gr.Tab(translate('Tag Order', univargs.language)):
+                #     with gr.Row():
+                #         export_tag_priority_config_btn = cc.EmojiButton(Emoji.floppy_disk)
+                #         import_priority_config_btn = cc.EmojiButton(Emoji.inbox_tray)
 
-                    tag_priority_comps = []
-                    for i, name in enumerate(tag_priority_manager.keys()):
-                        with gr.Row(variant='compact'):
-                            tag_priority_level = gr.Number(label=translate(name.replace('_', ' ').title(), univargs.language), value=i, precision=0, scale=0, min_width=144)
-                            tag_priority_custom_tags = gr.Dropdown(
-                                label=translate('Tags', univargs.language),
-                                choices=None,
-                                value=None,
-                                multiselect=True,
-                                allow_custom_value=True,
-                                scale=1,
-                            )
-                            tag_priority_comps.append((tag_priority_level, tag_priority_custom_tags))
+                #     tag_priority_comps = []
+                #     for i, name in enumerate(tag_priority_manager.keys()):
+                #         with gr.Row(variant='compact'):
+                #             tag_priority_level = gr.Number(label=translate(name.replace('_', ' ').title(), univargs.language), value=i, precision=0, scale=0, min_width=144)
+                #             tag_priority_custom_tags = gr.Dropdown(
+                #                 label=translate('Tags', univargs.language),
+                #                 choices=None,
+                #                 value=None,
+                #                 multiselect=True,
+                #                 allow_custom_value=True,
+                #                 scale=1,
+                #             )
+                #             tag_priority_comps.append((tag_priority_level, tag_priority_custom_tags))
 
             # ========================================= Functions ========================================= #
 
@@ -989,7 +989,7 @@ def create_ui(
                     res = show_database(newset, new_chunk_index)
                 return res
 
-            def change_to_categories(categories, sorting_methods=None, reverse=False, progress=gr.Progress(track_tqdm=True)):
+            def change_to_categories(categories, sorting_methods=None, reverse=False):
                 r"""
                 Change current dataset to another dataset with category `category` and show its chunk
                 """
@@ -1682,13 +1682,10 @@ def create_ui(
             # )
 
             # ========================================= Optimizers ========================================= #
-            def sort_caption(image_info):
-                caption = image_info.caption
-                if caption is None:
+            def sort_caption(image_info: ImageInfo):
+                if image_info.caption is None:
                     return image_info
-                nonlocal tag_priority_manager
-                tagging.init_priority_tags()
-                image_info.caption = caption @ tag_priority_manager.priority_regex
+                image_info.caption.sort(key=tagging.tag2priority)
                 return image_info
 
             sort_caption_btn.click(
@@ -1732,11 +1729,10 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def deoverlap_caption(image_info):
-                caption = image_info.caption
-                if caption is None:
+            def deoverlap_caption(image_info: ImageInfo):
+                if image_info.caption is None:
                     return image_info
-                image_info.caption = caption.deovlped()
+                image_info.caption = image_info.caption.deovlped()
                 return image_info
 
             deoverlap_caption_btn.click(
@@ -1746,42 +1742,14 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def defeature_caption(image_info: ImageInfo, freq_thres, count_thres, least_sample_size, ref):
-                # make feature table using tag table
-                nonlocal tag_table, tag_feature_table
-                if tag_table is None:
-                    univset.init_tag_table()
-                    tag_table = univset.tag_table
-
-                caption: Caption = image_info.caption
-                if caption is None:
+            def defeature_caption(image_info: ImageInfo, freq_thres, count_thres, least_sample_size):
+                if image_info.caption is None:
                     return image_info
-                characters = caption.characters
-                if characters is None or len(characters) == 0:
-                    return image_info
-                for character in characters:
-                    character = preprocess_tag(character)
-                    if character not in ref:
-                        # print(f"making ref: `{character}`")
-                        ref[character] = {}
-                        img_keys = tag_table[character]
-                        img_infos = [univset[key] for key in img_keys]
-                        if len(img_infos) < least_sample_size:
-                            continue
-                        for img_info in img_infos:
-                            cap = img_info.caption
-                            for tag in cap & tagging.REGEX_CHARACTER_FEATURES:
-                                tag = preprocess_tag(tag)
-                                if tag not in ref[character]:
-                                    ref[character][tag] = 0
-                                ref[character][tag] += 1
-                        ref[character] = {tag: (count, count / len(img_infos)) for tag, count in ref[character].items()}
-
-                image_info.caption = caption.defeatured(ref=ref, freq_thres=freq_thres, count_thres=count_thres)
+                image_info.caption.defeature(freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
                 return image_info
 
             defeature_caption_btn.click(
-                fn=lambda *args: data_edition_handler(defeature_caption)(*args, ref={}),
+                fn=data_edition_handler(defeature_caption),
                 inputs=[image_path, general_edit_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
@@ -2215,41 +2183,41 @@ def create_ui(
 
             # ========================================= Config ========================================= #
 
-            def update_tag_priority(name):
-                def wrapper(level, tags):
-                    nonlocal tag_priority_manager
-                    patterns = tagging.PRIORITY.get(name, [])
-                    patterns.extend(tags)
-                    tp = TagPriority(name, patterns, level)
-                    tag_priority_manager[name] = tp
-                    return f"priority {name} updated"
-                return wrapper
+            # def update_tag_priority(name):
+            #     def wrapper(level, tags):
+            #         nonlocal tag_priority_manager
+            #         patterns = tagging.PRIORITY.get(name, [])
+            #         patterns.extend(tags)
+            #         tp = TagPriority(name, patterns, level)
+            #         tag_priority_manager[name] = tp
+            #         return f"priority {name} updated"
+            #     return wrapper
 
-            for tag_priority_level, tag_priority_custom_tags in tag_priority_comps:
-                params = dict(
-                    fn=update_tag_priority(name),
-                    inputs=[tag_priority_level, tag_priority_custom_tags],
-                    outputs=[cfg_log_box],
-                )
-                tag_priority_level.change(**params)
-                tag_priority_custom_tags.change(**params)
+            # for tag_priority_level, tag_priority_custom_tags in tag_priority_comps:
+            #     params = dict(
+            #         fn=update_tag_priority(name),
+            #         inputs=[tag_priority_level, tag_priority_custom_tags],
+            #         outputs=[cfg_log_box],
+            #     )
+            #     tag_priority_level.change(**params)
+            #     tag_priority_custom_tags.change(**params)
 
-            def export_tag_priority_config():
-                import json
-                nonlocal tag_priority_manager
-                config = tag_priority_manager.config
-                with open(univargs.tag_priority_config_path, 'w') as f:
-                    json.dump(config, f, indent=4)
-                return f"priority config saved"
+            # def export_tag_priority_config():
+            #     import json
+            #     nonlocal tag_priority_manager
+            #     config = tag_priority_manager.config
+            #     with open(univargs.tag_priority_config_path, 'w') as f:
+            #         json.dump(config, f, indent=4)
+            #     return f"priority config saved"
 
-            export_tag_priority_config_btn.click(
-                fn=export_tag_priority_config,
-                outputs=[cfg_log_box],
-            )
+            # export_tag_priority_config_btn.click(
+            #     fn=export_tag_priority_config,
+            #     outputs=[cfg_log_box],
+            # )
 
-            import_priority_config_btn.click(
-                fn=import_priority_config,
-                outputs=[cfg_log_box],
-            )
+            # import_priority_config_btn.click(
+            #     fn=import_priority_config,
+            #     outputs=[cfg_log_box],
+            # )
 
     return demo

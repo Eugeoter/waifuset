@@ -14,10 +14,14 @@ LAZY_LOADING = 998
 def auto_convert(obj, type, precision=3):
     if obj is None:
         return None
-    if not isinstance(obj, type):
+    if isinstance(obj, list) and type is str:
+        obj = ', '.join(obj)
+    elif not isinstance(obj, type):
         obj = type(obj)
-    if isinstance(obj, float):
-        obj = round(obj, precision)
+        if isinstance(obj, float):
+            obj = round(obj, precision)
+        elif isinstance(obj, Path):
+            obj = obj.absolute()
     return obj
 
 
@@ -311,6 +315,8 @@ class ImageInfo:
         from copy import deepcopy
         return deepcopy(self)
 
+    def __getitem__(self, key):
+        return getattr(self, key)
 
 ImageInfo._self_attrs = ImageInfo.__annotations__
 ImageInfo._caption_attrs = Caption.__annotations__

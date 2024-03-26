@@ -68,7 +68,24 @@ class Caption:
     @tags.setter
     def tags(self, tags):
         self._tags = tagify(tags, sep=self._sep)
-        self.clean_cache()
+        if self.characters:
+            for ch_tag in self.characters:
+                if ch_tag not in self._tags and f"character: {ch_tag}" not in self._tags:
+                    self._characters.remove(ch_tag)
+            if not self.characters:
+                self._characters = LAZY_LOADING
+        if self.styles:
+            for style in self.styles:
+                if style not in self._tags and f"style: {style}" not in self._tags:
+                    self._styles.remove(style)
+            if not self.styles:
+                self._styles = LAZY_LOADING
+        if self.artist:
+            if self.artist not in self._tags and f"artist: {self.artist}" not in self._tags:
+                self._artist = LAZY_LOADING
+        if self.quality:
+            if self.quality not in self._tags:
+                self._quality = LAZY_LOADING
 
     @property
     def caption(self):
@@ -177,6 +194,9 @@ class Caption:
     def sorted(self, key=None, reverse=False):
         return Caption(sorted(self.tags, key=key, reverse=reverse))
 
+    def deoverlap(self):
+        self = self.deovlped()
+
     def deovlped(self):
         tagging.init_overlap_table()
         caption = self.unescaped().underlined()
@@ -214,15 +234,23 @@ class Caption:
                 caption.tags[i] = tag[11:].strip()
         return Caption(caption)
 
-    def defeatured(self, ref, freq_thres=0.3, count_thres=1):
+    def defeature(self, feature_table=None, **kwargs):
+        if not self.characters:
+            return
+        if not feature_table:
+            tagging.init_feature_table(**kwargs)
+            feature_table = tagging.FEATURE_TABLE
+        all_features = set()
+        for character in self.characters:
+            character = preprocess_tag(character)
+            features = feature_table.get(character, None)
+            if features:
+                all_features |= features
+        self._tags = [tag for tag in self.tags if preprocess_tag(tag) not in all_features]  # defeature won't change properties
+
+    def defeatured(self, feature_table=None, **kwargs):
         caption = self.copy()
-        if caption.characters and len(caption.characters) > 0:
-            for char_tag in caption.characters:
-                char_tag = preprocess_tag(char_tag)
-                freq_table = ref[char_tag]
-                for tag, (count, freq) in freq_table.items():
-                    if freq >= freq_thres and count >= count_thres:
-                        caption -= tag
+        caption.defeature(feature_table, **kwargs)
         return caption
 
     # ======================================== artist ======================================== #
@@ -369,8 +397,8 @@ class Caption:
         return {
             'artist': self.artist,
             'quality': self.quality,
-            'characters': captionize(self.characters),
-            'styles': captionize(self.styles),
+            'characters': captionize(self.characters) if self.characters else None,
+            'styles': captionize(self.styles) if self.styles else None,
         }
 
     def __str__(self):

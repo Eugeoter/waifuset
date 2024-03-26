@@ -1,10 +1,32 @@
 import re
 import json
+import os
 import numpy as np
+from ...const import ROOT
 
-OVERLAP_TABLE_PATH = './waifuset/json/overlap_tags.json'
-CUSTOM_TAG_PATH = './waifuset/json/custom_tags.json'
+
+def search_file(file_name, search_path):
+    for root, dirs, files in os.walk(search_path):
+        if file_name in files:
+            return os.path.abspath(os.path.join(root, file_name))
+    return None
+
+
+OVERLAP_TABLE_PATH = search_file('overlap_tags.json', ROOT)
+CUSTOM_TAG_PATH = search_file('custom_tags.json', ROOT)
+TAG_TABLE_PATH = search_file('tag_table.json', ROOT)
+FEATURE_TABLE_PATH = search_file('feature_table.json', ROOT)
 WD_LABEL_PATH = './models/wd/selected_tags.csv'
+
+if not OVERLAP_TABLE_PATH:
+    print(f'overlap table not found in root: {ROOT}')
+if not CUSTOM_TAG_PATH:
+    print(f'custom tag config not found in root: {ROOT}')
+if not TAG_TABLE_PATH:
+    print(f'tag table not found in root: {ROOT}')
+if not FEATURE_TABLE_PATH:
+    print(f'feature table not found in root: {ROOT}')
+
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
 PATTERN_QUALITY_TAG = r'\b((amazing|best|high|normal|low|worst|horrible)([\s_]quality))\b'  # match `xxx quality`
@@ -70,28 +92,33 @@ REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
 PATTERN_STYLE_TAGS = '(' + '|'.join([encode_tag(tag) for tag in STYLE_TAGS]) + ')'
 
 
-def init_overlap_table():
-    global OVERLAP_TABLE, OVERLAP_TABLE_PATH
+def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
+    global OVERLAP_TABLE
     if OVERLAP_TABLE is not None:
         return True
-    import json
-    with open(OVERLAP_TABLE_PATH, 'r') as f:
-        table = json.load(f)
-    table = {entry['query']: (set(entry.get("has_overlap") or []), set(entry.get("overlap_tags") or [])) for entry in table}
-    table = {k: v for k, v in table.items() if len(v[0]) > 0 or len(v[1]) > 0}
-    OVERLAP_TABLE = table
-    return True
+    try:
+        import json
+        with open(table_path, 'r') as f:
+            table = json.load(f)
+        table = {entry['query']: (set(entry.get("has_overlap") or []), set(entry.get("overlap_tags") or [])) for entry in table}
+        table = {k: v for k, v in table.items() if len(v[0]) > 0 or len(v[1]) > 0}
+        OVERLAP_TABLE = table
+        return True
+    except Exception as e:
+        OVERLAP_TABLE = None
+        print(f'failed to read overlap table: {e}')
+        return False
 
 
 OVERLAP_TABLE = None  # ! need to be initialized by init_overlap_table() before use.
 
 
-def init_wd14_tags():
+def init_wd14_tags(label_path=WD_LABEL_PATH):
     global WD_TAGS, WD_GENERAL_TAGS, WD_CHARACTER_TAGS, WD_LABEL_PATH
     if WD_TAGS and WD_GENERAL_TAGS and WD_CHARACTER_TAGS:
         return
     from pandas import read_csv
-    df = read_csv(WD_LABEL_PATH)
+    df = read_csv(label_path)
     wd_tag_names = df["name"].tolist()
     wd_general_indexes = list(np.where(df["category"] == 0)[0])
     wd_general_tags = [wd_tag_names[i].replace('_', ' ') for i in wd_general_indexes]
@@ -107,19 +134,35 @@ def init_wd14_tags():
 WD_TAGS, WD_GENERAL_TAGS, WD_CHARACTER_TAGS = None, None, None
 
 TAG_TABLE = None
-TAG_TABLE_PATH = './waifuset/json/tag_table.json'
+FEATURE_TABLE = None
 
 
-def init_tag_table():
+def init_tag_table(table_path=TAG_TABLE_PATH):
     global TAG_TABLE
     if TAG_TABLE is not None:
         return True
     try:
-        with open(TAG_TABLE_PATH, 'r') as f:
+        with open(table_path, 'r') as f:
             TAG_TABLE = json.load(f)
     except Exception as e:
         TAG_TABLE = None
-        print(f'failed to read tag table: {e}')
+        return False
+    return True
+
+
+def init_feature_table(table_path=FEATURE_TABLE_PATH, freq_thres=0.3, count_thres=1, least_sample_size=50):
+    global FEATURE_TABLE
+    if FEATURE_TABLE is not None:
+        if not (freq_thres == FEATURE_TABLE.freq_thres and count_thres == FEATURE_TABLE.count_thres and least_sample_size == FEATURE_TABLE.least_sample_size):
+            FEATURE_TABLE = None
+            return init_feature_table(table_path, freq_thres, count_thres, least_sample_size)  # remake the table
+        else:
+            return True
+    try:
+        from .table import FeatureTable
+        FEATURE_TABLE = FeatureTable(table_path, freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
+    except Exception as e:
+        FEATURE_TABLE = None
         return False
     return True
 
@@ -224,9 +267,9 @@ PRIORITY, PRIORITY_REGEX = None, None
 
 
 PATTERN_CHARACTER_FEATURES = [
-    r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyeliner|eyebrow|pupil|tongue|lip|mole|ear|horn|tail|wing|breast|skin|freckle)s?\b.*",
+    r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyelash|forehead|eyeliner|fang|eyebrow|pupil|tongue|makeup|lip|mole|ear|horn|nose|mole|tail|wing|breast|chest|tattoo|pussy|penis|fur|arm|leg|thigh|skin|freckle|leg|thigh|foot|feet|toe|finger)s?\b.*",
     r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes|halo)\b.*",
-    r"\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling)([\s_](girl|boy|other|male|female))?\b"
+    r"\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|goblin|tiger|dragon|raccoon|bird|squirrel|cow|animal|maid|frog|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling|jiangshi)([\s_](girl|boy|other|male|female))?\b",
 ]
 REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for pattern in PATTERN_CHARACTER_FEATURES]
 

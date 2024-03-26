@@ -34,15 +34,12 @@ class OnnxModelLoader:
 
         if self.verbose:
             tic = time.time()
-            verbose_info = []
-            verbose_info.append(f"loading pretrained model from `{logu.stylize(self.model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
-            verbose_info.append(f"  providers: {logu.stylize(self.providers, logu.ANSI.GREEN)}")
+            self.log(f"loading pretrained model from `{logu.stylize(self.model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
+            self.log(f"  providers: {logu.stylize(self.providers, logu.ANSI.GREEN)}")
             if self.device == 'cuda':
-                verbose_info.append(f"  run on cuda: {logu.stylize(torch.version.cuda, logu.ANSI.GREEN)}")
+                self.log(f"  run on cuda: {logu.stylize(torch.version.cuda, logu.ANSI.GREEN)}")
             elif self.device == 'cpu':
-                verbose_info.append(f"  run on CPU.")
-            verbose_info = '\n'.join(verbose_info)
-            logu.info(verbose_info)
+                self.log(f"  run on CPU.")
 
         self.model = rt.InferenceSession(
             self.model_path,
@@ -51,4 +48,13 @@ class OnnxModelLoader:
 
         if self.verbose:
             toc = time.time()
-            logu.info(f"model loaded: time_cost={toc-tic:.2f}")
+            self.log(f"model loaded: time_cost={toc-tic:.2f}")
+
+    def __del__(self):
+        if self.verbose:
+            self.log(f"model unloaded.")
+        del self.model
+
+    def log(self, msg, prefix='onnx_model_loader'):
+        if self.verbose:
+            print('[' + logu.blue(prefix) + '] ', msg)
