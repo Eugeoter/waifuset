@@ -1,15 +1,14 @@
-import gradio as gr
 import re
 import math
 import os
 import json
 import time
-from tqdm import tqdm
-from typing import Union, Tuple, Iterable
+import gradio as gr
 from pathlib import Path
 from typing import List, Dict
+from typing import Union, Tuple, Iterable
 from ..classes import Dataset, ImageInfo, Caption
-from ..classes.caption.caption import preprocess_tag
+from ..classes.caption.caption import fmt2standard, tag2type
 from ..utils import log_utils as logu
 
 
@@ -256,18 +255,6 @@ class UITagTable:
         self._character = set()
         self._style = set()
 
-    def get_tag_type(self, tag):
-        if ':' not in tag:
-            return None
-        if tag.startswith('artist:'):
-            return 'artist'
-        elif tag.startswith('character:'):
-            return 'character'
-        elif tag.startswith('style:'):
-            return 'style'
-        else:
-            return None
-
     def query(self, tag):
         return self._table.get(tag, set())
 
@@ -278,12 +265,12 @@ class UITagTable:
 
     def add(self, tag, key, tagtype=None, preprocess=True):
         if preprocess:
-            proc_tag = preprocess_tag(tag)
+            proc_tag = fmt2standard(tag)
         else:
             proc_tag = tag
         if proc_tag not in self._table:
             self._table[proc_tag] = set()
-        if tagtype or (tagtype := self.get_tag_type(tag)):
+        if tagtype or (tagtype := tag2type(proc_tag)):
             if tagtype == 'artist':
                 self._artist.add(proc_tag)
             elif tagtype == 'character':
@@ -295,7 +282,7 @@ class UITagTable:
 
     def remove(self, tag, key, preprocess=True):
         if preprocess:
-            proc_tag = preprocess_tag(tag)
+            proc_tag = fmt2standard(tag)
         else:
             proc_tag = tag
         if proc_tag not in self._table:
@@ -303,7 +290,7 @@ class UITagTable:
         self._table[proc_tag].remove(key)
         if len(self._table[proc_tag]) == 0:
             del self._table[proc_tag]
-            if tagtype := self.get_tag_type(tag):
+            if tagtype := tag2type(tag):
                 if tagtype == 'artist':
                     self._artist.remove(proc_tag)
                 elif tagtype == 'character':
@@ -347,23 +334,29 @@ class UIDataset(UIChunkedDataset):
     edit_history: UIEditHistory
 
     def __init__(self, source=None, write_to_database=False, write_to_txt=False, database_file=None, backup_dir=None, *args, **kwargs):
+        self.init_logger(prefix_color=logu.ANSI.BRIGHT_MAGENTA)
         if write_to_database and database_file is None:
             raise ValueError("database file must be specified when write_to_database is True.")
         if not isinstance(source, Iterable):
             source = [source]
+        source = [os.path.abspath(src) for src in source]
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
         self.backup_dir = Path(backup_dir or './backups').absolute()
 
-        same_io = len(source) == 1 and write_to_database and self.database_file.is_file() and self.database_file.samefile(source[0])
-        if same_io:
-            print(f"[ui_dataset] same io")
+        if (same_json_io := len(source) == 1 and write_to_database and self.database_file.is_file() and self.database_file.samefile(source[0])):
+            self.log(f"synchronous database R/W")
             super().__init__(source, *args, **kwargs)
             database = None
+        elif (same_txt_io := write_to_txt and all(isinstance(src, (str, Path)) and os.path.isdir(src) for src in source)):
+            self.log(f"synchronous txts R/W")
+            super().__init__(source, *args, **kwargs)
+            database = Dataset(source, read_attrs=False, recur=True, verbose=False).make_subset(lambda x: x.image_path.with_suffix('.txt').is_file())
         else:
-            print(f"[ui_dataset] overload: {logu.yellow(source)} -> {logu.yellow(self.database_file)}")
+            if self.write_to_database:
+                self.log(f"asynchronous R/W | overload: {logu.yellow(source[0]) if len(source) == 1 else logu.yellow(source)} -> {logu.yellow(self.database_file)}")
             if self.database_file and self.database_file.is_file():
                 database = Dataset(self.database_file, *args, **kwargs)
             else:
@@ -382,9 +375,10 @@ class UIDataset(UIChunkedDataset):
         if kwargs.get('formalize_caption', False):
             self.buffer.update(self)
         elif database is not None:  # <=> async io, load new data into buffer
-            for img_key in tqdm(self, desc='initializing buffer'):
+            for img_key in self:
                 if img_key not in database:
                     self.buffer[img_key] = self[img_key]
+        self.log(f"info: total={logu.green(len(self))} | buffer={logu.green(len(self.buffer))} | categories={logu.green(len(self.categories))}")
 
     def make_subset(self, *args, **kwargs):
         kwargs['cls'] = UIChunkedDataset
@@ -394,13 +388,13 @@ class UIDataset(UIChunkedDataset):
         if self.tag_table is not None:
             return
         self.tag_table = UITagTable()
-        for image_key, image_info in tqdm(self.items(), desc='initializing tag table'):
+        for image_key, image_info in self.pbar(self.items(), desc='initializing tag table'):
             caption = image_info.caption
             if caption is None:
                 continue
             for tag in caption:
                 self.tag_table.add(tag, image_key)
-        print(f"[ui_dataset] tag_table: total={len(self.tag_table)} | artist={len(self.tag_table.artist_table)} | character={len(self.tag_table.character_table)} | style={len(self.tag_table.style_table)}")
+        self.log(f"tag_table: total={len(self.tag_table)} | artist={len(self.tag_table.artist_table)} | character={len(self.tag_table.character_table)} | style={len(self.tag_table.style_table)}")
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
         if isinstance(selected, gr.SelectData):
@@ -448,8 +442,8 @@ class UIDataset(UIChunkedDataset):
         if self.tag_table is not None:
             orig_caption = Caption() if img_info is None or img_info.caption is None else img_info.caption.copy()
             new_caption = Caption() if value is None or value.caption is None else value.caption.copy()
-            orig_caption.tags = [preprocess_tag(tag) for tag in orig_caption.tags]
-            new_caption.tags = [preprocess_tag(tag) for tag in new_caption.tags]
+            orig_caption.tags = [fmt2standard(tag) for tag in orig_caption.tags]
+            new_caption.tags = [fmt2standard(tag) for tag in new_caption.tags]
             # print(f"add tags: {new_caption - orig_caption}")
             for tag in new_caption - orig_caption:  # introduce new tags
                 self.tag_table.add(tag, key, preprocess=True)
@@ -512,8 +506,12 @@ class UIDataset(UIChunkedDataset):
         return img_info
 
     def save(self, progress=gr.Progress(track_tqdm=True)):
+        if not self.buffer:
+            self.log(f'nothing to save since buffer is empty.')
+            return
+
         if self.verbose:
-            logu.info(f'saving dataset: {len(self.buffer)}/{len(self)}')
+            self.log(f'saving dataset: {len(self.buffer)}/{len(self)}')
 
         if self.write_to_database:
             if self.verbose:
@@ -524,7 +522,7 @@ class UIDataset(UIChunkedDataset):
             else:  # dump history only
                 with open(self.database_file, 'r', encoding='utf-8') as f:
                     json_data = json.load(f)
-                for img_key, img_info in tqdm(self.buffer.items(), desc='dumping to database', disable=not self.verbose):
+                for img_key, img_info in self.pbar(self.buffer.items(), desc='dumping to database', disable=not self.verbose):
                     if img_key in self:
                         json_data[img_key] = img_info.dict()
                     elif img_key in json_data:
@@ -538,7 +536,7 @@ class UIDataset(UIChunkedDataset):
         if self.write_to_txt:
             if self.verbose:
                 tic = time.time()
-            for img_key, img_info in tqdm(self.buffer.items(), desc='dumping to txt', disable=not self.verbose):
+            for img_key, img_info in self.pbar(self.buffer.items(), desc='dumping to txts', disable=not self.verbose):
                 img_info: ImageInfo
                 if img_key in self:
                     img_info.write_txt_caption()
@@ -553,9 +551,9 @@ class UIDataset(UIChunkedDataset):
         if self.verbose:
             toc = time.time()
             if self.write_to_database:
-                logu.success(f'write to database: `{logu.yellow(self.database_file)}` | time_cost={time_cost1:.2f}s.')
+                self.log(f'write to database: `{logu.yellow(self.database_file)}` | time_cost={time_cost1:.2f}s.')
             if self.write_to_txt:
-                logu.success(f'write to txt | time_cost={time_cost2:.2f}s.')
+                self.log(f'write to txt | time_cost={time_cost2:.2f}s.')
 
 
 def backup(image_info):

@@ -2,7 +2,7 @@ import json
 from typing import Dict, List, Union
 from tqdm import tqdm
 from pathlib import Path
-from .caption import preprocess_tag
+from .caption import fmt2standard
 
 
 class Tag:
@@ -31,7 +31,7 @@ class Character(Tag):
         for tag in tags:
             if tag.startswith('character:'):
                 tag = tag.split(':')[1].strip()
-            tag = preprocess_tag(tag)
+            tag = fmt2standard(tag)
             if isinstance(tag, str):
                 tag = Tag(tag)
             self.counter[tag] = self.counter.get(tag, 0) + 1
@@ -47,7 +47,7 @@ def dataset_to_count_table(dataset):
         for tag in tags:
             if tag.startswith('character:'):
                 char_tag = tag.split(':')[1].strip()
-                char_tag = preprocess_tag(char_tag)
+                char_tag = fmt2standard(char_tag)
                 char = count_table.get(char_tag)
                 if char is None:
                     char = Character(char_tag)
@@ -71,7 +71,7 @@ def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, lea
             continue
         freqs = {tag: count / total for tag, count in counter.items() if count >= count_thres}
         freqs = {tag: freq for tag, freq in freqs.items() if freq >= freq_thres}
-        freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(preprocess_tag(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
+        freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(fmt2standard(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
         feature_table[char_tag] = set(freqs.keys())
     return feature_table
 
@@ -81,7 +81,7 @@ def freq_table_to_feature_table(freq_table, freq_thres=0.3):
     feature_table = {}
     for char_tag, counter in tqdm(freq_table.items(), desc='make feature table', disable=True):
         freqs = {tag: freq for tag, freq in counter.items() if freq >= freq_thres}
-        freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(preprocess_tag(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
+        freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(fmt2standard(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
         feature_table[char_tag] = set(freqs.keys())
     return feature_table
 
@@ -124,18 +124,18 @@ class FeatureTable:
             table = dataset_to_count_table(dataset)
             table = count_table_to_feature_table(dataset, freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
         # formalize table
-        table = {preprocess_tag(char_tag): set(preprocess_tag(tag) for tag in tags) for char_tag, tags in table.items() if tags}
+        table = {fmt2standard(char_tag): set(fmt2standard(tag) for tag in tags) for char_tag, tags in table.items() if tags}
         self.table = table
         self.freq_thres = freq_thres
         self.count_thres = count_thres
         self.least_sample_size = least_sample_size
 
     def __getitem__(self, character):
-        char_tag = preprocess_tag(character)
+        char_tag = fmt2standard(character)
         return self.table[char_tag]
 
     def get(self, character, default=None):
-        char_tag = preprocess_tag(character)
+        char_tag = fmt2standard(character)
         return self.table.get(char_tag, default)
 
     def items(self):

@@ -1,32 +1,42 @@
 import re
 import json
 import os
-import numpy as np
 from ...const import ROOT
 
 
-def search_file(file_name, search_path):
+def search_file(filename, search_path):
     for root, dirs, files in os.walk(search_path):
-        if file_name in files:
-            return os.path.abspath(os.path.join(root, file_name))
+        if filename in files:
+            return os.path.abspath(os.path.join(root, filename))
     return None
 
 
-OVERLAP_TABLE_PATH = search_file('overlap_tags.json', ROOT)
 CUSTOM_TAG_PATH = search_file('custom_tags.json', ROOT)
 TAG_TABLE_PATH = search_file('tag_table.json', ROOT)
+PRIORITY_TABLE_PATH = search_file('priority_table.json', ROOT)
+OVERLAP_TABLE_PATH = search_file('overlap_tags.json', ROOT)
 FEATURE_TABLE_PATH = search_file('feature_table.json', ROOT)
-WD_LABEL_PATH = './models/wd/selected_tags.csv'
+ARTIST_TAGS_PATH = search_file('artist_tags.json', ROOT)
+CHARACTER_TAGS_PATH = search_file('character_tags.json', ROOT)
+COPYRIGHT_TAGS_PATH = search_file('copyright_tags.json', ROOT)
 
-if not OVERLAP_TABLE_PATH:
-    print(f'overlap table not found in root: {ROOT}')
 if not CUSTOM_TAG_PATH:
     print(f'custom tag config not found in root: {ROOT}')
+if not PRIORITY_TABLE_PATH:
+    print(f'priority table not found in root: {ROOT}')
 if not TAG_TABLE_PATH:
     print(f'tag table not found in root: {ROOT}')
+if not OVERLAP_TABLE_PATH:
+    print(f'overlap table not found in root: {ROOT}')
 if not FEATURE_TABLE_PATH:
     print(f'feature table not found in root: {ROOT}')
 
+if not ARTIST_TAGS_PATH:
+    print(f'artist tags not found in root: {ROOT}')
+if not CHARACTER_TAGS_PATH:
+    print(f'character tags not found in root: {ROOT}')
+if not COPYRIGHT_TAGS_PATH:
+    print(f'copyright tags not found in root: {ROOT}')
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
 PATTERN_QUALITY_TAG = r'\b((amazing|best|high|normal|low|worst|horrible)([\s_]quality))\b'  # match `xxx quality`
@@ -48,33 +58,28 @@ REGEX_CHARACTER = re.compile(PATTERN_CHARACTER)
 REGEX_ARTIST = re.compile(PATTERN_ARTIST)
 REGEX_STYLE = re.compile(PATTERN_STYLE)
 
-
-def read_custom_tags(custom_tag_path):
-    import json
-    with open(custom_tag_path, 'r') as f:
-        custom_tags = json.load(f)
-    return custom_tags
+CUSTOM_TAGS = None
+QUALITY_TAGS = None
+AESTHETIC_TAGS = None
+STYLE_TAGS = None
 
 
-try:
-    CUSTOM_TAGS = read_custom_tags(CUSTOM_TAG_PATH)
-except FileNotFoundError:
-    CUSTOM_TAGS = {}
-    print(f'custom tag config not found: {CUSTOM_TAG_PATH}')
-except json.JSONDecodeError:
-    CUSTOM_TAGS = {}
-    print(f'custom tag config is invalid or broken: {CUSTOM_TAG_PATH}')
-except Exception as e:
-    CUSTOM_TAGS = {}
-    print(f'failed to load custom tag config: {CUSTOM_TAG_PATH}, due to: {e}')
-
-
-QUALITY_TAGS = set(CUSTOM_TAGS.get('quality', []))
-AESTHETIC_TAGS = set(CUSTOM_TAGS.get('aesthetic', []))
-STYLE_TAGS = set(CUSTOM_TAGS.get('style', []))
-GAME_TAGS = set(CUSTOM_TAGS.get('game', []))
-CHARACTER_TAGS = set(CUSTOM_TAGS.get('character', []))
-CUSTOM_TAGS = QUALITY_TAGS | AESTHETIC_TAGS | STYLE_TAGS | GAME_TAGS
+def init_custom_tags(path=CUSTOM_TAG_PATH):
+    global CUSTOM_TAGS, QUALITY_TAGS, AESTHETIC_TAGS, STYLE_TAGS
+    if CUSTOM_TAGS is not None:
+        return True
+    try:
+        with open(path, 'r') as f:
+            custom_tag_table = json.load(f)
+        custom_tag_table = {k: set(v) for k, v in custom_tag_table.items()}
+        QUALITY_TAGS = custom_tag_table.get('quality', set())
+        AESTHETIC_TAGS = custom_tag_table.get('aesthetic', set())
+        STYLE_TAGS = custom_tag_table.get('style', set())
+        CUSTOM_TAGS = QUALITY_TAGS | AESTHETIC_TAGS | STYLE_TAGS
+        return True
+    except Exception as e:
+        CUSTOM_TAGS = None
+        return False
 
 
 def encode_tag(tag: str):
@@ -84,12 +89,71 @@ def encode_tag(tag: str):
     return tag
 
 
-PATTERN_CHARACTER_TAGS = '(' + '|'.join(
-    [encode_tag(tag) for tag in CHARACTER_TAGS]
-) + ')'
-REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
+# PATTERN_CHARACTER_TAGS = '(' + '|'.join(
+#     [encode_tag(tag) for tag in CHARACTER_TAGS]
+# ) + ')'
+# REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
 
-PATTERN_STYLE_TAGS = '(' + '|'.join([encode_tag(tag) for tag in STYLE_TAGS]) + ')'
+TAG_TABLE = None
+OVERLAP_TABLE = None
+FEATURE_TABLE = None
+PRIORITY_TABLE = None
+
+ARTIST_TAGS = None
+CHARACTER_TAGS = None
+COPYRIGHT_TAGS = None
+
+
+def init_artist_tags(path=ARTIST_TAGS_PATH):
+    global ARTIST_TAGS
+    if ARTIST_TAGS is not None:
+        return True
+    try:
+        with open(path, 'r') as f:
+            ARTIST_TAGS = set(json.load(f))
+    except Exception as e:
+        ARTIST_TAGS = None
+        return False
+    return True
+
+
+def init_character_tags(path=CHARACTER_TAGS_PATH):
+    global CHARACTER_TAGS
+    if CHARACTER_TAGS is not None:
+        return True
+    try:
+        with open(path, 'r') as f:
+            CHARACTER_TAGS = set(json.load(f))
+    except Exception as e:
+        CHARACTER_TAGS = None
+        return False
+    return True
+
+
+def init_copyright_tags(path=COPYRIGHT_TAGS_PATH):
+    global COPYRIGHT_TAGS
+    if COPYRIGHT_TAGS is not None:
+        return True
+    try:
+        with open(path, 'r') as f:
+            COPYRIGHT_TAGS = set(json.load(f))
+    except Exception as e:
+        COPYRIGHT_TAGS = None
+        return False
+    return True
+
+
+def init_tag_table(table_path=TAG_TABLE_PATH):
+    global TAG_TABLE
+    if TAG_TABLE is not None:
+        return True
+    try:
+        with open(table_path, 'r') as f:
+            TAG_TABLE = json.load(f)
+    except Exception as e:
+        TAG_TABLE = None
+        return False
+    return True
 
 
 def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
@@ -110,42 +174,15 @@ def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
         return False
 
 
-OVERLAP_TABLE = None  # ! need to be initialized by init_overlap_table() before use.
-
-
-def init_wd14_tags(label_path=WD_LABEL_PATH):
-    global WD_TAGS, WD_GENERAL_TAGS, WD_CHARACTER_TAGS, WD_LABEL_PATH
-    if WD_TAGS and WD_GENERAL_TAGS and WD_CHARACTER_TAGS:
-        return
-    from pandas import read_csv
-    df = read_csv(label_path)
-    wd_tag_names = df["name"].tolist()
-    wd_general_indexes = list(np.where(df["category"] == 0)[0])
-    wd_general_tags = [wd_tag_names[i].replace('_', ' ') for i in wd_general_indexes]
-    wd_character_indexes = list(np.where(df["category"] == 4)[0])
-    wd_character_tags = [wd_tag_names[i].replace('_', ' ') for i in wd_character_indexes]
-    wd_tags = wd_general_tags + wd_character_tags
-
-    WD_TAGS = set(wd_tags)
-    WD_GENERAL_TAGS = set(wd_general_tags)
-    WD_CHARACTER_TAGS = set(wd_character_tags)
-
-
-WD_TAGS, WD_GENERAL_TAGS, WD_CHARACTER_TAGS = None, None, None
-
-TAG_TABLE = None
-FEATURE_TABLE = None
-
-
-def init_tag_table(table_path=TAG_TABLE_PATH):
-    global TAG_TABLE
-    if TAG_TABLE is not None:
+def init_priority_table(table_path=PRIORITY_TABLE_PATH):
+    global PRIORITY_TABLE
+    if PRIORITY_TABLE is not None:
         return True
     try:
         with open(table_path, 'r') as f:
-            TAG_TABLE = json.load(f)
+            PRIORITY_TABLE = json.load(f)
     except Exception as e:
-        TAG_TABLE = None
+        PRIORITY_TABLE = None
         return False
     return True
 
@@ -172,6 +209,11 @@ def init_priority_tags():
     if PRIORITY and PRIORITY_REGEX:
         return True
 
+    if init_custom_tags():
+        PATTERN_STYLE_TAGS = '(' + '|'.join([encode_tag(tag) for tag in STYLE_TAGS]) + ')'
+    else:
+        PATTERN_STYLE_TAGS = r''
+
     # ! spacing captions only.
     PRIORITY = {
         # Artist 0
@@ -179,7 +221,7 @@ def init_priority_tags():
         # Role 1
         'role': [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
         # Character 2
-        'copyright': ['|'.join(GAME_TAGS)],
+        # 'copyright': ['|'.join(GAME_TAGS)],
         'character': [PATTERN_CHARACTER, 'cosplay'],
         'race': [r'(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling) (female|male|girl|boy)s?',
                  'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
@@ -258,7 +300,7 @@ def init_priority_tags():
         'quality': [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
     }
 
-    PRIORITY_REGEX = [re.compile('|'.join(patterns).replace(' ', r'[\s_]')) for patterns in PRIORITY.values()]
+    PRIORITY_REGEX = [re.compile('|'.join([pattern for pattern in patterns if pattern.strip() != '']).replace(' ', r'[\s_]')) for patterns in PRIORITY.values()]
 
     return True
 
@@ -280,8 +322,11 @@ def get_key_index(key):
     return list(PRIORITY.keys()).index(key)
 
 
+LOWEST_PRIORITY = 999
+
+
 def tag2priority(tag):
-    if init_tag_table():
+    if init_priority_table():  # query in table
         if tag.startswith("artist:"):
             return get_key_index('artist')
         elif tag.startswith("character:"):
@@ -294,19 +339,17 @@ def tag2priority(tag):
             return get_key_index('aesthetic')
         else:
             tag = preprocess_tag(tag)
-            if tag in TAG_TABLE:
-                if TAG_TABLE is None:
-                    init_tag_table()
-                return TAG_TABLE[tag]['priority']
+            if tag in PRIORITY_TABLE:
+                return PRIORITY_TABLE[tag]
             else:
-                return len(PRIORITY_REGEX)
-    elif init_priority_tags():
+                return LOWEST_PRIORITY
+    elif init_priority_tags():  # query in regex
         for i, regex in enumerate(PRIORITY_REGEX):
             if regex.match(tag):
                 return i
-        return len(PRIORITY_REGEX)
+        return LOWEST_PRIORITY
     else:
-        return 999
+        return LOWEST_PRIORITY
 
 
 def preprocess_tag(tag):

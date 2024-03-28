@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from tqdm import tqdm
 
@@ -52,8 +53,60 @@ class ANSI:
     NEWLINE = F + K
 
 
+def camel_to_snake(name):
+    # 将所有连续的大写字母转换为小写，但在最后一个大写字母前加下划线
+    name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+
+    # 将剩余的大写字母转换为小写，同时在它们前面加上下划线
+    return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name).lower()
+
+
+class Logger:
+    r"""
+    Base class that provide better formatted logging for inherited classes.
+    """
+
+    def __init__(self, prefix_color: str = None, prefix_str: str = None):
+        self.inited = False
+        self.init_logger(prefix_color=prefix_color, prefix_str=prefix_str)
+
+    def init_logger(self, prefix_color: str = None, prefix_str: str = None):
+        if not getattr(self, 'inited', False):
+            self.prefix_color = prefix_color or ANSI.BRIGHT_BLUE
+            self.prefix_str = camel_to_snake(prefix_str or self.__class__.__name__)
+            self.inited = True
+
+    def set_color(self, color: str):
+        self.prefix_color = color
+
+    def set_prefix(self, prefix: str):
+        self.prefix_str = prefix
+
+    def get_prefix(self, prefix_str=None, prefix_color=None):
+        prefix_str = prefix_str or self.prefix_str
+        prefix_color = prefix_color or self.prefix_color
+        return f"[{stylize(prefix_str, prefix_color)}]"
+
+    def log(self, msg, *args, prefix_str: str = None, prefix_color: str = None, **kwargs):
+        if not getattr(self, 'verbose', True):
+            return
+        prefix_color = prefix_color or self.prefix_color
+        prefix_str = self.get_prefix(prefix_str if prefix_str else self.prefix_str)
+        print(f"{prefix_str} {msg}", *args, **kwargs)
+
+    def pbar(self, *args, desc=None, prefix_str=None, **kwargs):
+        if 'disable' not in kwargs:
+            kwargs['disable'] = not getattr(self, 'verbose', True)
+        prefix_str = self.get_prefix(prefix_str if prefix_str else self.prefix_str)
+        desc = f"{prefix_str} {desc}" if desc else prefix_str
+        return tqdm(*args, desc=desc, **kwargs)
+
+
+global_logger = Logger()
+
+
 def debug(msg: str, *args, **kwargs):
-    print('[DEBUG] ' + stylize(msg, ANSI.BOLD, ANSI.BRIGHT_WHITE), *args, **kwargs)
+    global_logger.log(msg, *args, prefix_str='debug', **kwargs)
 
 
 def info(msg: str, *args, **kwargs):

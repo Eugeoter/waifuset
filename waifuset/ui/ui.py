@@ -1,8 +1,8 @@
-import gradio as gr
 import re
 import os
 import pandas
 import inspect
+import gradio as gr
 from functools import wraps
 from PIL import Image
 from tqdm import tqdm
@@ -11,7 +11,9 @@ from typing import Callable, Any, Tuple, Dict, List, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
 from .emoji import Emoji
 from . import custom_components as cc
-from ..import tagging, sorting
+from ..classes.caption import tagging
+from ..classes.dataset import sorting
+
 from ..utils import log_utils as logu
 
 
@@ -117,9 +119,11 @@ def create_ui(
     # ========================================= UI ========================================= #
 
     from ..classes import Dataset, ImageInfo, Caption
-    from ..classes.caption.caption import preprocess_tag
-    from .ui_dataset import UIChunkedDataset, UISampleHistory, UITagPriorityManager, TagPriority, UITab
+    from ..classes.caption.caption import fmt2standard
+    from .ui_dataset import UIChunkedDataset, UISampleHistory, UITab
     from .utils import open_file_folder, translate
+
+    tagging.init_custom_tags()
 
     def dataset_to_metadata_df(dset):
         num_images = len(dset)
@@ -1732,7 +1736,7 @@ def create_ui(
             def deoverlap_caption(image_info: ImageInfo):
                 if image_info.caption is None:
                     return image_info
-                image_info.caption = image_info.caption.deovlped()
+                image_info.caption = image_info.caption.deoverlaped()
                 return image_info
 
             deoverlap_caption_btn.click(
@@ -1993,8 +1997,8 @@ def create_ui(
                 # print(f"include_tags: {include_tags}")
                 # print(f"exclude_tags: {exclude_tags}")
 
-                include_tags = [preprocess_tag(tag) for tag in include_tags]
-                exclude_tags = [preprocess_tag(tag) for tag in exclude_tags]
+                include_tags = [fmt2standard(tag) for tag in include_tags]
+                exclude_tags = [fmt2standard(tag) for tag in exclude_tags]
 
                 incl_set = set()
                 for pattern in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags

@@ -195,9 +195,9 @@ class Caption:
         return Caption(sorted(self.tags, key=key, reverse=reverse))
 
     def deoverlap(self):
-        self = self.deovlped()
+        self = self.deoverlaped()
 
-    def deovlped(self):
+    def deoverlaped(self):
         tagging.init_overlap_table()
         caption = self.unescaped().underlined()
         table = tagging.OVERLAP_TABLE
@@ -212,27 +212,21 @@ class Caption:
     def copy(self):
         return Caption(self.tags.copy())
 
+    def formalize(self):
+        self.tags = [formalize(tag) for tag in self.tags]
+
     def formalized(self):
-        caption = self.spaced().escaped()
-        for i, tag in enumerate(caption):
-            if tagging.REGEX_ARTIST_TAG.match(tag):
-                caption.tags[i] = f"artist: {tag[3:]}"
-            elif tag in tagging.STYLE_TAGS:
-                caption.tags[i] = f"style: {tag}"
-            elif tagging.REGEX_CHARACTER_TAGS.match(tag):
-                caption.tags[i] = f"character: {tag}"
-        return Caption(caption)
+        caption = self.copy()
+        caption.formalize()
+        return caption
+
+    def deformalize(self):
+        self.tags = [remove_prefix(tag, by_artist=True) for tag in self.tags]
 
     def deformalized(self):
-        caption = self.spaced().escaped()
-        for i, tag in enumerate(caption):
-            if tagging.REGEX_ARTIST.match(tag):
-                caption.tags[i] = f"by {tag[7:].strip()}"
-            elif tagging.REGEX_STYLE.match(tag):
-                caption.tags[i] = tag[6:].strip()
-            elif tagging.REGEX_CHARACTER.match(tag):
-                caption.tags[i] = tag[11:].strip()
-        return Caption(caption)
+        caption = self.copy()
+        caption.deformalize()
+        return caption
 
     def defeature(self, feature_table=None, **kwargs):
         if not self.characters:
@@ -242,15 +236,24 @@ class Caption:
             feature_table = tagging.FEATURE_TABLE
         all_features = set()
         for character in self.characters:
-            character = preprocess_tag(character)
+            character = fmt2standard(character)
             features = feature_table.get(character, None)
             if features:
                 all_features |= features
-        self._tags = [tag for tag in self.tags if preprocess_tag(tag) not in all_features]  # defeature won't change properties
+        self._tags = [tag for tag in self.tags if fmt2standard(tag) not in all_features]  # defeature won't change properties
 
     def defeatured(self, feature_table=None, **kwargs):
         caption = self.copy()
         caption.defeature(feature_table, **kwargs)
+        return caption
+
+    def decopyright(self):
+        if tagging.init_copyright_tags():
+            self.tags = [tag for tag in self.tags if fmt2danbooru(tag) not in tagging.COPYRIGHT_TAGS]
+
+    def decopyrighted(self):
+        caption = self.copy()
+        caption.decopyright()
         return caption
 
     # ======================================== artist ======================================== #
@@ -278,9 +281,12 @@ class Caption:
         if artist == self.artist:
             return
         if self.artist:
-            self.caption = tagging.REGEX_ARTIST.sub(rf"\2{artist}" if artist else '', self.caption)
+            for i, tag in enumerate(self.tags):
+                if tag2type(tag) == 'artist':
+                    self.tags[i] = tag.replace(self.artist, artist)
+                    break
         else:
-            self.tags.insert(0, f'artist: {artist}')
+            self.tags.insert(0, f"artist: {artist}")
         self._artist = artist
 
     def with_artist(self, artist):
@@ -322,15 +328,8 @@ class Caption:
     # ======================================== characters ======================================== #
 
     def get_characters(self):
-        caption = self.caption
-        characters = []
-        matches = tagging.REGEX_CHARACTER.findall(caption)
-        if matches:
-            characters.extend([match[2] for match in matches])  # update cache
-        characters.extend([tag for tag in self.tags if tagging.REGEX_CHARACTER_TAGS.match(tag)])
-        if len(characters) == 0:
-            characters = None
-        self._characters = characters
+        characters = [remove_prefix(tag) for tag in self.tags if tag2type(tag) == 'character']
+        self._characters = characters if characters else None
         return self._characters
 
     @property
@@ -342,14 +341,15 @@ class Caption:
 
     @characters.setter
     def characters(self, characters):
-        characters = tagify(characters)
-        if self.characters:
-            if characters == self.characters:
-                return
-            self.tags = [tag for tag in self.tags if not tag.startswith('character:')]
-        for i in range(len(characters) - 1, -1, -1):
-            self.tags.insert(0, f'character: {characters[i]}')
-        self._characters = characters
+        # characters = tagify(characters)
+        # if self.characters:
+        #     if characters == self.characters:
+        #         return
+        #     self.tags = [tag for tag in self.tags if not tag.startswith('character:')]
+        # for i in range(len(characters) - 1, -1, -1):
+        #     self.tags.insert(0, f'character: {characters[i]}')
+        # self._characters = characters
+        raise NotImplementedError("characters setter is not implemented")
 
     def with_characters(self, characters):
         caption = self.copy()
@@ -379,14 +379,26 @@ class Caption:
 
     @styles.setter
     def styles(self, styles):
-        if self.styles:
-            if styles == self.styles:
-                return
-            self.tags = [tag for tag in self.tags if not tag.startswith('style:')]
-        styles = tagify(styles)
-        for i in range(len(styles) - 1, -1, -1):
-            self.tags.insert(0, f'style: {styles[i]}')
-        self._styles = styles
+        # if styles == self.styles:
+        #     return
+        # elif styles is None:
+        #     self.tags = [tag for tag in self.tags if tag2type(tag) != 'style']
+        #     self._styles = None
+        #     return
+        # else:
+        #     for i, tag in enumerate(self.tags):
+        #         fmt_tag = fmt2standard(tag)
+        #         for style in styles:
+        #             if fmt_tag == fmt2standard(style):
+        #                 styles.remove(style)
+        #                 self.tags[i] = tag.replace(fmt_tag, style)
+        #                 if not styles:
+        #                     break
+        #     if styles:
+        #         for i in range(len(styles) - 1, -1, -1):
+        #             self.tags.insert(0, f"style: {styles[i]}")
+        #         self._styles = LAZY_LOADING
+        raise NotImplementedError("styles setter is not implemented")
 
     def with_styles(self, styles):
         caption = self.copy()
@@ -407,8 +419,18 @@ class Caption:
     def __repr__(self):
         return self.__str__()
 
+    def dict(self):
+        return {
+            'caption': str(self.caption),
+            **self.attr_dict(),
+        }
+
+    def df(self):
+        import pandas as pd
+        return pd.DataFrame([self.dict()])
+
     def __add__(self, other):
-        return Caption(add_op(self.tags, preprocess(other, sep=self._sep)))
+        return Caption(add_op(self.tags, preprocess_caption(other, sep=self._sep)))
 
     def __iadd__(self, other):
         self.tags = (self + other).tags
@@ -419,7 +441,7 @@ class Caption:
         return Caption(other) + self
 
     def __sub__(self, other):
-        return Caption(sub_op(self.tags, preprocess(other, sep=self._sep)))
+        return Caption(sub_op(self.tags, preprocess_caption(other, sep=self._sep)))
 
     def __isub__(self, other):
         self.tags = (self - other).tags
@@ -430,7 +452,7 @@ class Caption:
         return Caption(other) - self
 
     def __and__(self, other):
-        return Caption(and_op(self.tags, preprocess(other, sep=self._sep)))
+        return Caption(and_op(self.tags, preprocess_caption(other, sep=self._sep)))
 
     def __iand__(self, other):
         self.tags = (self & other).tags
@@ -441,7 +463,7 @@ class Caption:
         return Caption(other) & self
 
     def __or__(self, other):
-        return Caption(or_op(self.tags, preprocess(other, sep=self._sep)))
+        return Caption(or_op(self.tags, preprocess_caption(other, sep=self._sep)))
 
     def __ior__(self, other):
         self.tags = (self | other).tags
@@ -531,6 +553,39 @@ class Caption:
 Caption._cached_properties = Caption.__annotations__
 
 
+def tag2type(tag: str):
+    if ':' in tag:
+        if tag.startswith('artist:'):
+            return 'artist'
+        elif tag.startswith('character:'):
+            return 'character'
+        elif tag.startswith('style:'):
+            return 'style'
+    elif 'quality' in tag:
+        return 'quality'
+    elif tag.startswith('by ') and tagging.REGEX_ARTIST_TAG.match(tag):
+        return 'artist'
+
+    tag = fmt2danbooru(tag)
+    if tagging.init_artist_tags() and tag in tagging.ARTIST_TAGS:
+        return 'artist'
+    elif tagging.init_character_tags() and tag in tagging.CHARACTER_TAGS:
+        return 'character'
+    elif tagging.init_custom_tags() and tag in tagging.STYLE_TAGS:
+        return 'style'
+    else:
+        return 'general'
+
+
+def formalize(tag):
+    tagtype = tag2type(tag)
+    if tagtype in ('artist', 'character', 'style'):
+        attr = tag.split(':')[-1].strip('_ ')
+        return f"{tagtype}: {attr}"
+    else:
+        return tag
+
+
 def tagify(caption_or_tags, sep=','):
     if isinstance(caption_or_tags, list):
         return caption_or_tags
@@ -557,7 +612,35 @@ def captionize(caption_or_tags, sep=', '):
         raise TypeError(f"cannot convert type `{type(caption_or_tags).__name__}` to caption")
 
 
-def preprocess_tag(tag):
+def remove_prefix(tag, by_artist=False):
+    if ':' in tag:
+        if tag.startswith('artist:'):
+            tag = tag[7:].strip('_ ')
+            if by_artist:
+                tag = f"by {tag}"
+            return tag
+        elif tag.startswith('character:'):
+            return tag[10:].strip('_ ')
+        elif tag.startswith('style:'):
+            return tag[6:].strip('_ ')
+    return tag
+
+
+def fmt2danbooru(tag):
+    r"""
+    Process a tag to:
+    - lower case
+    - replace spaces with underscores
+    - unescape brackets
+    - remove prefixes
+    """
+    tag = tag.lower().replace(' ', '_').strip('_')
+    tag = unescape(tag)
+    tag = remove_prefix(tag)
+    return tag
+
+
+def fmt2standard(tag, by_artist=False):
     r"""
     Process a tag to:
     - lower case
@@ -565,20 +648,13 @@ def preprocess_tag(tag):
     - escape brackets
     - remove prefixes
     """
-    tag = tag.lower().replace('_', ' ').strip()
-    if '(' in tag and ')' in tag:
-        tag = tagging.REGEX_UNESCAPED_BRACKET.sub(r'\\\1', tag)
-    if ':' in tag:
-        if tag.startswith('character:'):
-            tag = tag[10:].strip()
-        elif tag.startswith('artist:'):
-            tag = tag[7:].strip()
-        elif tag.startswith('style:'):
-            tag = tag[6:].strip()
+    tag = tag.lower().replace('_', ' ').strip(' ')
+    tag = escape(tag)
+    tag = remove_prefix(tag, by_artist=by_artist)
     return tag
 
 
-def preprocess(caption, sep=','):
+def preprocess_caption(caption, sep=','):
     if isinstance(caption, (Caption, str, list)):
         return tagify(caption, sep=sep)
     elif isinstance(caption, re.Pattern):
@@ -596,12 +672,12 @@ def match(pattern, tag):
         return re.match(pattern, tag)
 
 
-def escape(caption):
-    return re.sub(tagging.PATTERN_UNESCAPED_BRACKET, r'\\\1', caption)
+def escape(s):
+    return re.sub(tagging.PATTERN_UNESCAPED_BRACKET, r'\\\1', s)
 
 
-def unescape(caption):
-    return re.sub(tagging.PATTERN_ESCAPED_BRACKET, r'\1', caption)
+def unescape(s):
+    return re.sub(tagging.PATTERN_ESCAPED_BRACKET, r'\1', s)
 
 
 def unique(self):
