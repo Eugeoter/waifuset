@@ -1,5 +1,6 @@
 # A simple interface to utilize Hakubooru (original github: https://github.com/KohakuBlueleaf/HakuBooru)
 
+import os
 import sqlite3
 
 TAG_ID_2_TYPE = {
@@ -20,16 +21,20 @@ RATING_ID_2_TYPE = {
 
 class Hakubooru:
     def __init__(self, db_file):
+        if not os.path.exists(db_file):
+            raise FileNotFoundError(f"database file {db_file} not found")
         self.conn = sqlite3.connect(db_file)
         self.header = get_header(self.conn, 'post')
         self.cursor = self.conn.cursor()  # cursor to the post table
-        self.cursor.execute("SELECT * FROM post")
         self._tag2id = None
         self._tagbase = None
         self._tagwiki = None
 
     @property
     def tagbase(self):
+        r"""
+        Tag database. A dict with tag_id as key and tag metadata as value.
+        """
         if self._tagbase is None:
             self._tagbase = get_tagbase(self.conn)
         return self._tagbase
@@ -42,6 +47,9 @@ class Hakubooru:
 
     @property
     def tag2id(self):
+        r"""
+        Dict to map tag name to tag id.
+        """
         if self._tag2id is None:
             db = self._tagbase or self._tagwiki
             if not db:
@@ -50,9 +58,13 @@ class Hakubooru:
         return self._tag2id
 
     def __iter__(self):
+        self.cursor.execute("SELECT * FROM post")
         return self
 
     def __next__(self):
+        r"""
+        Iterate through the post table and return metadata in danbooru format of each post.
+        """
         row = self.cursor.fetchone()
         if row is None:
             raise StopIteration

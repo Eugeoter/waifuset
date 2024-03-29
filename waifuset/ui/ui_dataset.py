@@ -264,27 +264,27 @@ class UITagTable:
                 key_set.remove(key)
 
     def add(self, tag, key, tagtype=None, preprocess=True):
-        if preprocess:
-            proc_tag = fmt2standard(tag)
-        else:
-            proc_tag = tag
+        r"""
+        Add `key` into set of `tag`, indicating that the tag connects to the key.
+        """
+        proc_tag = fmt2standard(tag) if preprocess else tag
         if proc_tag not in self._table:
             self._table[proc_tag] = set()
-        if tagtype or (tagtype := tag2type(proc_tag)):
-            if tagtype == 'artist':
-                self._artist.add(proc_tag)
-            elif tagtype == 'character':
-                self._character.add(proc_tag)
-            elif tagtype == 'style':
-                self._style.add(proc_tag)
-
+        if not tagtype:
+            pass
+        elif tagtype == 'artist':
+            self._artist.add(proc_tag)
+        elif tagtype == 'character':
+            self._character.add(proc_tag)
+        elif tagtype == 'style':
+            self._style.add(proc_tag)
         self._table[proc_tag].add(key)
 
     def remove(self, tag, key, preprocess=True):
-        if preprocess:
-            proc_tag = fmt2standard(tag)
-        else:
-            proc_tag = tag
+        r"""
+        Remove `key` from set of `tag`, indicating that the tag no longer connects to the key.
+        """
+        proc_tag = fmt2standard(tag) if preprocess else tag
         if proc_tag not in self._table:
             return
         self._table[proc_tag].remove(key)
@@ -394,6 +394,15 @@ class UIDataset(UIChunkedDataset):
                 continue
             for tag in caption:
                 self.tag_table.add(tag, image_key)
+            if caption.characters:
+                for character in caption.characters:
+                    self.tag_table.add(character, image_key, tagtype='character')
+            if caption.styles:
+                for style in caption.styles:
+                    self.tag_table.add(style, image_key, tagtype='style')
+            if caption.artist:
+                self.tag_table.add(caption.artist, image_key, tagtype='artist')
+
         self.log(f"tag_table: total={len(self.tag_table)} | artist={len(self.tag_table.artist_table)} | character={len(self.tag_table.character_table)} | style={len(self.tag_table.style_table)}")
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):

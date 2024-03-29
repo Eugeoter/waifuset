@@ -7,7 +7,8 @@ from .caption import fmt2standard
 
 class Tag:
     def __init__(self, tag):
-        self.tag = tag
+        self.tag = fmt2standard(tag)
+        self.counter: Dict[Tag, int] = {}
 
     def __str__(self):
         return self.tag
@@ -21,20 +22,24 @@ class Tag:
     def __hash__(self):
         return hash(self.tag)
 
-
-class Character(Tag):
-    def __init__(self, tag, *args, **kwargs):
-        super().__init__(tag, *args, **kwargs)
-        self.counter: Dict[Tag, int] = {}
-
-    def update(self, tags: List[Union[str, Tag]]):
+    def update(self, tags: List[Union[str, 'Tag']]):
+        if isinstance(tags, str):
+            tags = [tags]
         for tag in tags:
-            if tag.startswith('character:'):
-                tag = tag.split(':')[1].strip()
             tag = fmt2standard(tag)
             if isinstance(tag, str):
                 tag = Tag(tag)
             self.counter[tag] = self.counter.get(tag, 0) + 1
+
+
+class SingleInstanceTag(Tag):
+    _instance = {}
+
+    def __new__(cls, tag):
+        tag = fmt2standard(tag)
+        if tag not in cls._instance:
+            cls._instance[tag] = super().__new__(cls)
+        return cls._instance[tag]
 
 
 def dataset_to_count_table(dataset):
@@ -50,7 +55,7 @@ def dataset_to_count_table(dataset):
                 char_tag = fmt2standard(char_tag)
                 char = count_table.get(char_tag)
                 if char is None:
-                    char = Character(char_tag)
+                    char = Tag(char_tag)
                     count_table[char_tag] = char
                 char.update(tags)
     # sort

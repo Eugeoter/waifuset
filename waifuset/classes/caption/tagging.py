@@ -335,7 +335,7 @@ def tag2priority(tag):
             return get_key_index('style')
         elif 'quality' in tag:
             return get_key_index('quality')
-        elif tag in AESTHETIC_TAGS:
+        elif init_custom_tags() and tag in AESTHETIC_TAGS:
             return get_key_index('aesthetic')
         else:
             tag = preprocess_tag(tag)

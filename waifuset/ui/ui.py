@@ -1689,7 +1689,7 @@ def create_ui(
             def sort_caption(image_info: ImageInfo):
                 if image_info.caption is None:
                     return image_info
-                image_info.caption.sort(key=tagging.tag2priority)
+                image_info.caption = image_info.caption.sorted(key=tagging.tag2priority)
                 return image_info
 
             sort_caption_btn.click(
@@ -1749,7 +1749,7 @@ def create_ui(
             def defeature_caption(image_info: ImageInfo, freq_thres, count_thres, least_sample_size):
                 if image_info.caption is None:
                     return image_info
-                image_info.caption.defeature(freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
+                image_info.caption = image_info.caption.defeatured(freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
                 return image_info
 
             defeature_caption_btn.click(

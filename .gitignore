@@ -172,8 +172,8 @@ main.py
 cmds.sh
 launch.bat
 .backup
+scripts
 /demos
-/waifuset/json/custom*
 aid_*
 tmp_*
 waifuset/json/tag_list.json
