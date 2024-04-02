@@ -12,27 +12,7 @@ def track_rename(image_info: ImageInfo, stem_map: Dict[str, str]):
     return image_info
 
 
-def track_image_path(image_info: ImageInfo, source: Union[str, Path, Dict[str, Path]]):
-    if isinstance(source, (str, Path)):
-        source = Path(source)
-        if source.suffix == '.json':
-            with open(source, 'r') as f:
-                tarset = json.load(f)
-            tarset = {k: Path(v['image_path']) for k, v in source.items()}
-        elif source.is_dir():
-            from ...const import IMAGE_EXTS
-            tarset = file_utils.listdir(source, recur=True, return_path=True, return_type=Path, ext=IMAGE_EXTS)
-            tarset = {p.stem: p for p in tarset}
-    elif isinstance(source, dict):
-        v0 = next(iter(source.values()))
-        if isinstance(v0, dict) and 'image_path' in v0.keys():
-            tarset = {k: Path(v['image_path']) for k, v in source.items()}
-        else:
-            tarset = source
-    else:
-        from .dataset import Dataset
-        tarset = Dataset(source)
-
+def track_image_path(image_info: ImageInfo, tarset):
     img_key = image_info.key
     if img_key in tarset:
         old = image_info.image_path
