@@ -11,6 +11,7 @@ def listdir(
     exts: Optional[Iterable[str]] = None,
     return_type: Optional[type] = None,
     return_path: Optional[bool] = False,
+    return_file: Optional[bool] = True,
     return_dir: Optional[bool] = False,
     recur: Optional[bool] = False,
     return_abspath: Optional[bool] = True,
@@ -21,7 +22,7 @@ def listdir(
     :param exts: The extensions to filter by. If None, all files are returned.
     :param return_type: The type to return the files as. If None, returns the type of the directory. If return_path is True, returns str anyway.
     :param return_path: Whether to return the full path of the files.
-    :param return_dir: Whether to return directories instead of files.
+    :param return_dir: Whether to return directories.
     :param recur: Whether to recursively list files in subdirectories.
     :param return_abspath: Whether to return absolute paths.
     :return: A list of files in the directory.
@@ -29,8 +30,14 @@ def listdir(
     if exts and return_dir:
         raise ValueError("Cannot return both files and directories")
 
+    if not return_dir and not return_file:
+        return []
+
     if not return_path and return_type and return_type != str:
         raise ValueError("Cannot return non-str type when returning name")
+
+    if not return_path:
+        return_abspath = False
 
     if not recur:
         files = [os.path.join(directory, f) for f in os.listdir(directory)]
@@ -42,8 +49,12 @@ def listdir(
 
     if exts:
         files = [f for f in files if os.path.splitext(f)[1] in exts]
-    if return_dir:
-        files = [f for f in files if os.path.isdir(f)]
+
+    if not return_file:
+        files = [f for f in files if not os.path.isfile(f)]
+    elif not return_dir:
+        files = [f for f in files if not os.path.isdir(f)]
+
     if not return_path:
         files = [os.path.basename(f) for f in files]
     if return_abspath:

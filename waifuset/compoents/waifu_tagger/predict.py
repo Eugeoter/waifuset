@@ -59,6 +59,8 @@ class WaifuTagger(OnnxModelLoader):
         character_threshold: float = 0.35,
     ) -> List[str]:
         import torch
+        import onnxruntime as rt
+
         if not isinstance(images, list):
             images = [images]
         batch_inputs = np.concatenate([self.prepare_image(img) for img in images])

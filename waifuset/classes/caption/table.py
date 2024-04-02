@@ -5,10 +5,14 @@ from pathlib import Path
 from .caption import fmt2standard
 
 
-class Tag:
+class StandardTag:
+    r"""
+    Base class for standard tags.
+    """
+
     def __init__(self, tag):
         self.tag = fmt2standard(tag)
-        self.counter: Dict[Tag, int] = {}
+        self.counter: Dict[StandardTag, int] = {}
 
     def __str__(self):
         return self.tag
@@ -22,24 +26,61 @@ class Tag:
     def __hash__(self):
         return hash(self.tag)
 
-    def update(self, tags: List[Union[str, 'Tag']]):
+    def update(self, tags: List[Union[str, 'StandardTag']]):
         if isinstance(tags, str):
             tags = [tags]
         for tag in tags:
-            tag = fmt2standard(tag)
             if isinstance(tag, str):
-                tag = Tag(tag)
+                tag = self.__class__(tag)
             self.counter[tag] = self.counter.get(tag, 0) + 1
 
 
-class SingleInstanceTag(Tag):
+class SingleInstanceStandardTag(StandardTag):
     _instance = {}
 
     def __new__(cls, tag):
         tag = fmt2standard(tag)
         if tag not in cls._instance:
             cls._instance[tag] = super().__new__(cls)
+            print(f"New instance: {tag}")
         return cls._instance[tag]
+
+
+class StandardTable:
+    r"""
+    Base class for standard tables which automatically convert dict keys to standard format.
+    """
+
+    def __init__(self) -> None:
+        self.table = {}
+
+    def __getitem__(self, key):
+        return self.table[fmt2standard(key)]
+
+    def __setitem__(self, key, value):
+        self.table[fmt2standard(key)] = value
+
+    def __delitem__(self, key):
+        del self.table[fmt2standard(key)]
+
+    def __contains__(self, key):
+        return fmt2standard(key) in self.table
+
+    def get(self, key, default=None):
+        return self.table.get(fmt2standard(key), default)
+
+    def items(self):
+        return self.table.items()
+
+    def keys(self):
+        return self.table.keys()
+
+    def values(self):
+        return self.table.values()
+
+    def update(self, other):
+        for key, value in other.items():
+            self[key] = value
 
 
 def dataset_to_count_table(dataset):
@@ -55,7 +96,7 @@ def dataset_to_count_table(dataset):
                 char_tag = fmt2standard(char_tag)
                 char = count_table.get(char_tag)
                 if char is None:
-                    char = Tag(char_tag)
+                    char = StandardTag(char_tag)
                     count_table[char_tag] = char
                 char.update(tags)
     # sort

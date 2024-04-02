@@ -405,6 +405,10 @@ class Caption:
         caption.styles = styles
         return caption
 
+    @property
+    def copyrights(self):
+        return [tag for tag in self.tags if fmt2danbooru(tag) in tagging.COPYRIGHT_TAGS] if tagging.init_copyright_tags() else None
+
     def attr_dict(self):
         return {
             'artist': self.artist,
@@ -634,7 +638,7 @@ def fmt2danbooru(tag):
     - unescape brackets
     - remove prefixes
     """
-    tag = tag.lower().replace(' ', '_').strip('_')
+    tag = tag.lower().replace(' ', '_').strip('_').replace(':_', ':')
     tag = unescape(tag)
     tag = remove_prefix(tag)
     return tag

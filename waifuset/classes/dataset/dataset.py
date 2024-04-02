@@ -252,7 +252,7 @@ class Dataset(logu.Logger):
             tic = time.time()
             self.log(f'With map `{logu.yellow(func.__name__)}`...')
 
-        pbar = self.pbar(self.items(), desc=logu.magenta('[dataset] ') + f'with map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not verbose)
+        pbar = self.pbar(self.items(), desc=f'with map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not verbose)
         func_ = logu.track_tqdm(pbar)(func)
         if max_workers == 1:
             result = [func_(image_info.copy(), *args, **kwargs) for image_info in self.values()]

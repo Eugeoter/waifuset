@@ -106,6 +106,10 @@ class ImageInfo:
         self.clean_cache('suffix', 'stem', 'category', 'source')
 
     @property
+    def label_path(self):
+        return self.image_path.with_suffix('.txt')
+
+    @property
     def caption(self):
         if self._caption is LAZY_LOADING:
             self._caption = auto_convert(self._dict['caption'], Caption)
@@ -198,6 +202,10 @@ class ImageInfo:
     def perceptual_hash(self, value):
         self._dict['perceptual_hash'] = value
         self._perceptual_hash = LAZY_LOADING
+
+    @property
+    def copyrights(self):
+        return self.caption.copyrights if self.caption is not None else None
 
     @property
     def stem(self):

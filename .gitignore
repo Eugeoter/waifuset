@@ -176,5 +176,7 @@ scripts
 /demos
 aid_*
 tmp_*
+downbooru.py
+cp2chs.py
 waifuset/json/tag_list.json
 waifuset/json/tag_table.json
