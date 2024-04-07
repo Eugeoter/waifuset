@@ -1,5 +1,5 @@
 import re
-from typing import Union, List
+from typing import Union, List, Literal
 from . import tagging
 
 LAZY_READING = 999
@@ -47,6 +47,9 @@ class Caption:
         self._styles: List[str] = LAZY_LOADING
 
     def load_cache(self, **kwargs):
+        r"""
+        Directly set the cache of properties.
+        """
         for key, value in kwargs.items():
             if key in self._cached_properties:
                 if value is not None and self._cached_properties[key] == list:
@@ -54,6 +57,9 @@ class Caption:
                 setattr(self, f"_{key}", value)
 
     def clean_cache(self):
+        r"""
+        Reset all cached properties to `LAZY_LOADING`.
+        """
         for attr in self._cached_properties:
             setattr(self, f"_{attr}", LAZY_LOADING)
 
@@ -182,12 +188,21 @@ class Caption:
         return Caption([tag.lower() for tag in self.tags])
 
     def underlined(self):
+        r"""
+        Caption with spaces replaced by underscores.
+        """
         return self.replace(' ', '_')
 
     def spaced(self):
+        r"""
+        Caption with underscores replaced by spaces.
+        """
         return self.replace('_', ' ')
 
     def sort(self, key=None, reverse=False):
+        r"""
+        Sort tags.
+        """
         key = key or tagging.tag2priority
         self.tags.sort(key=key, reverse=reverse)
 
@@ -195,24 +210,54 @@ class Caption:
         return Caption(sorted(self.tags, key=key, reverse=reverse))
 
     def deoverlap(self):
-        self = self.deoverlaped()
+        r"""
+        Remove semantically overlapped tags, keeping the most specific ones.
+        """
+        tagging.init_overlap_table()
+        dan2tag = {fmt2danbooru(tag): tag for tag in self.tags}
+        tag2dan = {v: k for k, v in dan2tag.items()}
+        ovlp_table = tagging.OVERLAP_TABLE
+        tags_to_remove = set()
+        tagset = set(self.tags)
+        for tag in tagset:
+            dantag = tag2dan[tag]
+            if dantag in ovlp_table and tag not in tags_to_remove:
+                parents, children = ovlp_table[dantag]
+                parents = {dan2tag[parent] for parent in parents if parent in dan2tag}
+                children = {dan2tag[child] for child in children if child in dan2tag}
+                tags_to_remove |= tagset & children
+        self._tags = [tag for tag in self.tags if tag not in tags_to_remove]  # deoverlap won't change properties
 
     def deoverlaped(self):
-        tagging.init_overlap_table()
-        caption = self.unescaped().underlined()
-        table = tagging.OVERLAP_TABLE
-        tags_to_remove = set()
-        tag_set = set(caption.tags)
-        for tag in tag_set:
-            if tag in table and tag not in tags_to_remove:
-                parents, children = table[tag]
-                tags_to_remove |= tag_set & children
-        return (caption - tags_to_remove).spaced().escaped()
+        caption = self.copy()
+        caption.deoverlap()
+        return caption
 
-    def copy(self):
-        return Caption(self.tags.copy())
+    def parse(self):
+        r"""
+        According to the danbooru wiki, extract artist, characters, and styles tags.
+        """
+        metatags = self.get_metatags()
+        if (artist_tag := metatags['artist']) and not artist_tag.startswith('artist:'):
+            self._tags[self._tags.index(artist_tag)] = f"artist: {artist_tag}"
+        if (characters_tags := metatags['characters']):
+            for character_tag in characters_tags:
+                if not character_tag.startswith('character:'):
+                    self._tags[self._tags.index(character_tag)] = f"character: {character_tag}"
+        if (styles_tags := metatags['styles']):
+            for style_tag in styles_tags:
+                if not style_tag.startswith('style:'):
+                    self._tags[self._tags.index(style_tag)] = f"style: {style_tag}"
+
+    def parsed(self):
+        caption = self.copy()
+        caption.parse()
+        return caption
 
     def formalize(self):
+        r"""
+        Add prefixes to meta tags.
+        """
         self.tags = [formalize(tag) for tag in self.tags]
 
     def formalized(self):
@@ -221,6 +266,9 @@ class Caption:
         return caption
 
     def deformalize(self):
+        r"""
+        Remove prefixes from meta tags.
+        """
         self.tags = [remove_prefix(tag, by_artist=True) for tag in self.tags]
 
     def deformalized(self):
@@ -229,6 +277,9 @@ class Caption:
         return caption
 
     def defeature(self, feature_table=None, **kwargs):
+        r"""
+        According to the feature table which is extracted from danbooru wiki, remove feature tags of every characters.
+        """
         if not self.characters:
             return
         if not feature_table:
@@ -236,7 +287,6 @@ class Caption:
             feature_table = tagging.FEATURE_TABLE
         all_features = set()
         for character in self.characters:
-            character = fmt2standard(character)
             features = feature_table.get(character, None)
             if features:
                 all_features |= features
@@ -247,14 +297,23 @@ class Caption:
         caption.defeature(feature_table, **kwargs)
         return caption
 
-    def decopyright(self):
-        if tagging.init_copyright_tags():
-            self.tags = [tag for tag in self.tags if fmt2danbooru(tag) not in tagging.COPYRIGHT_TAGS]
+    def demeta(self, tagtype: Literal['artist', 'character', 'style', 'quality', 'copyright']):
+        tagset = tagging.get_tagset(tagtype)
+        self.tags = [tag for tag in self.tags if fmt2danbooru(tag) not in tagset]
 
-    def decopyrighted(self):
+    def demetaed(self, tagtype: Literal['artist', 'character', 'style', 'quality', 'copyright']):
         caption = self.copy()
-        caption.decopyright()
+        caption.demeta(tagtype)
         return caption
+
+    def get_metatags(self):
+        special_tags = get_metatags(self.tags, copyrights=False)
+        artist, characters, styles, quality = special_tags['artist'], special_tags['characters'], special_tags['styles'], special_tags['quality']
+        self._artist = remove_prefix(artist) if artist else None
+        self._characters = [remove_prefix(tag) for tag in characters] if characters else None
+        self._styles = [remove_prefix(tag) for tag in styles] if styles else None
+        self._quality = quality
+        return special_tags
 
     # ======================================== artist ======================================== #
 
@@ -359,6 +418,7 @@ class Caption:
     # ======================================== styles ======================================== #
 
     def get_styles(self):
+        tagging.init_custom_tags()  # init style tags
         caption = self.caption
         styles = []
         matches = tagging.REGEX_STYLE.findall(caption)
@@ -565,18 +625,26 @@ def tag2type(tag: str):
             return 'character'
         elif tag.startswith('style:'):
             return 'style'
+        elif tag.startswith('quality:'):
+            return 'quality'
+        elif tag.startswith('copyright:'):
+            return 'copyright'
     elif 'quality' in tag:
         return 'quality'
     elif tag.startswith('by ') and tagging.REGEX_ARTIST_TAG.match(tag):
         return 'artist'
 
-    tag = fmt2danbooru(tag)
-    if tagging.init_artist_tags() and tag in tagging.ARTIST_TAGS:
+    dan_tag = fmt2danbooru(tag)
+    if tagging.init_artist_tags() and dan_tag in tagging.ARTIST_TAGS:
         return 'artist'
-    elif tagging.init_character_tags() and tag in tagging.CHARACTER_TAGS:
+    elif tagging.init_character_tags() and dan_tag in tagging.CHARACTER_TAGS:
         return 'character'
-    elif tagging.init_custom_tags() and tag in tagging.STYLE_TAGS:
+    elif tagging.init_custom_tags() and dan_tag in tagging.STYLE_TAGS:
         return 'style'
+    elif tagging.init_copyright_tags() and dan_tag in tagging.COPYRIGHT_TAGS:
+        return 'copyright'
+    elif dan_tag in tagging.QUALITY_TAGS:
+        return 'quality'
     else:
         return 'general'
 
@@ -588,6 +656,42 @@ def formalize(tag):
         return f"{tagtype}: {attr}"
     else:
         return tag
+
+
+def get_metatags(tags, artist=True, characters=True, styles=True, quality=True, copyrights=True):
+    dic = {}
+    if artist:
+        dic['artist'] = None
+        tagging.init_artist_tags()
+    if characters:
+        dic['characters'] = None
+        tagging.init_character_tags()
+    if styles:
+        dic['styles'] = None
+        tagging.init_custom_tags()
+    if quality:
+        dic['quality'] = None
+        tagging.init_custom_tags()
+    if copyrights:
+        dic['copyrights'] = None
+        tagging.init_copyright_tags()
+
+    for tag in tags:
+        ftag = fmt2danbooru(tag)
+        if artist and ftag in tagging.ARTIST_TAGS:
+            dic['artist'] = tag
+        elif characters and ftag in tagging.CHARACTER_TAGS:
+            dic['characters'] = dic['characters'] or []
+            dic['characters'].append(tag)
+        elif styles and ftag in tagging.STYLE_TAGS:
+            dic['styles'] = dic['styles'] or []
+            dic['styles'].append(tag)
+        elif quality and ftag in tagging.QUALITY_TAGS:
+            dic['quality'] = tag
+        elif copyrights and ftag in tagging.COPYRIGHT_TAGS:
+            dic['copyrights'] = dic['copyrights'] or []
+            dic['copyrights'].append(tag)
+    return dic
 
 
 def tagify(caption_or_tags, sep=','):

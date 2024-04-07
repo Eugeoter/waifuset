@@ -1,7 +1,12 @@
 import re
 import json
 import os
+from typing import Literal
 from ...const import ROOT
+
+# Introduction to tagging module:
+# This module is used to define constant tags
+# Tagtype includes: artist, character, style, quality, aesthetic, copyright
 
 
 def search_file(filename, search_path):
@@ -82,17 +87,38 @@ def init_custom_tags(path=CUSTOM_TAG_PATH):
         return False
 
 
+def get_aesthetic_tags():
+    return AESTHETIC_TAGS if init_custom_tags() else None
+
+
+def get_style_tags():
+    return STYLE_TAGS if init_custom_tags() else None
+
+
+def get_quality_tags():
+    return QUALITY_TAGS if init_custom_tags() else None
+
+
+def get_custom_tags():
+    return CUSTOM_TAGS if init_custom_tags() else None
+
+
 def encode_tag(tag: str):
     tag = re.escape(tag)
     tag = REGEX_UNESCAPED_BRACKET.sub(r'\\\?\\\1', tag)
-    tag = tag.replace('\ ', r'[\s_]')
+    tag = tag.replace('\ ', r'[\s_]')  # support space
+    tag = tag.replace('_', r'[\s_]')  # support underscore
     return tag
 
+
+def compile_or_regex(tags):
+    return '(' + '|'.join([encode_tag(tag) for tag in tags]) + ')' if tags else ''
 
 # PATTERN_CHARACTER_TAGS = '(' + '|'.join(
 #     [encode_tag(tag) for tag in CHARACTER_TAGS]
 # ) + ')'
 # REGEX_CHARACTER_TAGS = re.compile(PATTERN_CHARACTER_TAGS)
+
 
 TAG_TABLE = None
 OVERLAP_TABLE = None
@@ -102,6 +128,7 @@ PRIORITY_TABLE = None
 ARTIST_TAGS = None
 CHARACTER_TAGS = None
 COPYRIGHT_TAGS = None
+# QUALITY_TAGS = {'amazing_quality', 'best_quality', 'high_quality', 'normal_quality', 'low_quality', 'worst_quality', 'horrible_quality'}
 
 
 def init_artist_tags(path=ARTIST_TAGS_PATH):
@@ -117,6 +144,10 @@ def init_artist_tags(path=ARTIST_TAGS_PATH):
     return True
 
 
+def get_artist_tags():
+    return ARTIST_TAGS if init_artist_tags() else None
+
+
 def init_character_tags(path=CHARACTER_TAGS_PATH):
     global CHARACTER_TAGS
     if CHARACTER_TAGS is not None:
@@ -128,6 +159,10 @@ def init_character_tags(path=CHARACTER_TAGS_PATH):
         CHARACTER_TAGS = None
         return False
     return True
+
+
+def get_character_tags():
+    return CHARACTER_TAGS if init_character_tags() else None
 
 
 def init_copyright_tags(path=COPYRIGHT_TAGS_PATH):
@@ -143,6 +178,10 @@ def init_copyright_tags(path=COPYRIGHT_TAGS_PATH):
     return True
 
 
+def get_copyright_tags():
+    return COPYRIGHT_TAGS if init_copyright_tags() else None
+
+
 def init_tag_table(table_path=TAG_TABLE_PATH):
     global TAG_TABLE
     if TAG_TABLE is not None:
@@ -154,6 +193,10 @@ def init_tag_table(table_path=TAG_TABLE_PATH):
         TAG_TABLE = None
         return False
     return True
+
+
+def get_tag_table():
+    return TAG_TABLE if init_tag_table() else None
 
 
 def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
@@ -174,6 +217,10 @@ def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
         return False
 
 
+def get_overlap_table():
+    return OVERLAP_TABLE if init_overlap_table() else None
+
+
 def init_priority_table(table_path=PRIORITY_TABLE_PATH):
     global PRIORITY_TABLE
     if PRIORITY_TABLE is not None:
@@ -185,6 +232,10 @@ def init_priority_table(table_path=PRIORITY_TABLE_PATH):
         PRIORITY_TABLE = None
         return False
     return True
+
+
+def get_priority_table():
+    return PRIORITY_TABLE if init_priority_table() else None
 
 
 def init_feature_table(table_path=FEATURE_TABLE_PATH, freq_thres=0.3, count_thres=1, least_sample_size=50):
@@ -204,13 +255,20 @@ def init_feature_table(table_path=FEATURE_TABLE_PATH, freq_thres=0.3, count_thre
     return True
 
 
+def get_feature_table():
+    return FEATURE_TABLE if init_feature_table() else None
+
+
+PRIORITY, PRIORITY_REGEX = None, None
+
+
 def init_priority_tags():
-    global PRIORITY, PRIORITY_REGEX, PATTERN_CHARACTER_TAGS, REGEX_CHARACTER_TAGS
+    global PRIORITY, PRIORITY_REGEX
     if PRIORITY and PRIORITY_REGEX:
         return True
 
     if init_custom_tags():
-        PATTERN_STYLE_TAGS = '(' + '|'.join([encode_tag(tag) for tag in STYLE_TAGS]) + ')'
+        PATTERN_STYLE_TAGS = compile_or_regex(STYLE_TAGS)
     else:
         PATTERN_STYLE_TAGS = r''
 
@@ -295,7 +353,7 @@ def init_priority_tags():
         'item': [r'.*\b(weapon|tool|katana|instrument|gadget|device|equipment|item|object|artifact|accessory|prop|earrings|necklace|bracelet|ring|watch|bag|backpack|purse|umbrella|parasol|cane|spear|sword|knife|gun|pistol|revolver|shotgun|rifle|gun|cannon|rocket launcher|grenade|bomb|shield|wing|hoove|antler)s?\b.*'],
 
         # Artistic
-        'aesthetic': ['|'.join(AESTHETIC_TAGS)],
+        'aesthetic': [compile_or_regex(AESTHETIC_TAGS)],
         # Quality
         'quality': [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
     }
@@ -305,15 +363,22 @@ def init_priority_tags():
     return True
 
 
-PRIORITY, PRIORITY_REGEX = None, None
+PATTERN_CHARACTER_FEATURES, REGEX_CHARACTER_FEATURES = None, None
 
 
-PATTERN_CHARACTER_FEATURES = [
-    r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyelash|forehead|eyeliner|fang|eyebrow|pupil|tongue|makeup|lip|mole|ear|horn|nose|mole|tail|wing|breast|chest|tattoo|pussy|penis|fur|arm|leg|thigh|skin|freckle|leg|thigh|foot|feet|toe|finger)s?\b.*",
-    r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes|halo)\b.*",
-    r"\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|goblin|tiger|dragon|raccoon|bird|squirrel|cow|animal|maid|frog|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling|jiangshi)([\s_](girl|boy|other|male|female))?\b",
-]
-REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for pattern in PATTERN_CHARACTER_FEATURES]
+def init_character_features():
+    global PATTERN_CHARACTER_FEATURES, REGEX_CHARACTER_FEATURES
+    if PATTERN_CHARACTER_FEATURES and REGEX_CHARACTER_FEATURES:
+        return True
+
+    PATTERN_CHARACTER_FEATURES = [
+        r".*\b(hair|bang|braid|ahoge|eye|eyeshadow|eyelash|forehead|eyeliner|fang|eyebrow|pupil|tongue|makeup|lip|mole|ear|horn|nose|mole|tail|wing|breast|chest|tattoo|pussy|penis|fur|arm|leg|thigh|skin|freckle|leg|thigh|foot|feet|toe|finger)s?\b.*",
+        r".*\b(twintails|ponytail|hairbun|double bun|hime cut|bob cut|sidelocks|loli|tan|eyelashes|halo)\b.*",
+        r"\b(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|goblin|tiger|dragon|raccoon|bird|squirrel|cow|animal|maid|frog|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling|jiangshi)([\s_](girl|boy|other|male|female))?\b",
+    ]
+    REGEX_CHARACTER_FEATURES = [re.compile(pattern.replace(' ', r'[\s_]')) for pattern in PATTERN_CHARACTER_FEATURES]
+
+    return True
 
 
 def get_key_index(key):
@@ -368,3 +433,23 @@ def query_tag_table(tag, default=None):
         init_tag_table()
     tag = tag.lower().replace('\\', '').replace(' ', '_').strip('_')
     return TAG_TABLE.get(tag, default)
+
+
+def get_tagset(tagtype: Literal['artist', 'character', 'style', 'aesthetic', 'copyright', 'quality']):
+    r"""
+    Get specific tagset.
+    """
+    if tagtype == 'artist':
+        return get_artist_tags()
+    elif tagtype == 'character':
+        return get_character_tags()
+    elif tagtype == 'style':
+        return get_style_tags()
+    elif tagtype == 'aesthetic':
+        return get_aesthetic_tags()
+    elif tagtype == 'copyright':
+        return get_copyright_tags()
+    elif tagtype == 'quality':
+        return get_quality_tags()
+    else:
+        raise ValueError(f'invalid tagtype: {tagtype}')

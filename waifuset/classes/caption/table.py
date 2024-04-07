@@ -110,6 +110,7 @@ def dataset_to_count_table(dataset):
 
 def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, least_sample_size=50):
     from . import tagging
+    tagging.init_character_features()
     feature_table = {}
     for char_tag, counter in tqdm(count_table.items(), desc='make feature table', disable=True):
         total = counter[char_tag]
@@ -124,6 +125,7 @@ def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, lea
 
 def freq_table_to_feature_table(freq_table, freq_thres=0.3):
     from . import tagging
+    tagging.init_character_features()
     feature_table = {}
     for char_tag, counter in tqdm(freq_table.items(), desc='make feature table', disable=True):
         freqs = {tag: freq for tag, freq in counter.items() if freq >= freq_thres}
@@ -181,6 +183,10 @@ class FeatureTable:
         return self.table[char_tag]
 
     def get(self, character, default=None):
+        r"""
+        Get a set of feature tags in standard format of a character.
+        Will automatically format the search key.
+        """
         char_tag = fmt2standard(character)
         return self.table.get(char_tag, default)
 

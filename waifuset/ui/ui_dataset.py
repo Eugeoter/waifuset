@@ -339,18 +339,18 @@ class UIDataset(UIChunkedDataset):
             raise ValueError("database file must be specified when write_to_database is True.")
         if not isinstance(source, Iterable):
             source = [source]
-        source = [os.path.abspath(src) for src in source]
+        source = [os.path.abspath(src) for src in source if src is not None]
 
         self.write_to_database = write_to_database
         self.write_to_txt = write_to_txt
         self.database_file = Path(database_file).absolute() if database_file else None
         self.backup_dir = Path(backup_dir or './backups').absolute()
 
-        if (same_json_io := len(source) == 1 and write_to_database and self.database_file.is_file() and self.database_file.samefile(source[0])):
+        if (same_json_rw := len(source) == 1 and (write_to_database and not write_to_txt) and self.database_file.is_file() and self.database_file.samefile(source[0])):
             self.log(f"synchronous database R/W")
             super().__init__(source, *args, **kwargs)
             database = None
-        elif (same_txt_io := write_to_txt and all(isinstance(src, (str, Path)) and os.path.isdir(src) for src in source)):
+        elif (same_txt_rw := (write_to_txt and not write_to_database) and all(isinstance(src, (str, Path)) and os.path.isdir(src) for src in source)):
             self.log(f"synchronous txts R/W")
             super().__init__(source, *args, **kwargs)
             database = Dataset(source, read_attrs=False, recur=True, verbose=False).make_subset(lambda x: x.image_path.with_suffix('.txt').is_file())
@@ -529,8 +529,13 @@ class UIDataset(UIChunkedDataset):
                 self.database_file.parent.mkdir(parents=True, exist_ok=True)
                 self.to_json(self.database_file)
             else:  # dump history only
-                with open(self.database_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
+                try:
+                    with open(self.database_file, 'r', encoding='utf-8') as f:
+                        json_data = json.load(f)
+                except json.JSONDecodeError:
+                    backup(self.database_file)
+                    json_data = {}
+                    self.log(f"json file `{self.database_file}` is corrupted, backup to `{self.database_file}.bak`.")  # corrupted json file
                 for img_key, img_info in self.pbar(self.buffer.items(), desc='dumping to database', disable=not self.verbose):
                     if img_key in self:
                         json_data[img_key] = img_info.dict()
@@ -550,7 +555,7 @@ class UIDataset(UIChunkedDataset):
                 if img_key in self:
                     img_info.write_txt_caption()
                 else:
-                    backup(img_info)
+                    backup_img_info(img_info)
             if self.verbose:
                 toc = time.time()
                 time_cost2 = toc - tic
@@ -565,20 +570,17 @@ class UIDataset(UIChunkedDataset):
                 self.log(f'write to txt | time_cost={time_cost2:.2f}s.')
 
 
-def backup(image_info):
+def backup(fp):
+    if not os.path.isfile(fp):
+        return False
+    fp = str(fp)
+    bak_fp = fp + '.bak'
+    if os.path.isfile(bak_fp):
+        os.remove(bak_fp)
+    os.rename(fp, bak_fp)
+    return True
+
+
+def backup_img_info(image_info):
     img_path = image_info.image_path
-    cap_path = str(img_path.with_suffix('.txt'))
-    img_path = str(img_path)
-
-    img_bkup_path = img_path + '.bak'
-    cap_bkup_path = cap_path + '.bak'
-
-    if os.path.isfile(img_path):
-        if os.path.isfile(img_bkup_path):
-            os.remove(img_bkup_path)
-        os.rename(img_path, img_bkup_path)
-
-    if os.path.isfile(cap_path):
-        if os.path.isfile(cap_bkup_path):
-            os.remove(cap_bkup_path)
-        os.rename(cap_path, cap_bkup_path)
+    return backup(img_path) and backup(img_path.with_suffix('.txt'))

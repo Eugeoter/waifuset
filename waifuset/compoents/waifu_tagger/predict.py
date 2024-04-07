@@ -9,7 +9,8 @@ from ..loaders import OnnxModelLoader
 from ...utils import image_utils as imgu
 
 WD_MODEL_REPO = "SmilingWolf/wd-swinv2-tagger-v3"
-WD_CACHE_DIR = os.path.join(ROOT, "/models/wd/")
+WD_CACHE_DIR = os.path.join(ROOT, "models/wd")
+print(f"Join {ROOT} and /models/wd/: {WD_CACHE_DIR}")
 
 
 class WaifuTagger(OnnxModelLoader):
@@ -19,14 +20,16 @@ class WaifuTagger(OnnxModelLoader):
 
         if model_path is None:
             model_path = WD_MODEL_REPO + '/model.onnx'
-            self.log(f"model path is None, switch to default: `{model_path}`")
+            self.log(f"model path not set, switch to default: `{model_path}`")
         else:
             self.log(f"model_path: {model_path}")
         if label_path is None:
             label_path = WD_MODEL_REPO + '/selected_tags.csv'
-            self.log(f"label path is None, switch to default: `{label_path}`")
+            self.log(f"label path not set, switch to default: `{label_path}`")
         else:
             self.log(f"label_path: {label_path}")
+
+        self.log(f"cache_dir: {os.path.abspath(cache_dir)}")
 
         super().__init__(model_path=model_path, model_url=model_path, cache_dir=cache_dir, device=device, verbose=verbose)
 

@@ -161,5 +161,12 @@
     "horrible": "可怕",
     "description": "描述",
     "buffer_information": "缓冲区信息",
-    "progress": "进度条"
+    "progress": "进度条",
+    "parse": "解析",
+    "safe_rating": "安全评分",
+    "safe_level": "安全等级",
+    "general": "大众级",
+    "sensitive": "敏感级",
+    "questionable": "疑似级",
+    "explicit": "暴露级"
 }

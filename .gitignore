@@ -166,6 +166,7 @@ draft**
 tempCodeRunnerFile*.py
 main.py
 /models/*
+/waifuset/models/*
 /logs/*
 /database/*
 /images/*

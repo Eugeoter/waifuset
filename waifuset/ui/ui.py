@@ -61,6 +61,8 @@ SORTING_METHODS: Dict[str, Callable] = {
     'key': sorting.key,
     'has_gen_info': sorting.has_gen_info,
     'random': sorting.random,
+    'safe_rating': sorting.safe_rating,
+    'safe_level': sorting.safe_level,
 }
 
 
@@ -96,20 +98,6 @@ def prepare_dataset(
         verbose=True,
     )
 
-    if args.change_source:
-        old_img_src = args.old_source
-        new_img_src = args.new_source
-
-        def change_source(image_info):
-            nonlocal old_img_src, new_img_src
-            old_src = image_info.source.name
-            new_src = old_img_src if old_src == new_img_src else None
-            if new_src:
-                image_info.image_path = image_info.source.parent / new_src / image_info.image_path.relative_to(image_info.source)
-            return image_info
-
-        dataset.apply_map(change_source)
-
     return dataset
 
 
@@ -140,40 +128,28 @@ def create_ui(
         )
         return df
 
-    # def import_priority_config():
-    #     import json
-    #     nonlocal tag_priority_manager
-    #     with open(univargs.tag_priority_config_path, 'r') as f:
-    #         config = json.load(f)
-    #     for name, patterns in tagging.PRIORITY.items():
-    #         if name in config:
-    #             config[name].extend(patterns)
-    #     tag_priority_manager = UITagPriorityManager(config)
-    #     return f"priority config loaded"
-
     def init_everything():
+        r"""
+        Return:
+            main_dataset: UIDataset
+            buffer: dict
+            sample_history: UISampleHistory
+            cur_dataset: UIDataset
+            waifu_tagger: WaifuTagger
+            waifu_scorer: WaifuScorer
+            tag_table: dict
+            tag_feature_table: dict
+        """
         # args validation
         if univargs.language not in ['en', 'cn']:
             logu.error(f"language {univargs.language} is not supported, using `en` instead")
             univargs.language = 'en'
         univargs.max_workers = max(1, min(univargs.max_workers, os.cpu_count() - 1))
         univargs.chunk_size = max(1, univargs.chunk_size)
-        if not univargs.write_to_database and not univargs.write_to_txt:
-            logu.warn("neither `write_to_database` nor `write_to_txt` is True, nothing will be saved.")
 
-        # import priority config
-        # tagging.init_priority_tags()
-        # tag_priority_manager = None
-
-        # try:
-        #     import_priority_config()
-        #     assert tag_priority_manager is not None
-        # except Exception as e:
-        #     logu.error(f"failed to load priority config: {e}")
-        #     tag_priority_manager = UITagPriorityManager(tagging.PRIORITY)
-
-        # init dataset
-        main_dataset = prepare_dataset(univargs)
+        main_dataset = prepare_dataset(
+            univargs,
+        )
         cur_dataset = main_dataset
         buffer = main_dataset.buffer
         sample_history = UISampleHistory()
@@ -226,6 +202,7 @@ def create_ui(
                                     value=False,
                                     scale=0,
                                     min_width=128,
+                                    container=False,
                                 )
 
                         with gr.Tab(translate('Query', univargs.language)):
@@ -367,7 +344,7 @@ def create_ui(
                             with gr.Row():
                                 showcase = gr.Gallery(
                                     label=translate('Showcase', univargs.language),
-                                    value=[(v.image_path, k) for k, v in subset.chunk(0).items()],
+                                    value=[(v.image_path, k) for k, v in subset.chunk(0).items() if v.image_path.exists()],
                                     rows=4,
                                     columns=4,
                                     container=True,
@@ -631,6 +608,9 @@ def create_ui(
                             #         )
 
                             with gr.Tab(label=translate('Optimizers', univargs.language)):
+                                with gr.Tab(translate('Parse', univargs.language)):
+                                    with gr.Row(variant='compact'):
+                                        parse_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
                                 with gr.Tab(translate('Sort', univargs.language)):
                                     with gr.Row(variant='compact'):
                                         sort_caption_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
@@ -650,20 +630,6 @@ def create_ui(
                                             minimum=0,
                                             maximum=1,
                                             step=0.01,
-                                        )
-                                        defeature_count_thres = gr.Slider(
-                                            label=translate('Counting Threshold', univargs.language),
-                                            value=1,
-                                            minimum=1,
-                                            maximum=1000,
-                                            step=1,
-                                        )
-                                        defeature_least_sample_size = gr.Slider(
-                                            label=translate('Least Sample Size', univargs.language),
-                                            value=1,
-                                            minimum=1,
-                                            maximum=1000,
-                                            step=1,
                                         )
                                 with gr.Tab(translate('Formalize', univargs.language)):
                                     with gr.Row(variant='compact'):
@@ -960,7 +926,7 @@ def create_ui(
                 nonlocal univset, buffer, sample_history, subset, tag_table, tag_feature_table
 
                 univargs.source = source
-                univset, buffer, sample_history, _, subset, _, _, tag_table, tag_feature_table = init_everything()
+                univset, buffer, sample_history, subset, _, _, tag_table, tag_feature_table = init_everything()
                 return {
                     source_file: univargs.source,
                     category_selector: gr.update(choices=univset.categories, value=None),
@@ -1520,15 +1486,18 @@ def create_ui(
                 tag = tag.replace('%category%', image_info.category)
                 tag = tag.replace('%stem%', image_info.image_path.stem)
                 tag = tag.replace('%filename%', image_info.image_path.stem)
-                if re.search(r'%.*%', tag):
-                    raise gr.Error(f"invalid tag format: {tag}")
                 return tag
+
+            def contains_fmt_tag(tags):
+                return any(re.search(r'%.*%', tag) for tag in tags)
 
             def add_tags(image_info, tags, do_append):
                 caption = image_info.caption or Caption()
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(image_info, tag) for tag in tags]
+                if contains_fmt_tag(tags):
+                    raise gr.Error(f"invalid tag format: {tags}")
                 if do_append:
                     caption = (caption - tags) | tags
                 else:
@@ -1542,13 +1511,28 @@ def create_ui(
                     return image_info
                 if isinstance(tags, str):
                     tags = [tags]
+
                 tags = [format_tag(image_info, tag) for tag in tags]
+
+                def isfmt(tag):
+                    return tag[0] == '%' and tag[-1] == '%' and len(tag) > 2
+
+                for i, tag in enumerate(tags):
+                    if isfmt(tag):
+                        pat = tag[1:-1]
+                        if pat in ('artist', 'character', 'style', 'quality', 'copyright'):
+                            caption.demeta(pat)
+                            tags[i] = None
+                tags = [tag for tag in tags if tag]
+
+                if contains_fmt_tag(tags):
+                    raise gr.Error(f"invalid tag format: {tags}")
                 if do_regex:
                     try:
                         tags = [re.compile(tag) for tag in tags]
                     except re.error as e:
                         raise gr.Error(f"invalid regex: {e}")
-                caption = image_info.caption - tags
+                caption -= tags
                 image_info.caption = caption
                 return image_info
 
@@ -1686,6 +1670,20 @@ def create_ui(
             # )
 
             # ========================================= Optimizers ========================================= #
+
+            def parse_caption(image_info: ImageInfo):
+                if image_info.caption is None:
+                    return image_info
+                image_info.caption = image_info.caption.parsed()
+                return image_info
+
+            parse_caption_btn.click(
+                fn=data_edition_handler(parse_caption),
+                inputs=[image_path, general_edit_opts],
+                outputs=cur_image_key_change_listeners,
+                concurrency_limit=1,
+            )
+
             def sort_caption(image_info: ImageInfo):
                 if image_info.caption is None:
                     return image_info
@@ -1746,20 +1744,20 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def defeature_caption(image_info: ImageInfo, freq_thres, count_thres, least_sample_size):
+            def defeature_caption(image_info: ImageInfo, freq_thres):
                 if image_info.caption is None:
                     return image_info
-                image_info.caption = image_info.caption.defeatured(freq_thres=freq_thres, count_thres=count_thres, least_sample_size=least_sample_size)
+                image_info.caption = image_info.caption.defeatured(freq_thres=freq_thres)
                 return image_info
 
             defeature_caption_btn.click(
                 fn=data_edition_handler(defeature_caption),
-                inputs=[image_path, general_edit_opts, defeature_freq_thres, defeature_count_thres, defeature_least_sample_size],
+                inputs=[image_path, general_edit_opts, defeature_freq_thres],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
-            # ========================================= WD14 ========================================= #
+            # ========================================= WD3 ========================================= #
 
             def wd_tagging(batch, general_threshold, character_threshold, os_mode):
                 nonlocal waifu_tagger
@@ -1774,7 +1772,7 @@ def create_ui(
 
                 if waifu_tagger is None:
                     from waifuset.compoents import WaifuTagger
-                    waifu_tagger = WaifuTagger(model_path=univargs.wd14_model_path, label_path=univargs.wd14_label_path, verbose=True)
+                    waifu_tagger = WaifuTagger(model_path=univargs.wd3_model_path, label_path=univargs.wd3_label_path, verbose=True)
 
                 images = [Image.open(img_info.image_path) for img_info in batch]
                 pred_captions = waifu_tagger(images, general_threshold=general_threshold, character_threshold=character_threshold)

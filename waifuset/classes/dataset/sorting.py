@@ -96,3 +96,20 @@ def quality_or_score(image_info: ImageInfo):
 def random(image_info: ImageInfo):
     import random
     return random.random()
+
+
+def safe_rating(image_info: ImageInfo):
+    return image_info.safe_rating
+
+
+LEVEL2KEY = {
+    'g': 0,
+    's': 1,
+    'q': 2,
+    'e': 3,
+}
+
+
+def safe_level(image_info: ImageInfo):
+    lvl = image_info.safe_level
+    return LEVEL2KEY.get(lvl, len(LEVEL2KEY))

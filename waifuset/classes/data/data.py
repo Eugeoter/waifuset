@@ -115,8 +115,9 @@ class ImageInfo:
             self._caption = auto_convert(self._dict['caption'], Caption)
         if self._caption is LAZY_READING:
             self._caption = auto_convert(read_txt_caption(self.image_path.with_suffix('.txt')), Caption)
-            if self._caption is not None:
-                self._caption.load_cache(artist=self._dict.get('artist'), characters=self._dict.get('characters'), styles=self._dict.get('styles'), quality=self._dict.get('quality'))
+            # if self._caption is not None:
+            #     self._caption.load_cache(artist=self._dict.get('artist'), characters=self._dict.get('characters'), styles=self._dict.get('styles'), quality=self._dict.get('quality'))
+            self._dict['caption'] = self._caption
         return self._caption
 
     @caption.setter
@@ -316,8 +317,6 @@ class ImageInfo:
         for attr, value in attrs.items():
             if attr in self._self_attrs:
                 setattr(self, attr, value)
-            elif attr == 'caption':
-                self.caption.tags = value
 
     def copy(self):
         from copy import deepcopy
@@ -386,7 +385,7 @@ def parse_danbooru_metadata(metadata):
 def read_attrs(img_info: ImageInfo, types: Literal['txt', 'danbooru'] = None, lazy=False):
     if isinstance(types, str):
         types = [types]
-    types = types or ['txt', 'danbooru']
+    types = types or ('txt', 'danbooru')
     img_path = img_info.image_path
 
     txt_path = img_path.with_suffix('.txt')

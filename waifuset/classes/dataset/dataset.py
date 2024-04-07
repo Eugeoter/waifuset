@@ -10,13 +10,15 @@ from ...utils.file_utils import listdir, smart_name
 from ...const import IMAGE_EXTS
 from ...utils import log_utils as logu
 
+LAZY_LOADING = 999
+
 
 class Dataset(logu.Logger):
 
     verbose: bool
     exts: set
 
-    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'danbooru'] = None, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
+    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'danbooru'] = None, lazy_loading=True, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
         self.init_logger(prefix_color=logu.ANSI.BRIGHT_MAGENTA)
         self.verbose = verbose
         self.exts = exts
@@ -47,8 +49,12 @@ class Dataset(logu.Logger):
 
                     elif suffix == '.json':  # 2. json file
                         import json
-                        with open(src, 'r', encoding='utf-8') as f:
-                            json_data = json.load(f)
+                        try:
+                            with open(src, 'r', encoding='utf-8') as f:
+                                json_data = json.load(f)
+                        except json.JSONDecodeError:
+                            self.log(f'invalid json file {src}.')
+                            continue
                         for image_key, image_info in self.pbar(json_data.items(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
                             if image_key in dic or not key_condition(image_key):
                                 continue
