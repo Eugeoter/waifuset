@@ -5,7 +5,7 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 ## 特点
 
 - **安全性**：Waifuset 在操作过程中，绝对不会修改数据集中的任何图像文件，确保数据的完整性和安全。
-- **高效能**：大部分编辑操作在 Waifuset 中都非常高效，使其能够轻松处理大型数据集。
+- **高效能**：大部分编辑操作在 Waifuset 中都非常高效，使其能够轻松处理十万、百万量级的大型数据集。
 - **易用性**：其用户界面（UI）设计简洁直观，即使是复杂操作也可以轻松一键完成。
 - **远程访问**：通过 Web 服务进行访问，支持在本地或云服务器上进行部署。
 - **友好的 UI 交互**：Waifuset 的所有操作都通过用户界面完成，非常友好，即使是没有编程背景的用户也能轻松上手。
@@ -13,7 +13,7 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 ## 局限性
 
 - **基于标签的标注**：Waifuset 假设所有的标注都是以英文逗号分隔的标签形式，而非自然语言描述。所有的标注编辑操作都将严格遵循这一格式。
-- **专注于 Danbooru 标签**：Waifuset 在高级标签处理方面主要面向 Danbooru 标签系统，不支持其他类型的标签体系。
+- **专注于 Danbooru 标签**：Waifuset 的标注优化算法主要面向 [Danbooru 标签系统](https://danbooru.donmai.us/tags)，不支持其他类型的标签体系。
 - **标注专用**：该工具主要用于编辑图像标注，而非图像本身。不包含图像编辑和文件系统功能。
 
 ## 适用场景
@@ -40,7 +40,7 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 
 - **使用 WaifuScorer 进行美学评分**
 
-  如果您希望使用 WaifuScorer 进行美学评分，您需要安装额外的依赖项。在控制台中输入以下命令：
+  如果您希望使用 [WaifuScorer](https://huggingface.co/Eugeoter/waifu-scorer-v2) 进行美学评分，您需要安装额外的依赖项。在控制台中输入以下命令：
 
   ```bash
   pip install torch torchvision pytorch-lightning huggingface-hub git+https://github.com/openai/CLIP.git
@@ -48,7 +48,7 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 
 - **使用 WaifuTaggerV3 进行图像标注**
 
-  若要使用 WaifuTaggerV3 对图像进行标注，您需要安装一些特定的依赖项。请在控制台中输入以下命令：
+  若要使用 [WaifuTaggerV3](https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3) 对图像进行标注，您需要安装一些特定的依赖项。请在控制台中输入以下命令：
 
   ```bash
   pip install torch torchvision onnxruntime huggingface-hub
@@ -95,11 +95,11 @@ Waifuset 的启动和使用非常直观。请遵循以下步骤快速开始：
 
 按照这些步骤操作，您可以轻松地开始使用 Waifuset 来管理和编辑您的数据集。
 
-### 完整介绍文档
+### 用户手册
 
-[点此查看完整介绍文档](./docs/ui.md)
+[点此查看完整用户手册](./docs/ui.md)
 
-### 更新
+### 如何更新
 
 为了更新 Waifuset，请遵循以下步骤：
 
@@ -132,6 +132,12 @@ Waifuset 的启动和使用非常直观。请遵循以下步骤快速开始：
 
 ```bash
 pip install git+https://github.com/Eugeoter/waifuset.git
+```
+
+或者，在控制台中打开 git clone 后的项目目录，然后运行以下命令：
+
+```bash
+pip install .
 ```
 
 这将允许您在 Python 脚本中导入和使用 Waifuset。
