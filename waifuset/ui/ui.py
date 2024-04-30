@@ -313,7 +313,7 @@ def create_ui(
                                     query_img_key_selector = gr.Dropdown(
                                         label=translate('Include', univargs.language),
                                         choices=None,
-                                        allow_custom_value=True,
+                                        allow_custom_value=GRADIO_VERSION > '4',
                                         multiselect=True,
                                     )
 
@@ -322,7 +322,7 @@ def create_ui(
                                 source_file = gr.Dropdown(
                                     choices=None,
                                     value=[os.path.abspath(src) for src in univargs.source] if univargs.source else None,
-                                    multiselect=True,
+                                    multiselect=GRADIO_VERSION > '4',
                                     container=False,
                                     interactive=True,
                                     scale=1,
@@ -485,7 +485,7 @@ def create_ui(
                                             tag_selector = gr.Dropdown(
                                                 choices=list(tagging.CUSTOM_TAGS),
                                                 value=None,
-                                                multiselect=True,
+                                                multiselect=GRADIO_VERSION > '4',
                                                 allow_custom_value=True,
                                                 show_label=False,
                                                 container=False,
