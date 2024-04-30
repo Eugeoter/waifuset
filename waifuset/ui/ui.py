@@ -15,8 +15,6 @@ from ..classes.caption import tagging
 from ..classes.dataset import sorting
 from ..utils import log_utils as logu
 
-GRADIO_VERSION = gr.__version__
-
 OPS = {
     'add': lambda x, y: y | x,
     'remove': lambda x, y: x - y,
@@ -113,6 +111,13 @@ def create_ui(
     from ..const import WD_REPOS, WS_REPOS
 
     tagging.init_custom_tags()
+
+    def invalid_install_warning():
+        return gr.Textbox(
+            translate("You haven't installed this function. Please follow the README.md to correctly install the package first.", univargs.language),
+            label=translate('Warning', univargs.language),
+            lines=1,
+        )
 
     def dataset_to_metadata_df(dset):
         num_images = len(dset)
@@ -231,7 +236,7 @@ def create_ui(
                                     query_include_tags = gr.Dropdown(
                                         label=translate('Include', univargs.language),
                                         choices=None,
-                                        allow_custom_value=GRADIO_VERSION > '4',
+                                        allow_custom_value=True,
                                         multiselect=True,
                                     )
                                     query_joiner_dropdown = gr.Dropdown(
@@ -257,7 +262,7 @@ def create_ui(
                                     query_exclude_tags = gr.Dropdown(
                                         label=translate('Exclude', univargs.language),
                                         choices=None,
-                                        allow_custom_value=GRADIO_VERSION > '4',
+                                        allow_custom_value=True,
                                         multiselect=True,
                                     )
 
@@ -313,7 +318,7 @@ def create_ui(
                                     query_img_key_selector = gr.Dropdown(
                                         label=translate('Include', univargs.language),
                                         choices=None,
-                                        allow_custom_value=GRADIO_VERSION > '4',
+                                        allow_custom_value=True,
                                         multiselect=True,
                                     )
 
@@ -322,7 +327,7 @@ def create_ui(
                                 source_file = gr.Dropdown(
                                     choices=None,
                                     value=[os.path.abspath(src) for src in univargs.source] if univargs.source else None,
-                                    multiselect=GRADIO_VERSION > '4',
+                                    multiselect=True,
                                     container=False,
                                     interactive=True,
                                     scale=1,
@@ -384,7 +389,7 @@ def create_ui(
                                         show_copy_button=True,
                                         lines=6,
                                         max_lines=6,
-                                        placeholder='empty',
+                                        placeholder=translate('empty', univargs.language),
                                     )
                                 with gr.Tab(translate('Metadata', univargs.language)) as metadata_tab:
                                     with gr.Row():
@@ -485,7 +490,7 @@ def create_ui(
                                             tag_selector = gr.Dropdown(
                                                 choices=list(tagging.CUSTOM_TAGS),
                                                 value=None,
-                                                multiselect=GRADIO_VERSION > '4',
+                                                multiselect=True,
                                                 allow_custom_value=True,
                                                 show_label=False,
                                                 container=False,
@@ -2257,6 +2262,6 @@ def create_ui(
                     from .tools import translator
                     translator_ui = translator.create_ui(univargs)
                 except ModuleNotFoundError:
-                    pass
+                    invalid_install_warning()
 
     return demo

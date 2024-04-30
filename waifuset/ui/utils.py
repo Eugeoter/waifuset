@@ -24,6 +24,7 @@ def init_cn_translation():
     try:
         with open('./waifuset/json/translation_cn.json', 'r', encoding='utf-8') as f:
             EN2CN = json.load(f)
+        EN2CN = {k.lower(): v for k, v in EN2CN.items()}
         CN2EN = {v: k for k, v in EN2CN.items()}
     except FileNotFoundError:
         EN2CN = {}

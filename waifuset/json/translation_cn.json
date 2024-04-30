@@ -168,5 +168,9 @@
     "general": "大众级",
     "sensitive": "敏感级",
     "questionable": "疑似级",
-    "explicit": "暴露级"
+    "explicit": "暴露级",
+    "You haven't installed this function. Please follow the README.md to correctly install the package first.": "您尚未安装此功能。请先按照 README.md 的指引正确安装。",
+    "warning": "警告",
+    "translator": "翻译器",
+    "empty": "空"
 }
