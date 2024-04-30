@@ -33,8 +33,8 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 2. 输入以下命令以克隆项目并安装所需的依赖项：
 
    ```bash
-   git clone https://github.com/Eugeoter/sd-dataset-manager
-   cd sd-dataset-manager
+   git clone https://github.com/Eugeoter/waifuset
+   cd waifuset
    pip install -r requirements.txt
    ```
 

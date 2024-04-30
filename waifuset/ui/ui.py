@@ -269,7 +269,7 @@ def create_ui(
                                     query_tag_list_counting_threshold = gr.Number(
                                         show_label=False,
                                         container=False,
-                                        value=100,
+                                        value=1,
                                         min_width=80,
                                         precision=0,
                                         scale=0,
