@@ -15,6 +15,7 @@ from ..classes.caption import tagging
 from ..classes.dataset import sorting
 from ..utils import log_utils as logu
 
+GRADIO_VERSION = gr.__version__
 
 OPS = {
     'add': lambda x, y: y | x,
@@ -230,7 +231,7 @@ def create_ui(
                                     query_include_tags = gr.Dropdown(
                                         label=translate('Include', univargs.language),
                                         choices=None,
-                                        allow_custom_value=True,
+                                        allow_custom_value=GRADIO_VERSION > '4',
                                         multiselect=True,
                                     )
                                     query_joiner_dropdown = gr.Dropdown(
@@ -256,7 +257,7 @@ def create_ui(
                                     query_exclude_tags = gr.Dropdown(
                                         label=translate('Exclude', univargs.language),
                                         choices=None,
-                                        allow_custom_value=True,
+                                        allow_custom_value=GRADIO_VERSION > '4',
                                         multiselect=True,
                                     )
 
