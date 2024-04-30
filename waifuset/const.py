@@ -9,5 +9,5 @@ IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.jfif', '.webp'}
 CAPTION_EXT = '.txt'
 CACHE_EXT = '.npz'
 
-WD_MODEL_PATH = './models/wd/swinv2.onnx'
-WD_LABEL_PATH = './models/wd/selected_tags.csv'
+WD_REPOS = ["SmilingWolf/wd-swinv2-tagger-v3", "SmilingWolf/wd-vit-tagger-v3", "SmilingWolf/wd-convnext-tagger-v3"]
+WS_REPOS = ["Eugeoter/waifu-scorer-v3"]

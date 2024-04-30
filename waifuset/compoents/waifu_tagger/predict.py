@@ -4,13 +4,26 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from typing import Dict, List, Union
-from ...const import ROOT
+from ...const import ROOT, WD_REPOS
 from ..loaders import OnnxModelLoader
 from ...utils import image_utils as imgu
 
-WD_MODEL_REPO = "SmilingWolf/wd-swinv2-tagger-v3"
 WD_CACHE_DIR = os.path.join(ROOT, "models/wd")
-print(f"Join {ROOT} and /models/wd/: {WD_CACHE_DIR}")
+
+
+def repo2path(model_repo_and_path: str):
+    if os.path.isfile(model_repo_and_path):
+        model_path = model_repo_and_path
+        label_path = os.path.join(os.path.dirname(model_path), "selected_tags.csv")
+    elif os.path.isdir(model_repo_and_path):
+        model_path = os.path.join(model_repo_and_path, "model.onnx")
+        label_path = os.path.join(model_repo_and_path, "selected_tags.csv")
+    elif model_repo_and_path in WD_REPOS:
+        model_path = model_repo_and_path + '/model.onnx'
+        label_path = model_repo_and_path + '/selected_tags.csv'
+    else:
+        raise ValueError(f"Invalid model_repo_and_path: {model_repo_and_path}")
+    return model_path, label_path
 
 
 class WaifuTagger(OnnxModelLoader):
@@ -19,12 +32,12 @@ class WaifuTagger(OnnxModelLoader):
         import pandas as pd
 
         if model_path is None:
-            model_path = WD_MODEL_REPO + '/model.onnx'
+            model_path, _ = repo2path(WD_REPOS[0])
             self.log(f"model path not set, switch to default: `{model_path}`")
         else:
             self.log(f"model_path: {model_path}")
         if label_path is None:
-            label_path = WD_MODEL_REPO + '/selected_tags.csv'
+            _, label_path = repo2path(WD_REPOS[0])
             self.log(f"label path not set, switch to default: `{label_path}`")
         else:
             self.log(f"label_path: {label_path}")
@@ -62,7 +75,6 @@ class WaifuTagger(OnnxModelLoader):
         character_threshold: float = 0.35,
     ) -> List[str]:
         import torch
-        import onnxruntime as rt
 
         if not isinstance(images, list):
             images = [images]

@@ -207,7 +207,9 @@ class Caption:
         self.tags.sort(key=key, reverse=reverse)
 
     def sorted(self, key=None, reverse=False):
-        return Caption(sorted(self.tags, key=key, reverse=reverse))
+        caption = self.copy()
+        caption.sort(key=key, reverse=reverse)
+        return caption
 
     def deoverlap(self):
         r"""
@@ -756,7 +758,7 @@ def fmt2standard(tag, by_artist=False):
     - escape brackets
     - remove prefixes
     """
-    tag = tag.lower().replace('_', ' ').strip(' ')
+    tag = tag.lower().replace('_', ' ').strip(' ').replace(': ', ':')
     tag = escape(tag)
     tag = remove_prefix(tag, by_artist=by_artist)
     return tag

@@ -3,28 +3,38 @@ import os
 import time
 from PIL import Image
 from typing import List, Union
+from ...const import ROOT, WS_REPOS
 from ...utils import log_utils as logu
 
-MLP_MODEL_URL = "https://huggingface.co/Eugeoter/waifu-scorer-v2/waifu-scorer-v2-1.pth"
-MLP_CACHE_DIR = "./models/laion/"
-MLP_MODEL_PATH = "./models/laion/waifu-scorer-v2-1.pth"
+WS_CACHE_DIR = os.path.join(ROOT, "models/ws/")
 
 
-class WaifuScorer:
-    def __init__(self, model_path: str = MLP_MODEL_PATH, device: str = 'cuda', verbose=False):
+def repo2path(model_repo_and_path: str):
+    if os.path.isfile(model_repo_and_path):
+        model_path = model_repo_and_path
+    elif os.path.isdir(model_repo_and_path):
+        model_path = os.path.join(model_repo_and_path, "model.pth")
+    elif model_repo_and_path in WS_REPOS:
+        model_path = model_repo_and_path + '/model.pth'
+    else:
+        raise ValueError(f"Invalid model_repo_and_path: {model_repo_and_path}")
+    return model_path
+
+
+class WaifuScorer(logu.Logger):
+    def __init__(self, model_path: str = None, device: str = 'cuda', verbose=False):
         self.verbose = verbose
         if model_path is None:
+            model_path = repo2path(WS_REPOS[0])
             if self.verbose:
-                print(f"[{logu.blue('waifu-scorer')}] model path not set, switch to default: `{MLP_MODEL_PATH}`")
-            model_path = MLP_MODEL_PATH
+                self.log(f"model path not set, switch to default: `{model_path}`")
+        elif not os.path.isfile(model_path):
+            from ...utils.file_utils import download_from_url
+            model_path = download_from_url(model_path, cache_dir=WS_CACHE_DIR)
 
         if self.verbose:
             tic = time.time()
-            logu.info(f"[{logu.blue('waifu-scorer')}] loading pretrained model from `{logu.stylize(model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
-
-        if not os.path.isfile(model_path):
-            from ...utils.file_utils import download_from_url
-            model_path = download_from_url(MLP_MODEL_URL, cache_dir=MLP_CACHE_DIR)
+            self.log(f"loading pretrained model from `{logu.stylize(model_path, logu.ANSI.YELLOW, logu.ANSI.UNDERLINE)}`")
 
         self.mlp = load_model(model_path, input_size=768, device=device)
         self.model2, self.preprocess = load_clip_models("ViT-L/14", device=device)
@@ -35,7 +45,7 @@ class WaifuScorer:
 
         if self.verbose:
             toc = time.time()
-            print(f"[{logu.blue('waifu-scorer')}] model loaded: time_cost={toc-tic:.2f} | device={self.device} | dtype={self.dtype}")
+            self.log(f"model loaded: time_cost={toc-tic:.2f} | device={self.device} | dtype={self.dtype}")
 
     @torch.no_grad()
     def __call__(self, images: List[Image.Image]) -> Union[List[float], float]:

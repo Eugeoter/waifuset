@@ -61,43 +61,72 @@ def camel_to_snake(name):
     return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name).lower()
 
 
+def color2ansi(color: str):
+    return getattr(ANSI, color.upper(), "")
+
+
 class Logger:
     r"""
     Base class that provide better formatted logging for inherited classes.
     """
 
     def __init__(self, prefix_color: str = None, prefix_str: str = None):
-        self.inited = False
         self.init_logger(prefix_color=prefix_color, prefix_str=prefix_str)
 
     def init_logger(self, prefix_color: str = None, prefix_str: str = None):
-        if not getattr(self, 'inited', False):
-            self.prefix_color = prefix_color or ANSI.BRIGHT_BLUE
-            self.prefix_str = camel_to_snake(prefix_str or self.__class__.__name__)
-            self.inited = True
+        if not self.has_init:
+            self._prefix_color = prefix_color or ANSI.BRIGHT_BLUE
+            self._prefix_str = camel_to_snake(prefix_str or self.__class__.__name__)
 
-    def set_color(self, color: str):
-        self.prefix_color = color
+    @property
+    def has_init(self):
+        return hasattr(self, '_prefix_color') and hasattr(self, '_prefix_str')
 
-    def set_prefix(self, prefix: str):
-        self.prefix_str = prefix
+    @property
+    def prefix_color(self):
+        if not self.has_init:
+            self.init_logger()
+        return self._prefix_color
 
-    def get_prefix(self, prefix_str=None, prefix_color=None):
-        prefix_str = prefix_str or self.prefix_str
-        prefix_color = prefix_color or self.prefix_color
-        return f"[{stylize(prefix_str, prefix_color)}]"
+    @property
+    def prefix_str(self):
+        if not self.has_init:
+            self.init_logger()
+        return self._prefix_str
+
+    @prefix_color.setter
+    def prefix_color(self, color: str):
+        self._prefix_color = color if color.startswith('\033[') else color2ansi(color)
+
+    @prefix_str.setter
+    def prefix_str(self, prefix: str):
+        self._prefix_str = prefix
+
+    def get_colored_prefix_str(self, s=None, color=None):
+        r"""
+        Get colored prefix string.
+        """
+        s = s or self.prefix_str
+        color = color or self.prefix_color
+        return f"[{stylize(s, color)}]"
 
     def log(self, msg, *args, prefix_str: str = None, prefix_color: str = None, **kwargs):
+        r"""
+        Print a log message, formatted with a colored prefix.
+        """
         if not getattr(self, 'verbose', True):
             return
         prefix_color = prefix_color or self.prefix_color
-        prefix_str = self.get_prefix(prefix_str if prefix_str else self.prefix_str)
+        prefix_str = self.get_colored_prefix_str(prefix_str if prefix_str is not None else self.prefix_str)
         print(f"{prefix_str} {msg}", *args, **kwargs)
 
     def pbar(self, *args, desc=None, prefix_str=None, **kwargs):
+        r"""
+        Get a tqdm progress bar with a formatted and colored prefix.
+        """
         if 'disable' not in kwargs:
             kwargs['disable'] = not getattr(self, 'verbose', True)
-        prefix_str = self.get_prefix(prefix_str if prefix_str else self.prefix_str)
+        prefix_str = self.get_colored_prefix_str(prefix_str if prefix_str is not None else self.prefix_str)
         desc = f"{prefix_str} {desc}" if desc else prefix_str
         return tqdm(*args, desc=desc, **kwargs)
 

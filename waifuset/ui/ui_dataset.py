@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict
 from typing import Union, Tuple, Iterable
 from ..classes import Dataset, ImageInfo, Caption
-from ..classes.caption.caption import fmt2standard, tag2type
+from ..classes.caption.caption import fmt2danbooru, tag2type
 from ..utils import log_utils as logu
 
 
@@ -256,6 +256,7 @@ class UITagTable:
         self._style = set()
 
     def query(self, tag):
+        tag = fmt2danbooru(tag)
         return self._table.get(tag, set())
 
     def remove_key(self, key):
@@ -267,41 +268,43 @@ class UITagTable:
         r"""
         Add `key` into set of `tag`, indicating that the tag connects to the key.
         """
-        proc_tag = fmt2standard(tag) if preprocess else tag
-        if proc_tag not in self._table:
-            self._table[proc_tag] = set()
+        dan_tag = fmt2danbooru(tag) if preprocess else tag
+        if dan_tag not in self._table:
+            self._table[dan_tag] = set()
         if not tagtype:
             pass
         elif tagtype == 'artist':
-            self._artist.add(proc_tag)
+            self._artist.add(dan_tag)
         elif tagtype == 'character':
-            self._character.add(proc_tag)
+            self._character.add(dan_tag)
         elif tagtype == 'style':
-            self._style.add(proc_tag)
-        self._table[proc_tag].add(key)
+            self._style.add(dan_tag)
+        self._table[dan_tag].add(key)
 
     def remove(self, tag, key, preprocess=True):
         r"""
         Remove `key` from set of `tag`, indicating that the tag no longer connects to the key.
         """
-        proc_tag = fmt2standard(tag) if preprocess else tag
-        if proc_tag not in self._table:
+        dan_tag = fmt2danbooru(tag) if preprocess else tag
+        if dan_tag not in self._table:
             return
-        self._table[proc_tag].remove(key)
-        if len(self._table[proc_tag]) == 0:
-            del self._table[proc_tag]
+        self._table[dan_tag].remove(key)
+        if len(self._table[dan_tag]) == 0:
+            del self._table[dan_tag]
             if tagtype := tag2type(tag):
                 if tagtype == 'artist':
-                    self._artist.remove(proc_tag)
+                    self._artist.remove(dan_tag)
                 elif tagtype == 'character':
-                    self._character.remove(proc_tag)
+                    self._character.remove(dan_tag)
                 elif tagtype == 'style':
-                    self._style.remove(proc_tag)
+                    self._style.remove(dan_tag)
 
     def __contains__(self, tag):
+        tag = fmt2danbooru(tag)
         return tag in self._table
 
     def __getitem__(self, tag):
+        tag = fmt2danbooru(tag)
         return self._table[tag]
 
     def __len__(self):
@@ -451,8 +454,8 @@ class UIDataset(UIChunkedDataset):
         if self.tag_table is not None:
             orig_caption = Caption() if img_info is None or img_info.caption is None else img_info.caption.copy()
             new_caption = Caption() if value is None or value.caption is None else value.caption.copy()
-            orig_caption.tags = [fmt2standard(tag) for tag in orig_caption.tags]
-            new_caption.tags = [fmt2standard(tag) for tag in new_caption.tags]
+            orig_caption.tags = [fmt2danbooru(tag) for tag in orig_caption.tags]
+            new_caption.tags = [fmt2danbooru(tag) for tag in new_caption.tags]
             # print(f"add tags: {new_caption - orig_caption}")
             for tag in new_caption - orig_caption:  # introduce new tags
                 self.tag_table.add(tag, key, preprocess=True)

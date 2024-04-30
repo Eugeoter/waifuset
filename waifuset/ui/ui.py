@@ -3,17 +3,16 @@ import os
 import pandas
 import inspect
 import gradio as gr
-from functools import wraps
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
+from functools import wraps
 from typing import Callable, Any, Tuple, Dict, List, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
-from .emoji import Emoji
 from . import custom_components as cc
+from .emoji import Emoji
 from ..classes.caption import tagging
 from ..classes.dataset import sorting
-
 from ..utils import log_utils as logu
 
 
@@ -107,9 +106,10 @@ def create_ui(
     # ========================================= UI ========================================= #
 
     from ..classes import Dataset, ImageInfo, Caption
-    from ..classes.caption.caption import fmt2standard
+    from ..classes.caption.caption import fmt2danbooru
     from .ui_dataset import UIChunkedDataset, UISampleHistory, UITab
     from .utils import open_file_folder, translate
+    from ..const import WD_REPOS, WS_REPOS
 
     tagging.init_custom_tags()
 
@@ -651,6 +651,16 @@ def create_ui(
                                         wd_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
 
                                     with gr.Row(variant='compact'):
+                                        wd_model = gr.Dropdown(
+                                            label=translate('Model', univargs.language),
+                                            choices=WD_REPOS,
+                                            value=WD_REPOS[0],
+                                            multiselect=False,
+                                            allow_custom_value=True,
+                                            scale=1,
+                                        )
+
+                                    with gr.Row(variant='compact'):
                                         wd_batch_size = gr.Number(
                                             value=1,
                                             label=translate('Batch Size', univargs.language),
@@ -659,9 +669,9 @@ def create_ui(
                                             scale=1,
                                         )
 
-                                        wd_proc_mode = gr.Radio(
+                                        wd_overwrite_mode = gr.Radio(
                                             label=translate('Overwrite mode', univargs.language),
-                                            choices=translate(['overwrite', 'append', 'prepend', 'ignore'], univargs.language),
+                                            choices=translate(['overwrite', 'ignore', 'append', 'prepend'], univargs.language),
                                             value=translate('overwrite', univargs.language),
                                             scale=1,
                                             min_width=128,
@@ -685,18 +695,29 @@ def create_ui(
 
                                 with gr.Tab(label=translate('Scorer', univargs.language)):
                                     with gr.Row(variant='compact'):
-                                        predict_aesthetic_score_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
-                                        label_aesthetic_btn = cc.EmojiButton(Emoji.label, min_width=40)
-                                        clean_aesthetic_score_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
-                                    with gr.Row():
-                                        waifu_scorer_batch_size = gr.Number(
+                                        ws_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                        ws_label_btn = cc.EmojiButton(Emoji.label, min_width=40)
+                                        ws_delabel_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
+
+                                    with gr.Row(variant='compact'):
+                                        ws_model = gr.Dropdown(
+                                            label=translate('Model', univargs.language),
+                                            choices=WS_REPOS,
+                                            value=WS_REPOS[0],
+                                            multiselect=False,
+                                            allow_custom_value=True,
+                                            scale=1,
+                                        )
+
+                                    with gr.Row(variant='compact'):
+                                        ws_batch_size = gr.Number(
                                             value=1,
                                             label=translate('Batch Size', univargs.language),
                                             min_width=128,
                                             precision=0,
                                             scale=1,
                                         )
-                                        waifu_scorer_os_mode = gr.Radio(
+                                        ws_overwrite_mode = gr.Radio(
                                             label=translate('Overwrite mode', univargs.language),
                                             choices=translate(['overwrite', 'ignore'], univargs.language),
                                             value=translate('overwrite', univargs.language),
@@ -706,10 +727,11 @@ def create_ui(
 
                                 with gr.Tab(label=translate('Hasher', univargs.language)):
                                     with gr.Row(variant='compact'):
-                                        get_perceptual_hash_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
-                                        clean_perceptual_hash_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
-                                    with gr.Row():
-                                        hasher_os_mode = gr.Radio(
+                                        hasher_run_btn = cc.EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                        hasher_dehash_btn = cc.EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
+
+                                    with gr.Row(variant='compact'):
+                                        hasher_overwrite_mode = gr.Radio(
                                             label=translate('Overwrite mode', univargs.language),
                                             choices=translate(['overwrite', 'ignore'], univargs.language),
                                             value=translate('overwrite', univargs.language),
@@ -1079,7 +1101,7 @@ def create_ui(
                 return str(img_info.caption)
 
             def get_metadata_df(image_key, keys):
-                if univargs.render_mode == 'partial' and ui_data_tab.tab is not metadata_tab:
+                if univargs.render == 'partial' and ui_data_tab.tab is not metadata_tab:
                     return None
                 if image_key is None or image_key == '' or image_key not in univset:
                     return None
@@ -1120,7 +1142,7 @@ def create_ui(
 
                 reso = f"{img_info.original_size[0]}x{img_info.original_size[1]}"
 
-                if univargs.render_mode == 'full':
+                if univargs.render == 'full':
                     pos_pmt, neg_pmt, param_df = get_gen_info(img_key)
                     res = {
                         image_path: img_path,
@@ -1164,7 +1186,7 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            if univargs.render_mode == 'partial':
+            if univargs.render == 'partial':
                 caption_tab.select(
                     fn=change_activating_tab(ui_data_tab, caption_tab, get_caption),
                     inputs=[cur_image_key],
@@ -1317,7 +1339,7 @@ def create_ui(
                     results = []
                     if do_batch:
                         editset = subset
-                        if func in (predict_aesthetic_score, wd_tagging):
+                        if func in (ws_scoring, wd_tagging):
                             batch_size, args = args[0], args[1:]  # first arg is batch size
                             batches = [editset.values()[i:i + batch_size] for i in range(0, len(editset), batch_size)]
                         else:
@@ -1347,7 +1369,7 @@ def create_ui(
 
                         pbar.close()
                     else:
-                        if func in (predict_aesthetic_score, wd_tagging):
+                        if func in (ws_scoring, wd_tagging):
                             args = args[1:]
                         res = edit(univset[image_key], *args, **kwargs)
                         if isinstance(res, ImageInfo):
@@ -1757,57 +1779,63 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            # ========================================= WD3 ========================================= #
+            # ========================================= WD ========================================= #
 
-            def wd_tagging(batch, general_threshold, character_threshold, os_mode):
+            def wd_tagging(batch, model_repo_or_path, general_threshold, character_threshold, overwrite_mode):
                 nonlocal waifu_tagger
                 if univargs.language != 'en':
-                    os_mode = translate(os_mode, 'en')
+                    overwrite_mode = translate(overwrite_mode, 'en')
                 if isinstance(batch, ImageInfo):  # single input
                     batch = [batch]
-                if os_mode == 'ignore':
+                if overwrite_mode == 'ignore':
                     batch = [info for info in batch if info.caption is None]
                     if len(batch) == 0:
                         return []
 
-                if waifu_tagger is None:
+                if waifu_tagger is None or (waifu_tagger and waifu_tagger.model_name != model_repo_or_path):
                     from waifuset.compoents import WaifuTagger
-                    waifu_tagger = WaifuTagger(model_path=univargs.wd3_model_path, label_path=univargs.wd3_label_path, verbose=True)
+                    from waifuset.compoents.waifu_tagger.predict import repo2path
+                    model_path, label_path = repo2path(model_repo_or_path)
+                    waifu_tagger = WaifuTagger(model_path=model_path, label_path=label_path, verbose=True)
+                    waifu_tagger.model_name = model_repo_or_path
 
                 images = [Image.open(img_info.image_path) for img_info in batch]
                 pred_captions = waifu_tagger(images, general_threshold=general_threshold, character_threshold=character_threshold)
                 for img_info, pred_caption in zip(batch, pred_captions):
-                    if os_mode == 'overwrite' or os_mode == 'ignore':
+                    if overwrite_mode == 'overwrite' or overwrite_mode == 'ignore':
                         caption = pred_caption
-                    elif os_mode == 'append':
+                    elif overwrite_mode == 'append':
                         caption = img_info.caption | pred_caption
-                    elif os_mode == 'prepend':
+                    elif overwrite_mode == 'prepend':
                         caption = pred_caption | img_info.caption
                     else:
-                        raise ValueError(f"invalid os_mode: {os_mode}")
+                        raise ValueError(f"invalid os_mode: {overwrite_mode}")
                     img_info.caption = caption
                 return batch
 
             wd_run_btn.click(
                 fn=data_edition_handler(wd_tagging),
-                inputs=[image_path, general_edit_opts, wd_batch_size, wd_general_threshold, wd_character_threshold, wd_proc_mode],
+                inputs=[image_path, general_edit_opts, wd_batch_size, wd_model, wd_general_threshold, wd_character_threshold, wd_overwrite_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
 
-            # ========================================= Aesthetic predictor ========================================= #
-            def predict_aesthetic_score(batch, os_mode) -> List[ImageInfo]:
+            # ========================================= WS ========================================= #
+            def ws_scoring(batch, model_repo_or_path, overwrite_mode) -> List[ImageInfo]:
                 if univargs.language != 'en':
-                    os_mode = translate(os_mode, 'en')
+                    overwrite_mode = translate(overwrite_mode, 'en')
 
                 nonlocal waifu_scorer
-                if waifu_scorer is None:
+                if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != model_repo_or_path):
                     from waifuset.compoents import WaifuScorer
-                    waifu_scorer = WaifuScorer(model_path=univargs.waifu_scorer_model_path, device='cuda', verbose=True)
+                    from waifuset.compoents.waifu_scorer.predict import repo2path
+                    model_path = repo2path(model_repo_or_path)
+                    waifu_scorer = WaifuScorer(model_path=model_path, device='cuda', verbose=True)
+                    waifu_scorer.model_name = model_repo_or_path
 
                 if isinstance(batch, ImageInfo):  # single input
                     batch = [batch]
-                batch = [img_info for img_info in batch if img_info.image_path.is_file() and not (os_mode == 'ignore' and img_info.aesthetic_score is not None)]
+                batch = [img_info for img_info in batch if img_info.image_path.is_file() and not (overwrite_mode == 'ignore' and img_info.aesthetic_score is not None)]
 
                 if len(batch) == 0:
                     return []
@@ -1824,9 +1852,9 @@ def create_ui(
 
                 return batch
 
-            predict_aesthetic_score_btn.click(
-                fn=data_edition_handler(predict_aesthetic_score),
-                inputs=[cur_image_key, general_edit_opts, waifu_scorer_batch_size, waifu_scorer_os_mode],
+            ws_run_btn.click(
+                fn=data_edition_handler(ws_scoring),
+                inputs=[cur_image_key, general_edit_opts, ws_batch_size, ws_model, ws_overwrite_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
                 cancels=cancel_event,
@@ -1863,9 +1891,9 @@ def create_ui(
                 quality = aesthetic_score_to_quality(score)
                 return change_quality(image_info, quality)
 
-            label_aesthetic_btn.click(
+            ws_label_btn.click(
                 fn=data_edition_handler(change_quality_according_to_aesthetic_score),
-                inputs=[cur_image_key, general_edit_opts, waifu_scorer_os_mode],
+                inputs=[cur_image_key, general_edit_opts, ws_overwrite_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1874,7 +1902,7 @@ def create_ui(
                 image_info.aesthetic_score = score
                 return image_info
 
-            clean_aesthetic_score_btn.click(
+            ws_delabel_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_aesthetic_score, score=None)),
                 inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
@@ -1899,9 +1927,9 @@ def create_ui(
                 image_info.perceptual_hash = p_hash
                 return image_info
 
-            get_perceptual_hash_btn.click(
+            hasher_run_btn.click(
                 fn=data_edition_handler(get_perceptual_hash),
-                inputs=[cur_image_key, general_edit_opts, hasher_os_mode],
+                inputs=[cur_image_key, general_edit_opts, hasher_overwrite_mode],
                 outputs=cur_image_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1910,7 +1938,7 @@ def create_ui(
                 image_info.perceptual_hash = p_hash
                 return image_info
 
-            clean_perceptual_hash_btn.click(
+            hasher_dehash_btn.click(
                 fn=data_edition_handler(kwargs_setter(set_perceptual_hash, p_hash=None)),
                 inputs=[cur_image_key, general_edit_opts],
                 outputs=cur_image_key_change_listeners,
@@ -1995,8 +2023,8 @@ def create_ui(
                 # print(f"include_tags: {include_tags}")
                 # print(f"exclude_tags: {exclude_tags}")
 
-                include_tags = [fmt2standard(tag) for tag in include_tags]
-                exclude_tags = [fmt2standard(tag) for tag in exclude_tags]
+                include_tags = [fmt2danbooru(tag) for tag in include_tags]
+                exclude_tags = [fmt2danbooru(tag) for tag in exclude_tags]
 
                 incl_set = set()
                 for pattern in tqdm(include_tags, desc='Including tags'):  # calculate the union of all key(s), s ∈ include_tags
@@ -2009,16 +2037,16 @@ def create_ui(
                         tags = [pattern]
 
                     for tag in tags:
-                        tag_set = tag_table[tag]
+                        key_set = tag_table[tag]
                         if queryset:
-                            tag_set = set(img_key for img_key in tag_set if img_key in queryset)
-                        if len(tag_set) == 0:
+                            key_set = set(img_key for img_key in key_set if img_key in queryset)
+                        if len(key_set) == 0:
                             continue
 
                         if include_condition == 'any':
-                            incl_set.update(tag_set)
+                            incl_set.update(key_set)
                         else:
-                            incl_set.intersection_update(tag_set)
+                            incl_set.intersection_update(key_set)
 
                 excl_set = set()
                 for pattern in tqdm(exclude_tags, desc='Excluding tags'):  # calculate the union of all key(s), s ∈ exclude_tags
@@ -2031,16 +2059,16 @@ def create_ui(
                         tags = [pattern]
 
                     for tag in tags:
-                        tag_set = tag_table[tag]
+                        key_set = tag_table[tag]
                         if queryset:
-                            tag_set = set(img_key for img_key in tag_set if img_key in queryset)
-                        if len(tag_set) == 0:
+                            key_set = set(img_key for img_key in key_set if img_key in queryset)
+                        if len(key_set) == 0:
                             continue
 
                         if exclude_condition == 'any':
-                            excl_set.update(tag_set)
+                            excl_set.update(key_set)
                         else:
-                            excl_set.intersection_update(tag_set)
+                            excl_set.intersection_update(key_set)
 
                 excl_set = set(queryset.keys()) - excl_set  # calculate the complement of excl_set, because of DeMorgan's Law
                 join_set = joiner_func(incl_set, excl_set)  # join
@@ -2221,5 +2249,10 @@ def create_ui(
             #     fn=import_priority_config,
             #     outputs=[cfg_log_box],
             # )
+
+        with gr.Tab(label=translate('Tools', univargs.language)) as tools_tab:
+            with gr.Tab(label=translate('Translator', univargs.language)) as translator_tab:
+                from .tools import translator
+                translator_ui = translator.create_ui(univargs)
 
     return demo

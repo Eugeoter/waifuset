@@ -178,6 +178,8 @@ scripts
 aid_*
 tmp_*
 downbooru.py
-cp2chs.py
+downbooru_runner.py
+arti2cnt.py
+cp2ch2cnt.py
 waifuset/json/tag_list.json
 waifuset/json/tag_table.json
