@@ -2252,7 +2252,10 @@ def create_ui(
 
         with gr.Tab(label=translate('Tools', univargs.language)) as tools_tab:
             with gr.Tab(label=translate('Translator', univargs.language)) as translator_tab:
-                from .tools import translator
-                translator_ui = translator.create_ui(univargs)
+                try:
+                    from .tools import translator
+                    translator_ui = translator.create_ui(univargs)
+                except ModuleNotFoundError:
+                    pass
 
     return demo
