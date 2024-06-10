@@ -1,6 +1,10 @@
 import logging
+import re
+import copy
+import time
 from pathlib import Path
 from tqdm import tqdm
+from typing import Iterable
 
 
 def track_tqdm(pbar: tqdm, n: int = 1):
@@ -52,8 +56,70 @@ class ANSI:
     NEWLINE = F + K
 
 
-def debug(msg: str, *args, **kwargs):
-    print('[DEBUG] ' + stylize(msg, ANSI.BOLD, ANSI.BRIGHT_WHITE), *args, **kwargs)
+def camel_to_snake(name):
+    # 将所有连续的大写字母转换为小写，但在最后一个大写字母前加下划线
+    name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+
+    # 将剩余的大写字母转换为小写，同时在它们前面加上下划线
+    return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name).lower()
+
+
+def color2ansi(color: str):
+    return getattr(ANSI, color.upper(), "")
+
+
+class ConsoleLogger:
+    _loggers = {}
+    _default_color = "bright_blue"
+
+    def __new__(cls, name, *args, **kwargs):
+        if name not in cls._loggers:
+            cls._loggers[name] = super().__new__(cls)
+        return cls._loggers[name]
+
+    def __init__(self, name, prefix_str=None, color=None, disable: bool = False):
+        self.name = name
+        self.prefix_str = prefix_str or name
+        self.colortype = color
+        self.color = color2ansi(color or self._default_color)
+        self.disable = disable
+
+    @property
+    def prefix(self):
+        return f"[{stylize(self.prefix_str, self.color)}]" if self.prefix_str else ""
+
+    def print(self, *msg: str, no_prefix=False, disable=None, **kwargs):
+        disable = disable if disable is not None else self.disable
+        if not disable:
+            if not no_prefix:
+                msg = (self.prefix,) + msg
+            print(*msg, **kwargs)
+
+    def tqdm(self, *args, no_prefix=False, **kwargs):
+        from tqdm import tqdm
+        kwargs["desc"] = f"{self.prefix}{kwargs.get('desc', '')}"
+        kwargs["disable"] = kwargs.get('disable', self.disable)
+        return tqdm(*args, **kwargs)
+
+    def __deepcopy__(self, memo):
+        new_instance = self.__class__(
+            name=self.name,
+            prefix_str=self.prefix_str,
+            color=self.colortype,
+            disable=self.disable
+        )
+        return new_instance
+
+
+def get_logger(name, prefix_str=None, color=None, disable: bool = False):
+    return ConsoleLogger(name, prefix_str, color, disable)
+
+
+def get_all_loggers():
+    return ConsoleLogger._loggers
+
+
+debug_logger = get_logger('debug', color='bright_yellow')
 
 
 def info(msg: str, *args, **kwargs):
@@ -152,3 +218,23 @@ class FileLogger:
     def error(self, msg: str):
         if not self.disable:
             self.logger.error(msg)
+
+
+class timer:
+    def __init__(self, name, logger=debug_logger):
+        self.func_name = name
+        self.logger = logger
+
+    def __enter__(self):
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        end_time = time.time()
+        self.logger.print(f"`{self.func_name}`: {end_time - self.start_time:.2f}s")
+
+    def __call__(self, func):
+        def inner(*args, **kwargs):
+            with timer(self.func_name, self.logger):
+                return func(*args, **kwargs)
+        return inner

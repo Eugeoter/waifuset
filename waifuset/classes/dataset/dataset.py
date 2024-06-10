@@ -1,484 +1,245 @@
-import time
-import math
-import json
 import pandas as pd
-import concurrent.futures as cf
-from tqdm import tqdm
-from pathlib import Path
-from typing import List, Callable, Literal
-from ..data import ImageInfo
-from ..caption import Caption
-from ..data.data import jsonize
-from ...utils.file_utils import listdir, smart_name
-from ...const import IMAGE_EXTS
-from ...utils import log_utils as logu
-
-COLORS = [logu.ANSI.WHITE, logu.ANSI.YELLOW, logu.ANSI.CYAN, logu.ANSI.WHITE, logu.ANSI.MAGENTA, logu.ANSI.GREEN]
-
-try:
-    from torch.utils.data import dataset as torch_dataset
-    _super_class = torch_dataset.Dataset
-except ImportError:
-    _super_class = object
+import copy
+import functools
+from typing import Callable, Dict
+from abc import abstractmethod
+from collections import OrderedDict
+from .dataset_mixin import ConfigMixin
+from ...utils import log_utils
 
 
-class Dataset(_super_class):
+def get_header(dic):
+    columns = OrderedDict()
+    for row in dic.values():
+        for h in row.keys():
+            if h not in columns:
+                columns[h] = None
+    return list(columns.keys())
 
-    verbose: bool
-    exts: set
 
-    def __init__(self, source=None, key_condition: Callable[[str], bool] = None, read_attrs=False, read_types: Literal['txt', 'danbooru'] = None, lazy_reading=True, formalize_caption=False, recur=True, cacheset=None, exts=IMAGE_EXTS, verbose=False, **kwargs):
+def get_column_types(dic, header=None):
+    header = header or get_header(dic)
+    types = {}
+    for v in dic.values():
+        for i in range(len(header)):
+            h = header[i]
+            if h not in types and v.get(h, None) is not None:
+                types[h] = type(v[h])
+                header.pop(i)
+                if len(header) == 0:
+                    return types
+                break
+    return types
+
+
+class Dataset(ConfigMixin):
+    DEFAULT_CONFIG = {
+        **ConfigMixin.DEFAULT_CONFIG,
+        'name': None,
+        'dtype': None,
+        'verbose': False,
+    }
+
+    def __init__(self, name=None, dtype=None, verbose=False, **kwargs):
+        ConfigMixin.__init__(self)
+        self.name = name + '.' + self.__class__.__name__ if name else self.__class__.__name__
+        self.dtype = dtype or dict
         self.verbose = verbose
-        self.exts = exts
-        key_condition = key_condition or (lambda x: True)
-        if not isinstance(source, (list, tuple)):
-            source = [source]
-        # if self.verbose:
-        #     tic = time.time()
-        #     logu.info(f'loading dataset')
+        self.logger = log_utils.get_logger(name=name, disable=not self.verbose)
+        self.register_to_config(
+            name=self.name,
+            dtype=self.dtype,
+            verbose=self.verbose,
+        )
 
-        dic = {}
-        for src in source:
-            if isinstance(src, (str, Path)):
-                src = Path(src)
-                if src.is_file():
-                    suffix = src.suffix
-                    if suffix in exts:  # 1. image file
-                        image_key = src.stem
-                        if image_key in dic or not key_condition(image_key):
-                            continue
-                        if cacheset and image_key in cacheset:
-                            dic[image_key] = cacheset[image_key]
-                            continue
-                        image_info = ImageInfo(src)
-                        if read_attrs:
-                            image_info.read_attrs(types=read_types, lazy=lazy_reading)
-                        dic[image_key] = image_info
+    @abstractmethod
+    def __getitem__(self, key):
+        pass
 
-                    elif suffix == '.json':  # 2. json file
-                        import json
-                        with open(src, 'r', encoding='utf-8') as f:
-                            json_data = json.load(f)
-                        for image_key, image_info in tqdm(json_data.items(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
-                            if image_key in dic or not key_condition(image_key):
-                                continue
-                            if cacheset and image_key in cacheset:
-                                dic[image_key] = cacheset[image_key]
-                                continue
-                            dic[image_key] = ImageInfo(**image_info)  # update dictionary
+    @abstractmethod
+    def __setitem__(self, key, value):
+        pass
 
-                    elif suffix == '.csv':  # 3. csv file
-                        df = pd.read_csv(src)
-                        df = df.applymap(lambda x: None if pd.isna(x) else x)
-                        for _, row in tqdm(df.iterrows(), desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
-                            image_key = row['image_key']
-                            if image_key in dic or not key_condition(image_key):
-                                continue
-                            if cacheset and image_key in cacheset:
-                                dic[image_key] = cacheset[image_key]
-                                continue
-                            info_kwargs = {name: row[name] for name in ImageInfo._all_attrs if name in row}
-                            image_info = ImageInfo(**info_kwargs)
-                            dic[image_key] = image_info  # update dictionary
+    @abstractmethod
+    def __delitem__(self, key):
+        pass
 
-                    else:
-                        raise ValueError(f'Invalid file source {src}.')
+    @abstractmethod
+    def __contains__(self, key):
+        pass
 
-                elif src.is_dir():  # 4. directory
-                    files = listdir(src, exts=exts, return_path=True, return_type=Path, recur=recur)
-                    for file in tqdm(files, desc=f"reading `{src.name}`", smoothing=1, disable=not verbose):
-                        image_key = file.stem
-                        if image_key in dic or not key_condition(image_key):
-                            # logu.warn(f'Duplicated image key `{image_key}`: path_1: `{dic[image_key].image_path}`, path_2: `{file}`.')
-                            continue
-                        if cacheset and image_key in cacheset:
-                            dic[image_key] = cacheset[image_key]
-                            continue
-                        image_info = ImageInfo(file)
-                        if read_attrs:
-                            image_info.read_attrs(types=read_types, lazy=lazy_reading)
-                        dic[image_key] = image_info  # update dictionary
+    @abstractmethod
+    def __iter__(self):
+        pass
 
-                else:
-                    raise FileNotFoundError(f'File {src} not found.')
+    @abstractmethod
+    def __len__(self):
+        pass
 
-            elif isinstance(src, ImageInfo):  # 5. ImageInfo object
-                image_key = src.key
-                if image_key in dic or not key_condition(image_key):
-                    continue
-                if cacheset and image_key in cacheset:
-                    dic[image_key] = cacheset[image_key]
-                    continue
-                dic[image_key] = src
-
-            elif isinstance(src, Dataset):  # 6. Dataset object
-                for image_key, image_info in tqdm(src.items(), desc='loading Dataset', smoothing=1, disable=not verbose):
-                    if image_key in dic or not key_condition(image_key):
-                        continue
-                    if cacheset and image_key in cacheset:
-                        dic[image_key] = cacheset[image_key]
-                        continue
-                    dic[image_key] = image_info
-
-            elif isinstance(src, dict):  # dict
-                if src.get('image_path'):  # 7. metadata dict
-                    image_info = ImageInfo(**src)
-                    image_key = image_info.key
-                    if image_key in dic or not key_condition(image_key):
-                        continue
-                    if cacheset and image_key in cacheset:
-                        dic[image_key] = cacheset[image_key]
-                        continue
-                    dic[image_key] = image_info
-
-                else:  # 8. img_key: img_info dict
-                    for image_key, image_info in tqdm(src.items(), desc='loading dict', smoothing=1, disable=not verbose):
-                        if image_key in dic or not key_condition(image_key):
-                            continue
-                        if cacheset and image_key in cacheset:
-                            dic[image_key] = cacheset[image_key]
-                            continue
-                        if isinstance(image_info, dict):
-                            image_info = ImageInfo(**image_info)
-                        elif isinstance(image_info, ImageInfo):
-                            pass
-                        dic[image_key] = image_info
-
-            elif src is None:  # 9. None
-                continue
-            else:
-                raise TypeError(f'Invalid type {type(src)} for Dataset.')
-
-        # formalize caption
-        if formalize_caption:
-            for image_info in tqdm(dic.values(), desc='formalizing captions', smoothing=1, disable=not verbose):
-                if image_info.caption is not None:
-                    image_info.caption = image_info.caption.formalized()
-        self._data = dic
-
-        # if self.verbose:
-        #     toc = time.time()
-        #     logu.success(f'dataset loaded: size={len(self)}, time_cost={toc - tic:.2f}s.')
-
-        # end init
-
-    def make_subset(self, condition: Callable[[ImageInfo], bool] = None, cls=None, *args, **kwargs):
-        import inspect
-        cls = cls or self.__class__
-        init_params = inspect.signature(cls.__init__).parameters.keys()
-        attrs_kwargs = {k: getattr(self, k) for k in cls.__annotations__ if k in init_params and k not in kwargs}
-        return cls({img_key: img_info for img_key, img_info in self.items() if condition(img_info)}, *args, **kwargs, **attrs_kwargs)
-
-    def update(self, other, recur=False):
-        other = Dataset(other, recur=recur)
-        self._data.update(other._data)
-        return self
-
-    def pop(self, image_key, default=None):
-        return self._data.pop(image_key, default)
-
-    def clear(self):
-        self._data.clear()
-
-    def __getitem__(self, image_key):
-        return self._data[image_key]
-
-    def __setitem__(self, image_key, image_info):
-        if not isinstance(image_info, ImageInfo):
-            raise TypeError('Dataset can only contain ImageInfo objects.')
-        self._data[image_key] = image_info
-
-    def __delitem__(self, image_key):
-        self.pop(image_key)
-
-    def get(self, image_key, default=None):
-        return self._data.get(image_key, default)
-
-    def keys(self):
-        return list(self._data.keys())
-
-    def values(self):
-        return list(self._data.values())
-
+    @abstractmethod
     def items(self):
-        return self._data.items()
+        pass
+
+    @abstractmethod
+    def keys(self):
+        pass
+
+    @abstractmethod
+    def values(self):
+        pass
+
+    @abstractmethod
+    def get(self, key, default=None):
+        pass
+
+    @abstractmethod
+    def set(self, key, value):
+        pass
+
+    @abstractmethod
+    def update(self, other):
+        pass
+
+    @abstractmethod
+    def clear(self):
+        pass
+
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, dic: Dict, **kwargs):
+        pass
+
+    @functools.cached_property
+    def header(self):
+        return get_header(self.dict())
+
+    @functools.cached_property
+    def types(self):
+        return get_column_types(self.dict(), self.header)
+
+    @classmethod
+    def from_dataset(cls, dataset: 'Dataset', **kwargs):
+        kwargs = {**dataset.config, **kwargs}
+        return cls.from_dict(dataset.dict(), **kwargs)
+
+    def dict(self):
+        return dict(self.items())
 
     def df(self):
-        headers = ['image_key'] + [name for name in ImageInfo._all_attrs]
-        data = []
-        for image_key, image_info in tqdm(self.items(), desc='Converting to DataFrame', smoothing=1, disable=not self.verbose):
-            row = dict(
-                image_key=image_key,
-                **image_info.dict()
-            )
-            data.append(row)
-        df = pd.DataFrame(data, columns=headers)
-        return df
+        d = self.dict()
+        if not d:
+            return pd.DataFrame()
+        data = d.values()
+        return pd.DataFrame(data, columns=self.header)
 
     def __str__(self):
-        return str(self.df())
+        df_str = str(self.df())
+        width = max(len(line) for line in df_str.split('\n'))
+        title = log_utils.magenta(self.name.center(width))
+        info = log_utils.yellow(f"size: {len(self)}x{len(self.header)}".center(width))
+        return '\n'.join([title, info, df_str])
 
     def __repr__(self):
-        return repr(self._data)
+        return self.__str__()
 
-    def copy(self):
-        from copy import deepcopy
-        return deepcopy(self)
+    def subkeys(self, condition: Callable[[Dict], bool], **kwargs):
+        for k, v in self.items():
+            if condition(v):
+                yield k
 
-    def apply_map(self, func, *args, max_workers=1, **kwargs):
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'Applying map `{logu.yellow(func.__name__)}`...')
+    def subset(self, condition: Callable[[Dict], bool], type=None, **kwargs):
+        subset_dict = {}
+        for k, v in self.logger.tqdm(self.items(), desc=f"subset", total=len(self)):
+            if condition(v):
+                subset_dict[k] = v
+        config = self.config
+        config['name'] += '.subset'
+        kwargs = {**config, **kwargs}
+        return (type or self.__class__).from_dict(subset_dict, **kwargs)
 
-        pbar = tqdm(self.items(), desc=f'Applying map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
-        func_ = logu.track_tqdm(pbar)(func)
-        if max_workers == 1:
-            for image_key, image_info in self.items():
-                self[image_key] = func_(image_info.copy(), *args, **kwargs)
-        else:
-            with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(func_, image_info.copy(), *args, **kwargs) for image_info in self.values()]
-
-                for future in cf.as_completed(futures):
-                    image_info = future.result()
-                    self[image_info.key] = image_info
-
-        pbar.close()
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'Map applied: time_cost={toc - tic:.2f}s.')
-
-        return self
-
-    def load_minimap(self, fp, attr):
-        with open(fp, 'r') as f:
-            minimap = json.load(f)
-        if attr in ImageInfo._caption_attrs or attr in ('caption', 'tags'):
-            for image_key, value in tqdm(minimap.items(), desc='loading minimap', smoothing=1, disable=not self.verbose):
-                if image_key in self:
-                    info = self[image_key]
-                    if info.caption is None:
-                        info.caption = Caption()
-                    info.caption.__setattr__(attr, value)
-        elif attr in ImageInfo._self_attrs:
-            for image_key, value in tqdm(minimap.items(), desc='loading minimap', smoothing=1, disable=not self.verbose):
-                if image_key in self:
-                    setattr(self[image_key], attr, value)
-        else:
-            raise ValueError(f'Invalid attribute {attr}.')
-
-    def with_map(self, func, *args, max_workers=1, condition: Callable[[ImageInfo], bool] = None, read_attrs=False, read_types: Literal['txt', 'waifuc'] = None, lazy_reading=True, formalize_caption=False, recur=True, verbose=True, **kwargs):
-        if verbose:
-            tic = time.time()
-            logu.info(f'With map `{logu.yellow(func.__name__)}`...')
-
-        pbar = tqdm(self.items(), desc=f'With map `{logu.yellow(func.__name__)}`', smoothing=1, disable=not self.verbose)
-        func_ = logu.track_tqdm(pbar)(func)
-        if max_workers == 1:
-            result = [func_(image_info.copy(), *args, **kwargs) for image_info in self.values()]
-        else:
-            with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(func_, image_info.copy(), *args, **kwargs) for image_info in self.values()]
-                result = [future.result() for future in cf.as_completed(futures)]
-
-        pbar.close()
-        if verbose:
-            toc = time.time()
-            logu.success(f'With map applied: time_cost={toc - tic:.2f}s.')
-
-        return Dataset(result, key_condition=condition, read_attrs=read_attrs, read_types=read_types, lazy_reading=lazy_reading, formalize_caption=formalize_caption, recur=recur, verbose=verbose)
-
-    def sort_keys(self):
-        self._data = dict(sorted(self._data.items(), key=lambda x: x[0]))
-
-    def stat(self):
-        counter = {
-            'missing_caption': [],
-            'missing_category': [],
-            'missing_image_file': [],
-        }
-        for image_key, image_info in tqdm(self.items(), desc='Stat', smoothing=1, disable=not self.verbose):
-            if image_info.caption is None:
-                counter['missing_caption'].append(image_key)
-            if image_info.category is None:
-                counter['missing_category'].append(image_key)
-            if not image_info.image_path.is_file():
-                counter['missing_image_file'].append(image_key)
-        return counter
-
-    def sample(self, condition=None, n=1, randomly=False, random_seed=None) -> 'Dataset':
+    def sample(self, n=1, randomly=True, type=None, **kwargs):
         if randomly:
             import random
-            if random_seed is not None:
-                random.seed(random_seed)
-            samples = random.sample([image_info for image_info in self.values() if not condition or condition(image_info)], min(n, len(self)))
+            sample_dict = dict(random.sample(list(self.items()), n))
         else:
-            samples = [image_info for image_info in self.values() if not condition or condition(image_info)][:n]
-        return Dataset(samples)
+            sample_dict = dict(list(self.items())[:n])
+        config = self.config.copy()
+        config['name'] += '.subset'
+        kwargs = {**config, **kwargs}
+        return (type or self.__class__).from_dict(sample_dict, **kwargs)
 
-    def sort(self, key, reverse=False):
-        self._data = dict(sorted(self._data.items(), key=key, reverse=reverse))
+    def chunk(self, i, n, type=None, **kwargs):
+        r"""
+        Chunk the dataset into some parts with equal size n and get the i-th chunk of the dataset.
+        """
+        chunk_dict = dict(list(self.items())[i*n:(i+1)*n])
+        config = self.config.copy()
+        config['name'] += '.chunk'
+        kwargs = {**config, **kwargs}
+        return (type or self.__class__).from_dict(chunk_dict, **kwargs)
 
-    def __iter__(self):
-        return iter(self._data)
+    def chunks(self, n, type=None, **kwargs):
+        r"""
+        Chunk the dataset into some parts with equal size n and get all chunks of the dataset.
+        """
+        chunk_dicts = [dict(list(self.items())[i*n:(i+1)*n]) for i in range(n)]
+        config = self.config.copy()
+        config['name'] += '.chunk'
+        kwargs = {**config, **kwargs}
+        return [(type or self.__class__).from_dict(chunk_dict, **kwargs) for chunk_dict in chunk_dicts]
 
-    def __next__(self):
-        return next(self._data)
+    def split(self, i, n, type=None, **kwargs):
+        r"""
+        Split the dataset into n parts with equal size and get the i-th split of the dataset.
+        """
+        split_dict = dict(list(self.items())[i::n])
+        config = self.config.copy()
+        config['name'] += '.split'
+        kwargs = {**config, **kwargs}
+        return (type or self.__class__).from_dict(split_dict, **kwargs)
 
-    def __len__(self):
-        return len(self._data)
+    def splits(self, n, type=None, **kwargs):
+        r"""
+        Split the dataset into n parts with equal size and get all splits of the dataset.
+        """
+        split_dicts = [dict(list(self.items())[i::n]) for i in range(n)]
+        config = self.config.copy()
+        config['name'] += '.split'
+        kwargs = {**config, **kwargs}
+        return [(type or self.__class__).from_dict(split_dict, **kwargs) for split_dict in split_dicts]
 
-    def __contains__(self, image_key):
-        return image_key in self._data
+    def kvalues(self, key: str, **kwargs):
+        for k, kv in self.kitems(key, **kwargs):
+            yield kv
 
-    def to_minimap(self, fp, attr):
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'dumping dataset to minimap `{logu.yellow(Path(fp).absolute())}`...')
+    def kitems(self, key: str, **kwargs):
+        for k, v in self.items():
+            yield k, v[key]
 
-        minimap = {}
-        for image_key, image_info in self.items():
-            minimap[image_key] = jsonize(getattr(image_info, attr))
-        with open(fp, 'w') as f:
-            import json
-            json.dump(minimap, f, indent=4, ensure_ascii=False)
+    def redirect(self, columns, tarset: 'Dataset'):
+        for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
+            self.set(k, {h: v[h] for h in columns if h in self.header})
 
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
+    def apply_map(self, func: Callable[[Dict], Dict], *args, **kwargs):
+        postfix = {'done': 0, 'skip': 0}
+        tqdm_kwargs = dict(total=len(self), desc=func.__name__.replace('_', ' '), postfix=postfix)
+        tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
+        kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
+        pbar = self.logger.tqdm(**tqdm_kwargs)
+        for k, v in self.items():
+            new_v = func(v, *args, **kwargs)
+            if new_v is None:
+                postfix['skip'] += 1
+            else:
+                self[k] = new_v
+                postfix['done'] += 1
+            pbar.set_postfix(postfix)
+            pbar.update(1)
 
-    def to_csv(self, fp, mode='w', sep=','):
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
+    def with_map(self, func: Callable[[Dict], Dict], *args, **kwargs):
+        new = self.copy()
+        new.apply_map(func, *args, **kwargs)
+        return new
 
-        dump_as_csv(self, fp, mode=mode, sep=sep, verbose=self.verbose)
-
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
-
-    def to_json(self, fp, mode='w', indent=4, sort_keys=False):
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'dumping dataset to `{logu.yellow(Path(fp).absolute())}`...')
-
-        dump_as_json(self, fp, mode=mode, indent=indent, sort_keys=sort_keys, verbose=self.verbose)
-
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
-
-    def to_txts(self):
-        if self.verbose:
-            tic = time.time()
-            logu.info(f'dumping dataset to txt...')
-
-        dump_as_txts(self, verbose=self.verbose)
-
-        if self.verbose:
-            toc = time.time()
-            logu.success(f'dataset dumped: time_cost={toc - tic:.2f}s.')
-
-    def split(self, *ratio, shuffle=True) -> List['Dataset']:
-        keys = list(self.keys())
-        if shuffle:
-            import random
-            random.shuffle(keys)
-        datasets = []
-        r_sum = sum(ratio)
-        r_norm = [r / r_sum for r in ratio]
-        r_cumsum = [0] + [sum(r_norm[:i + 1]) for i in range(len(r_norm))]
-        for i in range(len(ratio)):
-            start = int(r_cumsum[i] * len(keys))
-            end = int(r_cumsum[i + 1] * len(keys))
-            datasets.append(Dataset({key: self[key] for key in keys[start:end]}))
-        return datasets
-
-    def split_n(self, n: int, shuffle: bool = True) -> List['Dataset']:
-        keys = list(self.keys())
-        if shuffle:
-            import random
-            random.shuffle(keys)
-        stride = math.ceil(len(keys) / n)
-        datasets = [Dataset({key: self[key] for key in keys[i:i + stride]}) for i in range(0, len(keys), stride)]
-        return datasets
-
-    def batches(self, batch_size: int, shuffle: bool = True) -> List['Dataset']:
-        keys = list(self.keys())
-        if shuffle:
-            import random
-            random.shuffle(keys)
-        batches = [[self[key] for key in keys[i:i + batch_size]] for i in range(0, len(keys), batch_size)]
-        return batches
-
-    def __add__(self, other):
-        return Dataset({**self._data, **other._data})
-
-    def __iadd__(self, other):
-        self._data.update(other._data)
-        return self
-
-    def __and__(self, other):
-        return Dataset({key: image_info for key, image_info in self.items() if key in other})
-
-    def __iand__(self, other):
-        self._data = {key: image_info for key, image_info in self.items() if key in other}
-        return self
-
-    def __or__(self, other):
-        return Dataset({**other._data, **self._data})
-
-    def __ior__(self, other):
-        self._data = {**other._data, **self._data}
-        return self
-
-    def __sub__(self, other):
-        return Dataset({key: image_info for key, image_info in self.items() if key not in other})
-
-    def __isub__(self, other):
-        self._data = {key: image_info for key, image_info in self.items() if key not in other}
-        return self
-
-
-def dump_as_json(source, fp, mode='a', indent=4, sort_keys=False, verbose=False):
-    import json
-    dataset = Dataset(source)
-    if mode == 'a' and Path(fp).is_file():
-        dataset = Dataset(fp, verbose=verbose).update(dataset)
-    json_data = {}
-    for image_key, image_info in tqdm(dataset.items(), desc='Converting to dict', smoothing=1, disable=not verbose):
-        json_data[image_key] = image_info.dict()
-    with open(fp, mode='w', encoding='utf-8') as f:
-        json.dump(json_data, f, indent=indent, sort_keys=sort_keys)
-
-
-def dump_as_csv(source, fp, mode='a', sep=',', verbose=False):
-    dataset = Dataset(source)
-    if mode == 'a' and Path(fp).is_file():
-        dataset = Dataset(fp, verbose=verbose).update(dataset)
-    df = dataset.df()
-    df.to_csv(fp, mode='w', sep=sep, index=False)
-
-
-def dump_as_txts(source, ask_confirm=True, verbose=False):
-    dataset = Dataset(source)
-    if ask_confirm:
-        logger = logu.FileLogger(smart_name('./logs/.tmp/%date%-%increment%.log'), name=dump_as_txts.__name__, temp=True)
-        for image_key, image_info in tqdm(dataset.items(), desc='Stage 1/2: Checking', smoothing=1, disable=not verbose):
-            image_path = image_info.image_path
-            label_path = image_path.with_suffix('.txt')
-
-            if not image_path.is_file():  # if image file doesn't exist
-                logger.info(f"[{image_key:>20}] miss image file: {image_path}")
-            if label_path.exists():
-                logger.info(f"[{image_key:>20}] overwrite label file: {label_path}")
-        logu.info(f"log to `{logu.yellow(logger.fp)}`")
-
-    if not ask_confirm or input(logu.green(f"continue? ([y]/n): ")) == 'y':
-        for image_key, image_info in tqdm(dataset.items(), desc='Stage 2/2: Writing to disk' if ask_confirm else 'Writing to disk', smoothing=1, disable=not verbose):
-            image_info.image_path.parent.mkdir(parents=True, exist_ok=True)
-            image_info.write_txt_caption()
-    else:
-        if verbose:
-            logu.info('Aborted.')
+    def copy(self):
+        return copy.deepcopy(self)

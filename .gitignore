@@ -163,18 +163,21 @@ cython_debug/
 # customs
 
 draft**
+*_test.py
 tempCodeRunnerFile*.py
 main.py
 /models/*
+/waifuset/models/*
 /logs/*
 /database/*
 /images/*
+/assets/*
+.bak
 cmds.sh
 launch.bat
 .backup
+scripts
 /demos
-/waifuset/json/custom*
-aid_*
-tmp_*
-/waifuset/json/tag_list.json
-/waifuset/json/tag_table.json
+*_private.py
+waifuset/json/tag_list.json
+waifuset/json/tag_table.json

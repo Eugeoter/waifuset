@@ -8,7 +8,7 @@ packages = find_packages(
 
 setup(
     name='waifuset',
-    version='0.1',
+    version='0.2',
     packages=packages,
     include_package_data=True,
     description='Image caption tools',
