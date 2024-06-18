@@ -1,5 +1,5 @@
 from waifuset.ui.ui import UIManager
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 
 def parse_arguments():

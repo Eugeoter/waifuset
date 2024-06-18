@@ -52,6 +52,16 @@ def patch_image_path_info(img_md):
     return img_md
 
 
+def patch_image_key(img_md):
+    if 'image_key' in img_md:
+        return None
+    img_path = img_md['image_path']
+    if not img_path:
+        return None
+    img_md['image_key'] = Path(img_path).stem
+    return img_md
+
+
 def patch_dirset(img_md):
     img_md = patch_image_path_info(img_md)
     img_md['caption'] = None

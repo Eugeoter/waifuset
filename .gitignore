@@ -181,3 +181,5 @@ scripts
 *_private.py
 waifuset/json/tag_list.json
 waifuset/json/tag_table.json
+*_dev*
+.git.bak

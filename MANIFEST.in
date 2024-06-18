@@ -5,4 +5,5 @@ recursive-include waifuset/json translation_cn.json
 recursive-include waifuset/json artist_tags.json
 recursive-include waifuset/json character_tags.json
 recursive-include waifuset/json copyright_tags.json
+recursive-include waifuset/json meta_tags.json
 recursive-include waifuset/json custom_tags.json
