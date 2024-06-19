@@ -92,5 +92,6 @@ def redirect_columns(img_md, columns, tarset):
 
 def as_posix_path(img_md, columns):
     for col in columns:
-        img_md[col] = Path(img_md[col]).as_posix()
+        if col in img_md:
+            img_md[col] = Path(img_md[col]).as_posix()
     return img_md
