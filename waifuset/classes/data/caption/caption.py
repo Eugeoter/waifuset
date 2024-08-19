@@ -1,7 +1,7 @@
 import re
 from typing import Callable, Literal, List, Union, overload
-from . import tagging
 from ..data import Data
+from .... import tagging, logging
 
 
 class Caption(Data):
@@ -229,31 +229,36 @@ class Caption(Data):
     def metadata(self):
         return {tagtype: getattr(self, tagtype) for tagtype in tagging.TAG_TYPES}
 
-    def decharacterize(self, feature_table=None, **kwargs):
+    def decharacterize(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
         r"""
         According to the feature table which is extracted from danbooru wiki, remove feature tags of every characters.
         """
         if not self.character:
             return
-        if not feature_table:
-            tagging.init_feature_table(**kwargs)
-            feature_table = tagging.FEATURE_TABLE
+        if feature_type == 'physics':
+            tagging.init_ch2physics(freq_thres=freq_thres)
+            feature_table = tagging.CH2PHYSICS
+        elif feature_type == 'clothes':
+            tagging.init_ch2clothes(freq_thres=freq_thres)
+            feature_table = tagging.CH2CLOTHES
+        else:
+            raise ValueError(f"Invalid feature type: {feature_type}, should be 'physics' or 'clothes'.")
         all_features = set()
         for character in self.character:
             features = feature_table.get(character, None)
-            print(f"features of {character}: {features}")
+            # logging.debug(f"features of {character}: {features}")
             if features:
                 all_features |= features
         self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
 
-    def decharacterized(self, feature_table=None, **kwargs):
+    def decharacterized(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
         caption = self.copy()
-        caption.decharacterize(feature_table, **kwargs)
+        caption.decharacterize(feature_type, freq_thres)
         return caption
 
     def sort(self, key=None, reverse=False):
         r"""
-        Sort tags by priority.
+        Sort tags by priority. If key is `None`, use default priority.
         """
         key = key or tagging.tag2priority
         self.tags.sort(key=key, reverse=reverse)

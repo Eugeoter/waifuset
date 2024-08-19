@@ -71,33 +71,42 @@ Waifuset 是一个专门用于构建和管理文生图数据集的工具，其�
 
 Waifuset 的启动和使用非常直观。请遵循以下步骤快速开始：
 
-1. **启动 Waifuset**
+1. **配置启动参数**
+   打开 launch_ui.py 文件，在 `get_config` 函数中通过修改变量值来配置您的启动参数。
+
+```python
+def get_config():
+    return config_utils.config(
+        dataset_source=[r"path/to/metadata.json", r"path/to/images"],
+    )
+```
+
+其中，`dataset_source` 为您的数据集源。`path/to/metadata.json` 为您的数据集元数据文件路径，`path/to/images` 为您的数据集图像文件夹路径，**请注意二者的填写顺序**。
+数据源允许多种配置方式，详细用法请参考[配置文件说明](docs/ui.md)的相关部分。
+
+2. **启动 Waifuset**
 
    在控制台中，输入以下命令以启动 Waifuset：
 
    ```bash
-   python api.py --source path/to/folder --write_to_txt --language cn
+   python launch_ui.py
    ```
 
-   - `path/to/folder` 应该替换为您数据集的根目录路径。
-   - `--write_to_txt` 参数指示 Waifuset 将标注信息写入 txt 文件。
-   - `--language cn` 参数用于设置界面语言为中文。
-
-2. **访问 UI 界面**
+3. **访问 UI 界面**
 
    - 在命令成功执行后，控制台会输出一个本地 URL，例如 `Running on local URL: http://xxx.xxx.xxx.xxx:xxxx`。
    - 打开浏览器并输入显示的 URL（即 `http://xxx.xxx.xxx.xxx:xxxx` 部分）以访问 Waifuset 的用户界面。
 
-3. **云端服务器使用**
+4. **云端服务器使用**
 
-   - 如果您在云端服务器上部署 Waifuset，您可能需要启用 `--share` 参数以将 Gradio 网页共享到公网。
+   - 如果您在云端服务器上部署 Waifuset，您可能需要将 `share` 参数设置为 `True` 以将 Gradio 网页共享到公网。
    - 或者，您可以使用服务器的代理功能访问 UI 界面。
 
 按照这些步骤操作，您可以轻松地开始使用 Waifuset 来管理和编辑您的数据集。
 
 ### 用户手册
 
-[点此查看完整用户手册](./docs/ui.md)
+[点此查看完整用户手册](docs/ui.md)
 
 ### 如何更新
 

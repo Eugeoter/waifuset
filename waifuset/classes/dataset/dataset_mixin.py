@@ -14,6 +14,7 @@ class ConfigMixin(object):
         if name == 'config':
             self.config = {}
             return self.config
+        return super().__getattribute__(name)
 
     def register_to_config(self, **kwargs):
         self.config.update(kwargs)

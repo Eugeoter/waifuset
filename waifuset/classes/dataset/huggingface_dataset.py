@@ -1,7 +1,7 @@
 import datasets
-from .dict_dataset import DictDataset
 from typing import Optional, Union, Sequence, Mapping, Dict, overload
 from datasets import Split, Features, DownloadConfig, DownloadMode, VerificationMode, Version
+from .dict_dataset import DictDataset
 
 
 class HuggingFaceDataset(DictDataset):

@@ -17,23 +17,32 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         'col2type': None,
     }
 
-    def __init__(self, source: StrPath = None, tbname=None, **kwargs):
+    def __init__(self, source: StrPath = None, tbname=None, read_only=False, **kwargs):
+        Dataset.__init__(self, **kwargs)
         primary_key = kwargs.pop('primary_key', None)
         col2type = kwargs.pop('col2type', None)
-        SQLite3Database.__init__(self, fp=source)  # set self.path here
-        self.register_to_config(fp=self.fp)
+        SQLite3Database.__init__(self, fp=kwargs.pop('fp', None) or source, read_only=read_only)  # set self.path here
+        self.register_to_config(fp=self.fp, read_only=read_only)
         if tbname is None:
-            self.table: SQL3Table = None
+            if len(all_table_names := self.get_all_tablenames()) == 1:
+                # self.logger.warning(f"Table name not provided when initializing {self.__class__.__name__}, using \'{all_table_names[0]}\' by default.")
+                tbname = all_table_names[0]
+                self.set_table(tbname)
+            else:
+                self.logger.warning(f"Table name not provided when initializing {self.__class__.__name__}, available table names: {all_table_names}")
+                self.table: SQL3Table = None
         else:
-            if tbname not in self.get_all_tablenames() and tbname is not None and primary_key is not None:
+            if tbname not in self.get_all_tablenames() and primary_key is not None:
+                # self.logger.warning(f"Table name {tbname} not found when initializing {self.__class__.__name__}, creating new table with primary key {primary_key} and {len(col2type)} columns.")
                 self.create_table(tbname, primary_key=primary_key, col2type=col2type)
             self.set_table(tbname)
+
+        if self.table is not None:
             self.register_to_config(
                 tbname=self.table.name,
                 primary_key=self.table.primary_key,
                 col2type=self.types,
             )
-        Dataset.__init__(self, **kwargs)
 
     @classmethod
     def from_disk(cls, fp, **kwargs):
@@ -56,7 +65,8 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def __getitem__(self, index: int) -> Dict: ...
 
     def __getitem__(self, key):
-        item = self.postprocessor(self.table[key])
+        item = self.table[key]
+        item = self.postprocessor(item) if not isinstance(key, slice) else [self.postprocessor(i) for i in item]
         return item
 
     def __setitem__(self, key, value):
@@ -126,8 +136,14 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             return default
 
     def update(self, other):
-        for key, value in other.items():
-            self[key] = value
+        if isinstance(other, SQLite3Dataset):
+            column_names = other.table.header
+            columns = ', '.join(column_names)
+            placeholders = ', '.join(['?' for _ in column_names])
+            self.cursor.executemany(f"INSERT OR REPLACE INTO {self.table.name} ({columns}) VALUES ({placeholders})", other.table)
+        else:
+            for key, value in self.logger.tqdm(other.items(), desc=f"update"):
+                self[key] = value
 
     def clear(self):
         self.cursor.execute(f"DELETE FROM {self.table.name}")
@@ -165,9 +181,9 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             self.conn.backup(conn_bak, progress=progress_callback)
             conn_bak.close()
 
-    def apply_map(self, func: Callable[[Dict], Dict], *args, **kwargs):
+    def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
         self.begin_transaction()
-        super().apply_map(func, *args, **kwargs)
+        super().apply_map(func, *args, condition=condition, **kwargs)
         self.commit_transaction()
 
     @property
@@ -188,8 +204,10 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def from_dict(cls, dic: Dict, **kwargs):
         tbname = kwargs.pop('tbname', None)
         primary_key = kwargs.pop('primary_key', None)
-        assert tbname is not None and primary_key is not None, "Both `tbname` and `primary_key` must be provided"
-        if dic:
+        assert tbname is not None and primary_key is not None, f"Initializing a {cls.__name__} from dict requires both 'tbname' and 'primary_key' to be provided."
+        if 'col2type' in kwargs:
+            col2type = kwargs.pop('col2type')
+        elif dic:
             v0 = next(iter(dic.values()))
             col2type = {k: type(v) for k, v in v0.items()}
         else:
@@ -297,3 +315,25 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
 
     def select_is_not(self, column, value, type=None, **kwargs):
         return self.subset_from_select(self.table.select_is_not(column, value, **kwargs), type=type)
+
+    def add_columns(self, col2type, **kwargs):
+        if isinstance(col2type, list):
+            col2type = {col: 'TEXT' for col in col2type}
+        self.table.add_columns(col2type)
+        self.register_to_config(col2type=self.types)
+        return self
+
+    def remove_columns(self, columns, **kwargs):
+        if self.table.primary_key in columns:
+            raise ValueError(f"Primary key {self.table.primary_key} cannot be removed")
+        self.table.remove_columns(columns)
+        self.register_to_config(col2type=self.types)
+        return self
+
+    def rename_columns(self, column_mapping, **kwargs):
+        self.table.rename_columns(column_mapping)
+        self.register_to_config(col2type=self.types)
+
+        if self.table.primary_key in column_mapping:
+            self.register_to_config(primary_key=column_mapping[self.table.primary_key])
+        return self

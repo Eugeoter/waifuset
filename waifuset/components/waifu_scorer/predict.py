@@ -4,7 +4,7 @@ import time
 from PIL import Image
 from typing import List, Union
 from ...const import ROOT
-from ...utils import log_utils
+from ... import logging
 
 WS_CACHE_DIR = os.path.join(ROOT, "models/ws/")
 WS_REPOS = ["Eugeoter/waifu-scorer-v3"]
@@ -23,19 +23,20 @@ def repo2path(model_repo_and_path: str):
 
 
 class WaifuScorer(object):
-    def __init__(self, model_path: str = None, device: str = 'cuda', verbose=False):
+    def __init__(self, model_path: str = None, cache_dir: str = None, device: str = 'cuda', verbose=False):
         self.verbose = verbose
-        self.logger = log_utils.get_logger(self.__class__.__name__)
+        self.logger = logging.get_logger(self.__class__.__name__)
         if model_path is None:
             model_path = repo2path(WS_REPOS[0])
             if self.verbose:
                 self.logger.print(f"model path not set, switch to default: `{model_path}`")
-        elif not os.path.isfile(model_path):
+        if not os.path.isfile(model_path):
             from ...utils.file_utils import download_from_url
-            model_path = download_from_url(model_path, cache_dir=WS_CACHE_DIR)
+            self.logger.info(f"model path not found in local, trying to download from url: `{model_path}`")
+            model_path = download_from_url(model_path, cache_dir=cache_dir)
 
-        self.logger.print(f"loading pretrained model from `{log_utils.stylize(model_path, log_utils.ANSI.YELLOW, log_utils.ANSI.UNDERLINE)}`")
-        with log_utils.timer("load model", self.logger):
+        self.logger.print(f"loading pretrained model from `{logging.stylize(model_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
+        with logging.timer("load model", logger=self.logger):
             self.mlp = load_model(model_path, input_size=768, device=device)
             self.model2, self.preprocess = load_clip_models("ViT-L/14", device=device)
             self.device = self.mlp.device
@@ -44,16 +45,29 @@ class WaifuScorer(object):
 
     @torch.no_grad()
     def __call__(self, images: List[Image.Image]) -> Union[List[float], float]:
-        if isinstance(images, Image.Image):
+        return self.predict(images)
+
+    @torch.no_grad()
+    def predict(self, images: List[Union[Image.Image, torch.Tensor]]) -> Union[List[float], float]:
+        if isinstance(images, (Image.Image, torch.Tensor)):
             images = [images]
-        n = len(images)
-        if n == 1:
+        bs = len(images)
+        if bs == 1 and isinstance(images[0], Image.Image):
             images = images*2  # batch norm
-        images = encode_images(images, self.model2, self.preprocess, device=self.device).to(device=self.device, dtype=self.dtype)
-        predictions = self.mlp(images)
-        scores = predictions.clamp(0, 10).cpu().numpy().reshape(-1).tolist()
-        if n == 1:
+        im_emb_arrs = encode_images([img for img in images if isinstance(img, Image.Image)], self.model2, self.preprocess, device=self.device).to(device=self.device, dtype=self.dtype)
+        for i, img in enumerate(images):
+            if isinstance(img, torch.Tensor):
+                im_emb_arrs.insert(i, img)
+        scores = self.inference(im_emb_arrs)
+        if bs == 1:
             scores = scores[0]
+        return scores
+
+    @torch.no_grad()
+    def inference(self, im_emb_arrs: torch.Tensor) -> float:
+        im_emb_arrs = im_emb_arrs.to(device=self.device, dtype=self.dtype)
+        predictions = self.mlp(im_emb_arrs)
+        scores = predictions.clamp(0, 10).cpu().numpy().reshape(-1).tolist()
         return scores
 
 

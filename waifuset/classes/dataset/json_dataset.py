@@ -3,6 +3,7 @@ import os
 from typing import Dict, Any
 from .dict_dataset import DictDataset
 from .dataset_mixin import DiskIOMixin
+from ...const import StrPath
 
 
 class JSONDataset(DictDataset, DiskIOMixin):
@@ -12,10 +13,10 @@ class JSONDataset(DictDataset, DiskIOMixin):
         'encoding': None,
     }
 
-    def __init__(self, source: Dict[str, Any], **kwargs):
+    def __init__(self, source: Dict[str, Any], fp=None, **kwargs):
         super().__init__(source, **kwargs)
         self.register_to_config(
-            fp=kwargs.get('fp', None),
+            fp=fp,
             encoding=kwargs.get('encoding', None)
         )
 

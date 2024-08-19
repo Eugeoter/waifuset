@@ -2,6 +2,10 @@ import sqlite3
 import math
 import pandas as pd
 from typing import List, Dict, Any, Iterable, overload
+from ... import logging
+
+
+logger = logging.get_logger(name='sqlite3')
 
 PY2SQL3 = {
     str: 'TEXT',
@@ -82,10 +86,15 @@ class SQL3Table(object):
         infos = {info[1]: {'type': SQL32PY.get(info[2], None), 'notnull': bool(info[3]), 'default': info[4], 'primary_key': bool(info[5])} for info in infos}
         return infos
 
-    def add_column(self, name, type):
-        if name not in self.header:
-            self.cursor.execute(f"ALTER TABLE {self.name} ADD COLUMN {name} {PY2SQL3.get(type, 'TEXT')};")
-            self.header = get_header(self.cursor, self.name)
+    @property
+    def col2type(self):
+        return {col: info['type'] for col, info in self.info.items()}
+
+    def add_columns(self, col2type: Dict[str, type]):
+        for col, coltype in col2type.items():
+            if col not in self.header:
+                self.cursor.execute(f"ALTER TABLE {self.name} ADD COLUMN {col} {PY2SQL3.get(coltype, 'TEXT')};")
+        self.header = get_header(self.cursor, self.name)
 
     def add_primary_key(self, name):
         if name not in self.header:
@@ -93,11 +102,52 @@ class SQL3Table(object):
             self.header = get_header(self.cursor, self.name)
             self.primary_key = name
 
-    def remove_column(self, name):
-        if name in self.header:
-            self.cursor.execute(f"ALTER TABLE {self.name} DROP COLUMN {name};")
-            self.header = get_header(self.cursor, self.name)
-            self.primary_key = get_primary_key(self.cursor, self.name)
+    def remove_columns(self, columns):
+        columns = [col for col in columns if col in self.header]
+        self.database.begin_transaction()
+
+        new_table_name = f"{self.name}_tmp"
+        new_col2type = {col: coltype for col, coltype in self.col2type.items() if col not in columns}
+        self.database.create_table(new_table_name, new_col2type, primary_key=self.primary_key)
+
+        columns_str = ', '.join(new_col2type.keys())
+        self.cursor.execute(f"INSERT INTO {new_table_name} ({columns_str}) SELECT {columns_str} FROM {self.name};")
+        self.cursor.execute(f"DROP TABLE {self.name};")
+        self.cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {self.name};")
+        self.database.commit_transaction()
+
+        self.header = get_header(self.cursor, self.name)
+        self.primary_key = get_primary_key(self.cursor, self.name)
+
+    def rename_columns(self, column_mapping):
+        column_mapping = {old: new for old, new in column_mapping.items() if old in self.header}
+
+        if not column_mapping:
+            return
+
+        self.database.begin_transaction()
+
+        new_table_name = f"{self.name}_tmp"
+
+        new_col2type = {}
+        for col, coltype in self.col2type.items():
+            if col in column_mapping:
+                new_col2type[column_mapping[col]] = coltype
+            else:
+                new_col2type[col] = coltype
+
+        self.database.create_table(new_table_name, new_col2type, primary_key=self.primary_key)
+
+        old_columns_str = ', '.join(self.header)
+        new_columns_str = ', '.join([column_mapping.get(col, col) for col in self.header])
+
+        self.cursor.execute(f"INSERT INTO {new_table_name} ({new_columns_str}) SELECT {old_columns_str} FROM {self.name};")
+        self.cursor.execute(f"DROP TABLE {self.name};")
+        self.cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {self.name};")
+        self.database.commit_transaction()
+
+        self.header = get_header(self.cursor, self.name)
+        self.primary_key = get_primary_key(self.cursor, self.name)
 
     def select(self, column, statement, distinct=False, **kwargs):
         self.cursor.execute(f"SELECT {'DISTINCT' if distinct else ''}* FROM {self.name} WHERE {column} {statement}")
@@ -142,9 +192,10 @@ class SQL3Table(object):
             if 'no column' in str(e):
                 for key, value in col2data.items():
                     if key not in self.header:
-                        self.add_column(key, type(value))
+                        self.add_columns({key: type(value)})
                 self.cursor.execute(cmd)
             else:
+                logger.error(f"error occurred when executing command: `{cmd}`, columns: {self.col2type}")
                 raise
 
     def update_where(self, col2data: Dict[str, Any], where: str):
@@ -163,13 +214,13 @@ class SQL3Table(object):
         self.cursor.execute(f"SELECT * FROM {self.name} ORDER BY RANDOM() LIMIT {n}" if randomly else f"SELECT * FROM {self.name} LIMIT {n}")
         return self.cursor.fetchall()
 
-    @ overload
+    @overload
     def __getitem__(self, key: str) -> Dict[str, Any]: ...
 
-    @ overload
+    @overload
     def __getitem__(self, index: int) -> Dict[str, Any]: ...
 
-    @ overload
+    @overload
     def __getitem__(self, range: slice) -> List[Dict[str, Any]]: ...
 
     def __getitem__(self, key):
@@ -257,9 +308,9 @@ class SQL3Table(object):
 
 
 class SQLite3Database(object):
-    def __init__(self, fp=None):
+    def __init__(self, fp=None, read_only=False):
         self.fp = fp or ':memory:'
-        self.conn = sqlite3.connect(self.fp, check_same_thread=False)  # auto-commit
+        self.conn = sqlite3.connect(self.fp, check_same_thread=False, uri=read_only and fp != ':memory:')  # auto-commit
         self.cursor = self.conn.cursor()
 
     def __del__(self):
@@ -271,9 +322,9 @@ class SQLite3Database(object):
     def create_table(self, name, col2type: Dict[str, type] = {}, exists_ok=False, primary_key=None):
         if exists_ok and name in self.get_all_tablenames():
             return self
-        assert len(col2type) > 0, "At least one column must be specified."
         if primary_key:
             col2type[primary_key] = col2type.get(primary_key, str)
+        assert len(col2type) > 0, "At least one column must be specified."
         col2type_str = ', '.join([f"{k} {PY2SQL3.get(v, 'TEXT')}" for k, v in col2type.items()]) + (f", PRIMARY KEY ({primary_key})" if primary_key else "")
         self.cursor.execute(f"CREATE TABLE {name} ({col2type_str});")
         return self
@@ -310,3 +361,12 @@ class SQLite3Database(object):
     def vacuum(self):
         self.cursor.execute("VACUUM;")
         return self
+
+    def set_read_only(self):
+        self.conn.close()
+
+        if self.fp == ':memory:':
+            raise ValueError("Cannot set an in-memory database to read-only mode")
+        else:
+            self.conn = sqlite3.connect(f'file:{self.fp}?mode=ro', uri=True, check_same_thread=False)  # read-only
+            self.cursor = self.conn.cursor()

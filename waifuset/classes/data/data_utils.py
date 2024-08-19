@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import List, Literal
-from .caption import tagging
+from ... import tagging
 
 
 def read_attrs(fp, types: List[Literal['txt', 'danbooru']] = None):

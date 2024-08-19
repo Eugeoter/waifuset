@@ -29,6 +29,31 @@ class Hakubooru(SQLite3Dataset):
         self._tagbase = None
         self._tagwiki = None
 
+    def query_post(
+        self,
+        tags,
+        postprocess=True,
+    ):
+        tags = tags if isinstance(tags, list) else [tags]
+        tag_ids = [dec_to_base36(self.tag2id[tag]) for tag in tags]
+        cond = ' AND '.join(f"tag_list GLOB \'*[$#]{tag_id}#*\'" for tag_id in tag_ids)
+        self.cursor.execute(f"SELECT * FROM post WHERE {cond}")
+        rows = self.cursor.fetchall()
+        for row in rows:
+            yield self.postprocessor(row, enable=postprocess)
+
+    def query_tag_wiki(self, tag):
+        tag_id = self.tag2id.get(tag)
+        if tag_id is None:
+            return None
+        return self.tagwiki.get(tag_id)
+
+    def query_tag(self, tag):
+        tag_id = self.tag2id.get(tag)
+        if tag_id is None:
+            return None
+        return self.tagbase.get(tag_id)
+
     def postprocessor(self, row, enable=True):
         if not enable:
             return row
@@ -62,23 +87,6 @@ class Hakubooru(SQLite3Dataset):
             self._tag2id = get_tag2id(db)
         return self._tag2id
 
-    def get_tag_wiki(self, tag):
-        tag_id = self.tag2id[tag]
-        return self.tagwiki.get(tag_id)
-
-    def query(
-        self,
-        tags,
-        postprocess=True,
-    ):
-        tags = tags if isinstance(tags, list) else [tags]
-        tag_ids = [dec_to_base36(self.tag2id[tag]) for tag in tags]
-        cond = ' AND '.join(f"tag_list GLOB \'*[$#]{tag_id}#*\'" for tag_id in tag_ids)
-        self.cursor.execute(f"SELECT * FROM post WHERE {cond}")
-        rows = self.cursor.fetchall()
-        for row in rows:
-            yield self.postprocessor(row, enable=postprocess)
-
     def download_one(
         self,
         info,
@@ -110,7 +118,7 @@ class Hakubooru(SQLite3Dataset):
         save_image=True,
         save_metadata=True,
     ):
-        query = self.query(tags)
+        query = self.query_post(tags)
         for info in self.logger.tqdm(query, desc=f"download {tags}"):
             self.download_one(info, directory=directory, save_image=save_image, save_metadata=save_metadata)
 

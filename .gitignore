@@ -178,8 +178,12 @@ launch.bat
 .backup
 scripts
 /demos
-*_private.py
+*_private*
+*_dev*
 waifuset/json/tag_list.json
 waifuset/json/tag_table.json
-*_dev*
 .git.bak
+*gallery_dl*
+*gallery-dl*
+downbooru
+merger

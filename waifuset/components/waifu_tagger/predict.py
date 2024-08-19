@@ -4,11 +4,13 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from typing import Dict, List, Union
+
+from ... import logging
 from ...const import ROOT
 from ..loaders import OnnxModelLoader
-from ...utils import image_utils, log_utils
+from ...utils import image_utils
 
-WD_CACHE_DIR = os.path.join(ROOT, "models/wd")
+# WD_CACHE_DIR = os.path.join(ROOT, "models/wd")
 WD_REPOS = ["SmilingWolf/wd-swinv2-tagger-v3", "SmilingWolf/wd-vit-tagger-v3", "SmilingWolf/wd-convnext-tagger-v3"]
 
 
@@ -28,9 +30,9 @@ def repo2path(model_repo_or_path: str):
 
 
 class WaifuTagger(OnnxModelLoader):
-    def __init__(self, model_path=None, label_path=None, cache_dir=WD_CACHE_DIR, device='cuda', verbose=False):
+    def __init__(self, model_path=None, label_path=None, cache_dir=None, device='cuda', verbose=False):
         self.verbose = verbose
-        self.logger = log_utils.get_logger(self.__class__.__name__)
+        self.logger = logging.get_logger(self.__class__.__name__)
         import pandas as pd
 
         if model_path is None:
@@ -44,7 +46,7 @@ class WaifuTagger(OnnxModelLoader):
         else:
             self.logger.print(f"label_path: {label_path}")
 
-        self.logger.print(f"cache_dir: {os.path.abspath(cache_dir)}")
+        # self.logger.print(f"cache_dir: {os.path.abspath(cache_dir)}")
 
         super().__init__(model_path=model_path, model_url=model_path, cache_dir=cache_dir, device=device, verbose=verbose)
 

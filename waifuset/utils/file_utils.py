@@ -4,7 +4,7 @@ import re
 import time
 from typing import Optional, Iterable, Union
 from pathlib import Path
-from . import log_utils
+from .. import logging
 
 StrPath = Union[str, Path]
 
@@ -120,7 +120,7 @@ def download_from_url(url, cache_dir=None, verbose=True):
 
 
 class delayed_keyboard_interrupt:
-    logger = log_utils.get_logger('system', color='bright_magenta')
+    logger = logging.get_logger('system', prefix_color=logging.ANSI.MAGENTA)
 
     def __enter__(self):
         self.signal_received = False

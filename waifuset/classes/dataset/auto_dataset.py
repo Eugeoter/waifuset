@@ -15,7 +15,7 @@ def get_dataset_cls_from_source(source):
         if not ext and os.path.isdir(source):
             from .directory_dataset import DirectoryDataset
             return DirectoryDataset
-        elif ext == '.sqlite3':
+        elif ext == '.sqlite3' or ext == '.db':
             from .sqlite3_dataset import SQLite3Dataset
             return SQLite3Dataset
         elif ext == '.csv':
@@ -31,12 +31,18 @@ def get_dataset_cls_from_source(source):
 
 
 class AutoDataset(object):
-    def __new__(cls, source, **kwargs):
+    def __new__(cls, source, dataset_cls=None, **kwargs) -> Dataset:
         ds_cls = get_dataset_cls_from_source(source)
         if issubclass(ds_cls, FromDiskMixin):
-            return ds_cls.from_disk(source, **kwargs)
+            ds = ds_cls.from_disk(source, **kwargs)
         else:
-            return ds_cls(source, **kwargs)
+            ds = ds_cls(source, **kwargs)
+        if dataset_cls is not None:
+            ds = dataset_cls.from_dataset(ds, **kwargs)
+        return ds
+
+    def __init__(self, source, dataset_cls=None, **kwargs) -> Dataset:
+        pass
 
     @staticmethod
     def dump(dataset, fp, *args, **kwargs):
@@ -44,5 +50,5 @@ class AutoDataset(object):
         cls_ = get_dataset_cls_from_source(fp)
         if not issubclass(cls_, ToDiskMixin):
             raise TypeError(f'{cls_} does not support dump')
-        dumpset = cls_.from_dataset(dataset, *args, fp=fp, **kwargs)
+        dumpset = cls_.from_dataset(dataset, *args, fp=fp, source=fp, **kwargs)
         dumpset.commit()

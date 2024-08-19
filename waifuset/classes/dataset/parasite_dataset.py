@@ -1,5 +1,6 @@
 from typing import Dict, List, Iterable, Callable, overload
 from .dataset import Dataset
+from ... import logging
 
 
 def get_root(dataset: Dataset) -> Dataset:
@@ -32,6 +33,12 @@ class ParasiteDataset(Dataset):
             return getattr(self.host, name)
         else:
             return super().__getattr__(name)
+
+    def get_root(self):
+        return self.root
+
+    def get_host(self):
+        return self.host
 
     @overload
     def __getitem__(self, key: str) -> Dict: ...

@@ -2,7 +2,7 @@ import json
 from typing import Dict, List, Union
 from tqdm import tqdm
 from pathlib import Path
-from . import tagging
+from .... import tagging
 
 
 class DanTag:
@@ -137,6 +137,9 @@ def freq_table_to_feature_table(freq_table, freq_thres=0.3, character_features_o
 
 
 def get_table_type(table):
+    r"""
+    Get the type of the feature table.
+    """
     v0 = next(iter(table.values()))
     if isinstance(v0, (list, set, tuple)):
         return 'feature_table'

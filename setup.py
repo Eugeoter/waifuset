@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-with open('./requirements.txt') as f:
+with open('setup_requirements.txt') as f:
     requirements = f.read().splitlines()
 
 packages = find_packages(
@@ -8,7 +8,7 @@ packages = find_packages(
 
 setup(
     name='waifuset',
-    version='0.2',
+    version='0.2.1dev0',
     packages=packages,
     include_package_data=True,
     description='Image caption tools',

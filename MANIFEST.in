@@ -1,9 +1,9 @@
 recursive-include waifuset/json overlap_tags.json
-recursive-include waifuset/json feature_table.json
 recursive-include waifuset/json priority_table.json
-recursive-include waifuset/json translation_cn.json
 recursive-include waifuset/json artist_tags.json
 recursive-include waifuset/json character_tags.json
 recursive-include waifuset/json copyright_tags.json
 recursive-include waifuset/json meta_tags.json
 recursive-include waifuset/json custom_tags.json
+recursive-include waifuset/json ch2physics.json
+recursive-include waifuset/json ch2clothes.json

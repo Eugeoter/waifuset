@@ -1,11 +1,11 @@
 import pandas as pd
 import copy
 import functools
-from typing import Callable, Dict
+from typing import Callable, Dict, List
 from abc import abstractmethod
 from collections import OrderedDict
 from .dataset_mixin import ConfigMixin
-from ...utils import log_utils
+from ... import logging
 
 
 def get_header(dic):
@@ -45,7 +45,7 @@ class Dataset(ConfigMixin):
         self.name = name + '.' + self.__class__.__name__ if name else self.__class__.__name__
         self.dtype = dtype or dict
         self.verbose = verbose
-        self.logger = log_utils.get_logger(name=name, disable=not self.verbose)
+        self.logger = logging.get_logger(name=self.name, disable=not self.verbose)
         self.register_to_config(
             name=self.name,
             dtype=self.dtype,
@@ -109,9 +109,14 @@ class Dataset(ConfigMixin):
     def from_dict(cls, dic: Dict, **kwargs):
         pass
 
-    @functools.cached_property
+    @property
     def header(self):
-        return get_header(self.dict())
+        if not hasattr(self, '_header'):
+            self.update_header()
+        return self._header
+
+    def update_header(self, header=None):
+        self._header = header or get_header(self.dict())
 
     @functools.cached_property
     def types(self):
@@ -119,6 +124,8 @@ class Dataset(ConfigMixin):
 
     @classmethod
     def from_dataset(cls, dataset: 'Dataset', **kwargs):
+        if dataset.__class__ == cls:
+            return dataset
         kwargs = {**dataset.config, **kwargs}
         return cls.from_dict(dataset.dict(), **kwargs)
 
@@ -135,8 +142,8 @@ class Dataset(ConfigMixin):
     def __str__(self):
         df_str = str(self.df())
         width = max(len(line) for line in df_str.split('\n'))
-        title = log_utils.magenta(self.name.center(width))
-        info = log_utils.yellow(f"size: {len(self)}x{len(self.header)}".center(width))
+        title = logging.magenta(self.name.center(width))
+        info = logging.yellow(f"size: {len(self)}x{len(self.header)}".center(width))
         return '\n'.join([title, info, df_str])
 
     def __repr__(self):
@@ -220,26 +227,75 @@ class Dataset(ConfigMixin):
         for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
             self.set(k, {h: v[h] for h in columns if h in self.header})
 
-    def apply_map(self, func: Callable[[Dict], Dict], *args, **kwargs):
+    def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
         postfix = {'done': 0, 'skip': 0}
         tqdm_kwargs = dict(total=len(self), desc=func.__name__.replace('_', ' '), postfix=postfix)
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
         pbar = self.logger.tqdm(**tqdm_kwargs)
         for k, v in self.items():
-            new_v = func(v, *args, **kwargs)
+            if condition is None or condition(v):
+                new_v = func(v, *args, **kwargs)
+            else:
+                new_v = None
             if new_v is None:
                 postfix['skip'] += 1
             else:
-                self[k] = new_v
+                self.set(k, new_v)
                 postfix['done'] += 1
             pbar.set_postfix(postfix)
             pbar.update(1)
+        self.update_header()
 
-    def with_map(self, func: Callable[[Dict], Dict], *args, **kwargs):
+    def with_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
         new = self.copy()
-        new.apply_map(func, *args, **kwargs)
+        new.apply_map(func, *args, condition=condition, **kwargs)
         return new
+
+    def add_columns(self, columns, **kwargs):
+        tqdm_kwargs = dict(desc='add columns')
+        tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
+        kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
+        for k, v in self.logger.tqdm(self.items(), **tqdm_kwargs):
+            for col in columns:
+                v.setdefault(col, None)
+        self.update_header(self.header + [col for col in columns if col not in self.header])
+        return self
+
+    def remove_columns(self, columns, **kwargs):
+        tqdm_kwargs = dict(desc='remove columns')
+        tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
+        kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
+        for k, v in self.logger.tqdm(self.items(), **tqdm_kwargs):
+            for col in columns:
+                v.pop(col, None)
+        self.update_header([col for col in self.header if col not in columns])
+        return self
+
+    def rename_columns(self, column_mapping, **kwargs):
+        tqdm_kwargs = dict(desc='rename columns')
+        tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
+        kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
+        column_mapping = {k: v for k, v in column_mapping.items() if k in self.header and k != v}
+        for k, v in self.logger.tqdm(self.items(), **tqdm_kwargs):
+            for col, val in v.items():
+                if col in column_mapping:
+                    val[column_mapping[col]] = val.pop(col)
+        self.update_header([column_mapping.get(col, col) for col in self.header])
+        return self
 
     def copy(self):
         return copy.deepcopy(self)
+
+    def batch_keys(self, batch_size) -> List[List[str]]:
+        img_keys = list(self.keys())
+        return [img_keys[i:i + batch_size] for i in range(0, len(self), batch_size)]
+
+    def set_verbose(self, verbose):
+        self.verbose = verbose
+        self.logger.get_disable = not verbose
+        self.register_to_config(verbose=verbose)
+
+    def set_dtype(self, dtype):
+        self.dtype = dtype
+        self.register_to_config(dtype=dtype)
