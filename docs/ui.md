@@ -104,8 +104,6 @@ dataset_source = ["path/to/images", "path/to/metadata.json"]
 
 当使用多数据集源时，必须指定在 UI 内指定 `save_path` 为数据库文件路径，以保存合并后的数据集。
 
-```python
-
 ## 定义
 
 Waifuset 对数据有自身的命名方式和习惯，参照[术语](#术语)表格以了解更多。
@@ -258,4 +256,7 @@ Waifuset 启动后的第一次进行标签搜索会比较缓慢，需等待片�
 4. 未知标签后置。
 
 您可在 `waifuset/json/priority_table.json` 中浏览和修改一般标签优先级顺序。但注意，每次项目更新都会覆盖此文件，请在更新前备份。
+
+```
+
 ```
