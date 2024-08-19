@@ -1,3 +1,17 @@
+## 更新
+
+您当前浏览的项目是 Waifuset1.0。目前，Waifuset 2.0 版本已经更新（[点我浏览](https://github.com/Eugeoter/waifuset/tree/v2)），其特点有：
+
+- 更强大的数据集加载，支持 SQLite 数据集；
+- 支持多数据集处理；
+- 更准确且快速的标注优化算法；
+
+通过在终端中运行以下命令更新至 Waifuset2.0 （需要 cd 到项目目录下）：
+
+```bash
+git checkout v2
+```
+
 # Waifuset
 
 Waifuset 是一个专门用于构建和管理文生图数据集的工具，其设计重点在于提供一个安全、高效、便捷、可以远程访问的用户界面（UI）。
