@@ -42,15 +42,15 @@ def get_primary_key(cursor, table):
     return primary_key
 
 
-def get_sql_value_str(value):
+def get_sql_value_str(value, recursive=True):
     if value is None:
         return 'NULL'
     elif isinstance(value, bool):
         return '1' if value else '0'
     elif isinstance(value, (int, float)):
         return str(value)
-    elif isinstance(value, Iterable) and not isinstance(value, str):
-        return '(' + ', '.join([get_sql_value_str(v) for v in value]) + ')'
+    elif isinstance(value, Iterable) and not isinstance(value, str) and recursive:
+        return '(' + ', '.join([get_sql_value_str(v, recursive=False) for v in value]) + ')'
     elif isinstance(value, str) and len(value) > 2 and value[0] == '$' and value[-1] == '$':  # column
         return value[1:-1]
     else:
@@ -195,7 +195,9 @@ class SQL3Table(object):
                         self.add_columns({key: type(value)})
                 self.cursor.execute(cmd)
             else:
-                logger.error(f"error occurred when executing command: `{cmd}`, columns: {self.col2type}")
+                df = pd.DataFrame({col: {'excepted': self.col2type[col], 'received': type(col2data[col])} for col in col2data}).T
+                logger.error(f"error occurred when executing command: `{cmd}`")
+                logger.error(df, no_prefix=True)
                 raise
 
     def update_where(self, col2data: Dict[str, Any], where: str):

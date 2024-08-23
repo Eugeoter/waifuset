@@ -20,7 +20,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def __init__(self, source: StrPath = None, tbname=None, read_only=False, **kwargs):
         Dataset.__init__(self, **kwargs)
         primary_key = kwargs.pop('primary_key', None)
-        col2type = kwargs.pop('col2type', None)
+        col2type = kwargs.pop('col2type', {})
         SQLite3Database.__init__(self, fp=kwargs.pop('fp', None) or source, read_only=read_only)  # set self.path here
         self.register_to_config(fp=self.fp, read_only=read_only)
         if tbname is None:

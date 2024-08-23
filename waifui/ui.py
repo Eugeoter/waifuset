@@ -1326,7 +1326,19 @@ def create_ui(
                 rootset = univset.root
 
                 # patch for DirectoryDataset
-                if rootset.__class__.__name__ == "DirectoryDataset":
+                if isinstance(rootset, ToDiskMixin):
+                    os.makedirs(os.path.dirname(fp), exist_ok=True)
+                    rootset.commit() if fp else rootset.dump(fp)
+                    return f"saved: {rootset.path}"
+                elif fp:
+                    ext = os.path.splitext(fp)[1]
+                    if ext not in ('.json', '.csv', '.sqlite3', '.db'):
+                        raise gr.Error(f"unsupported extension: {ext}")
+                        return {log_box: f"unsupported extension: {ext}"}
+                    os.makedirs(os.path.dirname(fp), exist_ok=True)
+                    AutoDataset.dump(rootset, fp)
+                    return f"saved: {fp}"
+                elif rootset.__class__.__name__ == "DirectoryDataset":
                     def save_one(img_md):
                         img_path = Path(img_md['image_path'])
                         txt_path = img_path.with_suffix('.txt')
@@ -1337,18 +1349,9 @@ def create_ui(
                     for img_md in buffer.latests().values():
                         save_one(img_md)
                     return f"saved"
-                elif isinstance(rootset, ToDiskMixin):
-                    os.makedirs(os.path.dirname(fp), exist_ok=True)
-                    rootset.commit() if fp else rootset.dump(fp)
-                    return f"saved: {rootset.path}"
                 else:
-                    ext = os.path.splitext(fp)[1]
-                    if ext not in ('.json', '.csv', '.sqlite3', '.db'):
-                        raise gr.Error(f"unsupported extension: {ext}")
-                        return {log_box: f"unsupported extension: {ext}"}
-                    os.makedirs(os.path.dirname(fp), exist_ok=True)
-                    AutoDataset.dump(rootset, fp)
-                    return f"saved: {fp}"
+                    raise gr.Error(f"failed to save dataset: Dataset type not supported or invalid save path")
+                    return {log_box: f"failed to save dataset: Dataset type not supported or invalid save path"}
 
             save_btn.click(
                 fn=save_to_disk,

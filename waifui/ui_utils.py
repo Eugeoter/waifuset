@@ -105,6 +105,9 @@ class UIBuffer(object):
     def __contains__(self, key):
         return key in self.buffer
 
+    def __len__(self):
+        return len(self.buffer)
+
 
 class UIGallerySelectData:
     def __init__(self, index=None, key=None):
