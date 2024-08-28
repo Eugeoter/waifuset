@@ -3,8 +3,8 @@ tqdm
 numpy
 pillow
 imagehash
-opencv-contrib-python
 datasets
+opencv-contrib-python
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger
 # onnxruntime # required by Waifu Tagger (cpu model only)
