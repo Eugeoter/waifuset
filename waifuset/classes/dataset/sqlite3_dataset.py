@@ -239,6 +239,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def subset(self, column: str, statement: str, **kwargs) -> 'SQLite3Dataset': ...
 
     def subset(self, condition_or_column, statement=None, **kwargs):
+        kwargs['fp'] = None  # ensure in-memory dataset
         if isinstance(condition_or_column, str) and statement is not None:
             return self.select(condition_or_column, statement, **kwargs)
         else:

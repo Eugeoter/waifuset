@@ -64,6 +64,8 @@ def load_fast_dataset(
     for i, src in enumerate(source):
         if isinstance(src, Dataset):
             datasets.append(src)
+            if not hasattr(src, 'priority'):
+                src.priority = i
             continue
         name_or_path = src.pop('name_or_path')
         primary_key = src.pop('primary_key', 'image_key')
