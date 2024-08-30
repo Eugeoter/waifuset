@@ -6,7 +6,6 @@ import pandas
 from pathlib import Path
 from PIL import Image
 from functools import wraps
-from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Callable, Any, Tuple, Dict, List, Iterable, Union, Optional, Literal
 from pathlib import Path
 from copy import deepcopy
@@ -16,8 +15,8 @@ from waifuset import Dataset, Caption, SQLite3Dataset, AutoDataset, FastDataset
 from waifuset.utils import image_utils, class_utils
 from waifuset.classes.dataset.dataset_mixin import ToDiskMixin
 from waifuset.classes.data import data_utils
-from waifuset.components.waifu_tagger.predict import WD_REPOS
-from waifuset.components.waifu_scorer.predict import WS_REPOS
+from waifuset.components.waifu_tagger.const import WD_REPOS
+from waifuset.components.waifu_scorer.const import WS_REPOS
 from .emoji import Emoji
 from .ui_utils import *
 from .ui_dataset import UIDataset, UISubset
@@ -1226,6 +1225,7 @@ def create_ui(
                                 elif isinstance(res, list):
                                     results.extend(res)
                         else:
+                            from concurrent.futures import ThreadPoolExecutor, wait
                             with ThreadPoolExecutor(max_workers=cpu_max_workers) as executor:
                                 futures = [executor.submit(edit_batch, batch, *args, **kwargs) for batch in batches]
                                 try:
@@ -1597,6 +1597,8 @@ def create_ui(
             )
 
             def decharacterize_caption(img_md, feature_type, freq_thres):
+                if language != 'en':
+                    feature_type = translate(feature_type, 'en')
                 caption = img_md.get('caption', None)
                 if caption is None:
                     return None
@@ -1624,7 +1626,11 @@ def create_ui(
                         return []
 
                 if waifu_tagger is None or (waifu_tagger and waifu_tagger.model_name != model_repo_or_path):
-                    from waifuset.components.waifu_tagger.predict import WaifuTagger, repo2path
+                    try:
+                        from waifuset.components.waifu_tagger.predict import WaifuTagger, repo2path
+                    except ModuleNotFoundError as e:
+                        missing_package_name = e.name
+                        raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
                     model_path, label_path = repo2path(model_repo_or_path)
                     waifu_tagger = WaifuTagger(model_path=model_path, label_path=label_path, verbose=True)
                     waifu_tagger.model_name = model_repo_or_path
@@ -1657,8 +1663,12 @@ def create_ui(
 
                 nonlocal waifu_scorer
                 if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != model_repo_or_path):
-                    import torch
-                    from waifuset.components.waifu_scorer.predict import WaifuScorer, repo2path
+                    try:
+                        import torch
+                        from waifuset.components.waifu_scorer.predict import WaifuScorer, repo2path
+                    except ModuleNotFoundError as e:
+                        missing_package_name = e.name
+                        raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
                     model_path = repo2path(model_repo_or_path)
                     waifu_scorer = WaifuScorer(model_path=model_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
                     waifu_scorer.model_name = model_repo_or_path

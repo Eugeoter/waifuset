@@ -221,7 +221,10 @@ class Dataset(ConfigMixin):
 
     def kitems(self, key: str, **kwargs):
         for k, v in self.items():
-            yield k, v[key]
+            try:
+                yield k, v[key]
+            except KeyError as e:
+                raise KeyError(f"key `{key}` not found in item `{k}`: `{v}`. ") from e
 
     def redirect(self, columns, tarset: 'Dataset'):
         for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):

@@ -1,13 +1,9 @@
 import torch
 import os
-import time
 from PIL import Image
 from typing import List, Union
-from ...const import ROOT
+from .const import WS_REPOS
 from ... import logging
-
-WS_CACHE_DIR = os.path.join(ROOT, "models/ws/")
-WS_REPOS = ["Eugeoter/waifu-scorer-v3"]
 
 
 def repo2path(model_repo_and_path: str):
@@ -81,7 +77,7 @@ def load_model(model_path: str = None, input_size=768, device: str = 'cuda', dty
     from .mlp import MLP
     model = MLP(input_size=input_size)
     if model_path:
-        s = torch.load(model_path, map_location=device)
+        s = torch.load(model_path, map_location=device, weights_only=True)
         model.load_state_dict(s)
         model.to(device)
     if dtype:

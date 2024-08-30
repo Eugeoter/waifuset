@@ -209,7 +209,7 @@ class SQL3Table(object):
             if 'no such column' in str(e):
                 for key, value in col2data.items():
                     if key not in self.header:
-                        self.add_column(key, type(value))
+                        self.add_columns({key: type(value)})
                 self.cursor.execute(cmd)
 
     def sample(self, n=1, randomly=True):

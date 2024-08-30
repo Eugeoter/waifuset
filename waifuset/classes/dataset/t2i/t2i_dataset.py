@@ -2,6 +2,7 @@ import os
 import random
 import numpy as np
 import time
+import PIL
 from pathlib import Path
 from PIL import Image
 from typing import List, Callable, Dict, Any, Union, Literal
@@ -187,7 +188,11 @@ class T2IDataset(config_utils.FromConfigMixin, AspectRatioBucketMixin):
         elif (image := img_md.get('image')) is not None:
             assert isinstance(image, Image.Image), f"image must be an instance of PIL.Image.Image, but got {type(image)}: {image}"
         elif os.path.exists(img_path := img_md.get('image_path', '')):
-            image = Image.open(img_path)
+            try:
+                image = Image.open(img_path)
+            except PIL.Image.DecompressionBombError:
+                self.logger.warning(f"DecompressionBombError: {img_md['image_key']}")
+                return None
         else:
             self.logger.warning(f"failed to open image for {img_md['image_key']}")
             return None

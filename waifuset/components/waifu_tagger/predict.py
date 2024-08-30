@@ -1,17 +1,13 @@
 import os
-import cv2
 import numpy as np
 from pathlib import Path
 from PIL import Image
 from typing import Dict, List, Union
 
 from ... import logging
-from ...const import ROOT
 from ..loaders import OnnxModelLoader
 from ...utils import image_utils
-
-# WD_CACHE_DIR = os.path.join(ROOT, "models/wd")
-WD_REPOS = ["SmilingWolf/wd-swinv2-tagger-v3", "SmilingWolf/wd-vit-tagger-v3", "SmilingWolf/wd-convnext-tagger-v3"]
+from .const import WD_REPOS
 
 
 def repo2path(model_repo_or_path: str):
@@ -147,6 +143,7 @@ class WaifuTagger(OnnxModelLoader):
 
 
 def preprocess_image(image, size: int):
+    import cv2
     # 1. load image
     # convert to numpy array
     if isinstance(image, (str, Path)):

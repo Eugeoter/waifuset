@@ -1,1 +1,1 @@
-from .predict import WaifuTagger
+

@@ -4,6 +4,7 @@ numpy
 pillow
 imagehash
 datasets
+opencv-python
 opencv-contrib-python
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger

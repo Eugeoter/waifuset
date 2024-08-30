@@ -5,7 +5,9 @@ pillow
 imagehash
 gradio>=4.31.3
 datasets
-opencv-contrib-python
+opencv-python
+absl
+ml-collections
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger
 # onnxruntime # required by Waifu Tagger (cpu model only)

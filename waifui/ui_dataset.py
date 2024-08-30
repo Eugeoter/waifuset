@@ -1,7 +1,6 @@
 import math
 import os
 import gradio as gr
-import functools
 from typing import Union, Tuple, Dict, Iterable
 from pathlib import Path
 from waifuset import Dataset, ParasiteDataset, DictDataset

@@ -73,7 +73,7 @@ Waifuset 的启动和使用非常直观。请遵循以下步骤快速开始：
 
 1. **配置启动参数**
 
-打开 launch_ui.py 文件，在 `get_config` 函数中通过修改变量值来配置您的启动参数。
+打开 app.py 文件，在 `get_config` 函数中通过修改变量值来配置您的启动参数。
 
 ```python
 def get_config():
@@ -99,7 +99,7 @@ def get_config():
    在控制台中，输入以下命令以启动 Waifuset：
 
    ```bash
-   python launch_ui.py
+   python app.py
    ```
 
 3. **访问 UI 界面**
@@ -159,4 +159,4 @@ pip install git+https://github.com/Eugeoter/waifuset.git
 pip install .
 ```
 
-这将允许您在 Python 脚本中导入和使用 Waifuset。
+这将允许您在自己的 Python 环境中导入和使用 Waifuset。

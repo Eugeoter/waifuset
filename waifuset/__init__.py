@@ -23,8 +23,9 @@ if LAZY_IMPORT:
         'classes.dataset.auto_dataset': ['AutoDataset'],
         'classes.dataset.fast_dataset': ['FastDataset'],
         'classes.dataset.chain_dataset': ['ChainDataset'],
-        'components.waifu_tagger': ['WaifuTagger'],
-        'components.waifu_scorer': ['WaifuScorer'],
+        'classes.dataset.t2i.t2i_dataset': ['T2IDataset'],
+        'components.waifu_tagger.predict': ['WaifuTagger'],
+        'components.waifu_scorer.predict': ['WaifuScorer'],
     }
     sys.modules[__name__] = _LazyModule(__name__, globals()['__file__'], import_structure=_import_structure, module_spec=__spec__)
 
@@ -48,5 +49,6 @@ else:
     from .classes.dataset.auto_dataset import AutoDataset
     from .classes.dataset.fast_dataset import FastDataset
     from .classes.dataset.chain_dataset import ChainDataset
-    from .components.waifu_tagger import WaifuTagger
-    from .components.waifu_scorer import WaifuScorer
+    from .classes.dataset.t2i.t2i_dataset import T2IDataset
+    from .components.waifu_tagger.predict import WaifuTagger
+    from .components.waifu_scorer.predict import WaifuScorer
