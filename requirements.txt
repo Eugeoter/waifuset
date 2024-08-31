@@ -6,7 +6,7 @@ imagehash
 gradio>=4.31.3
 datasets
 opencv-python
-absl
+absl-py
 ml-collections
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger
