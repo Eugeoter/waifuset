@@ -67,6 +67,7 @@ def load_fast_dataset(
             if not hasattr(src, 'priority'):
                 src.priority = i
             continue
+        src = dict(src)
         name_or_path = src.pop('name_or_path')
         primary_key = src.pop('primary_key', 'image_key')
         if local_only or os.path.exists(name_or_path):
@@ -104,8 +105,9 @@ def load_fast_dataset(
             dataset = mapping(dataset)
         dataset.priority = src.pop('priority', i)
         datasets.append(dataset)
-        logger.info(f"[{i}/{len(source)}] {dataset.name}: ", disable=not verbose)
-        logger.info(dataset, no_prefix=True, disable=not verbose)
+        verbose_local = src.pop('verbose', False)
+        logger.info(f"[{i}/{len(source)}] {dataset.name}: ", disable=not verbose_local)
+        logger.info(dataset, no_prefix=True, disable=not verbose_local)
     if merge_mode != 'no':
         datasets.sort(key=lambda x: x.priority, reverse=True)
         dataset = accumulate_datasets(datasets, mode=merge_mode, verbose=verbose)
