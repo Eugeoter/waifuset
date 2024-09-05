@@ -25,9 +25,11 @@ from .ui_dataset import UIDataset, UISubset
 class UIManager(class_utils.FromConfigMixin):
     dataset_source: Union[str, List[str], Dict[str, Any], List[Dict[str, Any]]] = None
     share: bool = False
-    port: Optional[int] = None
-    language: Literal['en', 'cn'] = 'cn'
-    page_size: int = 40
+    gradio_sever_port: Optional[int] = None
+    gradio_sever_name: Optional[str] = None
+    gradio_max_threads: Optional[int] = 40
+    ui_language: Literal['en', 'cn'] = 'cn'
+    ui_page_size: int = 40
     cpu_max_workers: int = 1
     verbose: bool = False
 
@@ -56,16 +58,16 @@ class UIManager(class_utils.FromConfigMixin):
 
     def load_dataset(self):
         with self.logger.timer('loading UI dataset'):
-            with self.logger.timer('load dataset'):
+            with self.logger.timer('load dataset', level='debug'):
                 dataset = FastDataset(self.dataset_source, verbose=self.verbose, **self.get_default_kwargs())
-            with self.logger.timer('patch dataset'):
+            with self.logger.timer('patch dataset', level='debug'):
                 if any(col not in dataset.header for col in ('image_key', 'category')):
                     self.logger.print('patching image path base info')
                     dataset.add_columns(['image_path', 'image_key', 'category', 'source', 'caption', 'description'])
                     dataset.apply_map(patch_image_path_base_info)
             dataset = UIDataset(
                 dataset,
-                page_size=self.page_size
+                page_size=self.ui_page_size
             )
         # self.logger.print(dataset, no_prefix=True)
         self.logger.print(f"dataset size: {len(dataset)}x{len(dataset.header)}")
@@ -73,22 +75,24 @@ class UIManager(class_utils.FromConfigMixin):
 
     def setup(self):
         self.logger.print("setting up UI")
-        with self.logger.timer('setup'):
+        with self.logger.timer('setup', level='debug'):
             self.dataset = self.load_dataset()
             with self.logger.timer('launch ui'):
                 self.ui = create_ui(
                     univset=self.dataset,
                     buffer=UIBuffer(),
                     cpu_max_workers=self.cpu_max_workers,
-                    language=self.language,
+                    language=self.ui_language,
                     render='full',
                 )
 
     def launch(self):
         self.logger.print("launching UI")
-        self.ui.launch(
+        self.ui.queue().launch(
             share=self.share,
-            server_port=self.port,
+            server_port=self.gradio_sever_port,
+            server_name=self.gradio_sever_name,
+            max_threads=self.gradio_max_threads,
         )
 
 
@@ -569,8 +573,9 @@ def create_ui(
 
                                 with gr.Tab(label=translate('Scorer', language)):
                                     with gr.Row(variant='compact'):
-                                        ws_run_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
-                                        ws_delabel_btn = EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
+                                        ws_add_score_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                        ws_score2quality_btn = EmojiButton(Emoji.label, min_width=40)
+                                        ws_del_score_btn = EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
 
                                     with gr.Row(variant='compact'):
                                         ws_model = gr.Dropdown(
@@ -942,7 +947,9 @@ def create_ui(
             cur_img_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, description, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
             BASE_MD_KEYS = ('image_key', 'image_path', 'caption', 'description')
             CAPTION_MD_KEYS = tagging.TAG_TYPES
-            OTHER_MD_KEYS = [key for key in univset.header if key not in (*BASE_MD_KEYS, *CAPTION_MD_KEYS)]
+
+            def get_other_md_keys(img_md=None):
+                return [key for key in (img_md.keys() if img_md is not None else univset.header) if key not in (*BASE_MD_KEYS, *CAPTION_MD_KEYS)]
 
             def get_caption(img_key):
                 if img_key is None or img_key == '':
@@ -1005,6 +1012,7 @@ def create_ui(
                 if img_key is None or img_key == '':  # no image key selected
                     return {k: None for k in cur_img_key_change_listeners}
                 if img_key != state.selected.key:  # fix
+                    # logger.warning(f"image key mismatch: {img_key} != {state.selected.key}, fix to {state.selected.key}")
                     state.selected.select((state.selected.index, img_key))
                 img_md = univset[img_key]
                 img_path = img_md.get('image_path', None)
@@ -1015,7 +1023,7 @@ def create_ui(
                         image_path: img_path,
                         caption: get_caption(img_key),
                         caption_metadata_df: get_metadata_df(img_key, keys=CAPTION_MD_KEYS),
-                        other_metadata_df: get_metadata_df(img_key, keys=OTHER_MD_KEYS),
+                        other_metadata_df: get_metadata_df(img_key, keys=get_other_md_keys(img_md)),
                         description: get_nl_caption(img_key),
                         positive_prompt: pos_pmt,
                         negative_prompt: neg_pmt,
@@ -1029,7 +1037,7 @@ def create_ui(
                     elif ui_data_tab.tab is metadata_tab:
                         res = {
                             caption_metadata_df: get_metadata_df(img_key, keys=CAPTION_MD_KEYS),
-                            other_metadata_df: get_metadata_df(img_key, keys=OTHER_MD_KEYS),
+                            other_metadata_df: get_metadata_df(img_key, keys=get_other_md_keys(img_md)),
                         }
                     elif ui_data_tab.tab is gen_info_tab:
                         pos_pmt, neg_pmt, param_df = get_gen_info(img_key)
@@ -1063,7 +1071,7 @@ def create_ui(
                 metadata_tab.select(
                     fn=lambda img_key: (
                         change_activating_tab(ui_data_tab, metadata_tab, get_metadata_df)(img_key, keys=CAPTION_MD_KEYS),
-                        get_metadata_df(img_key, keys=OTHER_MD_KEYS)
+                        get_metadata_df(img_key, keys=get_other_md_keys(univset[img_key]))
                     ),
                     inputs=[cur_img_key],
                     outputs=[caption_metadata_df, other_metadata_df],
@@ -1093,84 +1101,28 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            # ========================================= Below showcase ========================================= #
-
-            # def remove_image(img_key, chunk_index):
-            #     if img_key is None or img_key == '':
-            #         return {log_box: f"empty image key"}
-            #     uiset.remove(img_key)
-            #     if subset is not uiset and img_key in subset:
-            #         del subset[img_key]  # remove from current dataset
-            #     return change_to_dataset(new_page_index=chunk_index)
-
-            # remove_image_btn.click(
-            #     fn=remove_image,
-            #     inputs=[cur_img_key, cur_page_number],
-            #     outputs=dataset_change_listeners,
-            #     concurrency_limit=1,
-            # )
-
-            # def show_i_th_sample(index):
-            #     if len(sample_history) == 0:
-            #         return {
-            #             log_box: f"empty sample history",
-            #         }
-            #     new_img_key = sample_history.select(index)
-            #     return {
-            #         showcase: dataset_to_gallery(Dataset(uiset[new_img_key])),
-            #         cur_img_key: new_img_key,
-            #     }
-
-            # load_pre_hist_btn.click(
-            #     fn=lambda: show_i_th_sample(sample_history.index - 1) if sample_history.index is not None else {log_box: f"empty sample history"},
-            #     inputs=[],
-            #     outputs=dataset_change_listeners,
-            #     concurrency_limit=1,
-            # )
-
-            # load_next_hist_btn.click(
-            #     fn=lambda: show_i_th_sample(sample_history.index + 1) if sample_history.index is not None else {log_box: f"empty sample history"},
-            #     inputs=[],
-            #     outputs=dataset_change_listeners,
-            #     concurrency_limit=1,
-            # )
-
             # ========================================= Base Tagging Buttons ========================================= #
 
-            # def random_sample(n=1):
-            #     sampleset = subset  # sample from current dataset
-            #     if len(sampleset) == 0:
-            #         return {log_box: f"empty subset"}
-            #     sampleset = sampleset.make_subset(condition=lambda img_info: img_info.key not in sample_history)
-            #     if len(sampleset) == 0:
-            #         return {log_box: f"no more image to sample"}
-            #     samples: Dataset = sampleset.sample(n=n, randomly=True)
-            #     for sample in samples.keys():
-            #         sample_history.add(sample)
-            #     new_img_key = sample_history.select(len(sample_history) - 1)
-            #     return {
-            #         showcase: dataset_to_gallery(Dataset(uiset[new_img_key])),
-            #         cur_img_key: new_img_key,
-            #         cur_page_number: gr.update(value=1, label=f"{translate('Chunk', language)} 1/{subset.num_chunks}"),
-            #     }
+            def data_edition_handler(func: Callable[[DataDict, Tuple[Any, ...], Dict[str, Any]], ResultDict]) -> Tuple[str, str]:
+                r"""
+                Warp a data edition function to handle the data edition process.
+                @param func: A function that can be the following format:
+                    - `func(img_md: DataDict, *args: Any, **kwargs: Any) -> ResultDict`
+                    - `func(batch: List[DataDict], *args: Any, **kwargs: Any) -> List[ResultDict]`
+                @selected_img_key: The image key that is selected by the user
+                @opts: A list of strings that contains the options for the function
+                @progress: The progress bar
+                """
+                func_name = func.__name__
 
-            # random_btn.click(
-            #     fn=random_sample,
-            #     inputs=[],
-            #     outputs=dataset_change_listeners,
-            #     concurrency_limit=1,
-            # )
+                def wrapper(selected_img_key: str, opts: List[str], *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
+                    nonlocal func_name, cpu_max_workers
+                    formatted_func_name = func_name.replace('_', ' ')
 
-            def data_edition_handler(func: Callable[[Dict, Tuple[Any, ...], Dict[str, Any]], Caption]) -> Tuple[str, str]:
-                funcname = func.__name__
-
-                def wrapper(img_key, opts, *args, progress: gr.Progress = gr.Progress(track_tqdm=True), **kwargs):
-                    nonlocal funcname, cpu_max_workers
-                    proc_func_log_name = funcname.replace('_', ' ')
-
+                    # parse options
                     if language != 'en':
                         opts = translate(opts, 'en')
-                    opts = [pm.lower() for pm in opts]
+                    opts = [opt.lower() for opt in opts]
                     do_batch = ('batch' in opts) and (func is not write_caption)
                     do_progress = 'progress' in opts
                     extra_kwargs = dict(
@@ -1178,40 +1130,41 @@ def create_ui(
                         do_regex='regex' in opts,
                     )
                     # filter out extra kwargs
-                    funcparams = list(inspect.signature(func).parameters.keys())
-                    extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in funcparams}
+                    func_params = list(inspect.signature(func).parameters.keys())
+                    extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in func_params}
 
-                    if img_key is None or img_key == '':
+                    if selected_img_key is None or selected_img_key == '':
                         if not do_batch:
-                            return {log_box: f"{proc_func_log_name}: empty image key"}
+                            return {log_box: f"{formatted_func_name}: empty image key"}
                     else:
-                        img_key = Path(img_key).stem if Path(img_key).suffix in IMAGE_EXTS else img_key
+                        selected_img_key = Path(selected_img_key).stem if Path(selected_img_key).suffix in IMAGE_EXTS else selected_img_key
 
-                    def edit_batch(batch, *args, **kwargs):
-                        batch = deepcopy(batch)
-                        if not isinstance(batch, list):  # single image
+                    def edit_batch(batch: Union[DataDict, List[DataDict]], *args, **kwargs) -> Dict[str, ResultDict]:
+                        batch = deepcopy(batch)  # avoid modifying the original data
+                        if not isinstance(batch, list):  # single img_md
                             img_md = batch
                             if not os.path.isfile(img_md['image_path']):
                                 return []
-                            new_img_md = func(img_md, *args, **extra_kwargs, **kwargs)
-                            return new_img_md if isinstance(new_img_md, Iterable) else [new_img_md]
-                        else:
+                            res_md = func(img_md, *args, **extra_kwargs, **kwargs)  # single img_md
+                            return {img_md['image_key']: res_md}
+                        else:  # list of img_md
                             batch = [img_md for img_md in batch if os.path.isfile(img_md['image_path'])]
-                            new_batch = func([img_md for img_md in batch], *args, **extra_kwargs, **kwargs)
-                            return new_batch
+                            res_batch = func([img_md for img_md in batch], *args, **extra_kwargs, **kwargs)  # list of img_md
+                            return {img_md['image_key']: res_md for img_md, res_md in zip(batch, res_batch)}
 
-                    results = []
+                    is_func_support_batch = func in (ws_scoring, wd_tagging)
+                    res_dict = {}
                     if do_batch:
-                        logger.print(f"batch processing: {proc_func_log_name}")
+                        logger.print(f"batch processing: {formatted_func_name}")
                         editset = univset.curset
-                        if func in (ws_scoring, wd_tagging):
+                        if is_func_support_batch:
                             batch_size, args = args[0], args[1:]  # first arg is batch size
                             values = list(editset.values())
                             batches = [values[i:i + batch_size] for i in range(0, len(editset), batch_size)]
                         else:
-                            batch_size = 1
+                            batch_size = 1  # fix batch size to 1
                             batches = list(editset.values())
-                        desc = f'[{proc_func_log_name}] batch processing'
+                        desc = f'[{formatted_func_name}] batch processing'
                         pbar = logger.tqdm(total=len(batches), desc=desc)
                         edit_batch = logging.track_tqdm(pbar)(edit_batch)
                         if do_progress:
@@ -1219,11 +1172,7 @@ def create_ui(
 
                         if cpu_max_workers == 1:
                             for batch in batches:
-                                res = edit_batch(batch, *args, **kwargs)
-                                if isinstance(res, dict):
-                                    results.append(res)
-                                elif isinstance(res, list):
-                                    results.extend(res)
+                                res_dict.update(edit_batch(batch, *args, **kwargs))
                         else:
                             from concurrent.futures import ThreadPoolExecutor, wait
                             with ThreadPoolExecutor(max_workers=cpu_max_workers) as executor:
@@ -1231,11 +1180,7 @@ def create_ui(
                                 try:
                                     wait(futures)
                                     for future in futures:
-                                        res = future.result()
-                                        if isinstance(res, dict):
-                                            results.append(res)
-                                        elif isinstance(res, list):
-                                            results.extend(res)
+                                        res_dict.update(future.result())
                                 except (gr.CancelledError, KeyboardInterrupt):
                                     for future in futures:
                                         future.cancel()
@@ -1243,41 +1188,43 @@ def create_ui(
                         pbar.close()
 
                     else:
-                        if func in (ws_scoring, wd_tagging):
+                        if is_func_support_batch:  # list in
                             args = args[1:]
-                            batch = [univset[img_key]]
-                        else:
-                            batch = univset[img_key]
-                        res = edit_batch(batch, *args, **kwargs)
-                        if isinstance(res, dict):
-                            results.append(res)
-                        elif isinstance(res, list):
-                            results.extend(res)
-                        else:
-                            raise ValueError(f"invalid return type: {type(res)}")
+                            batch = [univset[selected_img_key]]
+                        else:  # single in
+                            batch = univset[selected_img_key]
+                        res_dict.update(edit_batch(batch, *args, **kwargs))
 
                     # write to dataset
-                    for res in results:
-                        if res is not None:
-                            imk = res.get('image_key', os.path.basename(os.path.splitext(res['image_path'])[0]))
-                            if func not in (undo, redo):
-                                if func == write_caption and res['caption'] == univset[img_key]['caption']:
-                                    continue
-                                if imk not in buffer:
-                                    buffer.do(imk, univset[imk])
-                                buffer.do(imk, res)
-                            univset[imk] = res
-                            # univset.set(img_key, res)
+                    is_updated_at_least_one = False
+                    is_undo_redo = func in (undo, redo)
+                    is_write_caption = func is write_caption
 
-                    if any(results):
-                        ret = track_img_key(img_key)
-                        if not img_key:
-                            ret.update({log_box: f"{proc_func_log_name}: batch"})
+                    for img_key, res_md in res_dict.items():
+                        if res_md:
+                            if not is_undo_redo:
+                                if is_write_caption and 'caption' in res_md and res_md['caption'] == univset[img_key]['caption']:
+                                    continue  # skip if `write_caption` didn't change the caption
+                                if img_key not in buffer:
+                                    buffer.do(img_key, univset[img_key])  # push the original data into the bottom of the buffer stack
+                            univset.set(img_key, res_md)
+                            if not is_undo_redo:
+                                buffer.do(img_key, univset[img_key])
+                            is_updated_at_least_one = True
+
+                    if is_updated_at_least_one:
+                        orig_header = univset.header
+                        # univset.update_header()
+                        if univset.header != orig_header:
+                            logger.info(f"add new columns: {', '.join(set(univset.header) - set(orig_header))}")
+                        ret = track_img_key(selected_img_key)
+                        if not selected_img_key:
+                            ret.update({log_box: f"{formatted_func_name}: update {len(res_dict)} over {len(editset)}"})
                         else:
-                            ret.update({log_box: f"{proc_func_log_name}: `{img_key}`"})
+                            ret.update({log_box: f"{formatted_func_name}: update `{selected_img_key}`"})
                         return ret
                     else:
-                        return {log_box: f"{proc_func_log_name}: no change"}
+                        return {log_box: f"{formatted_func_name}: no change"}
                 return wrapper
 
             def cancel():
@@ -1290,9 +1237,7 @@ def create_ui(
             )
 
             def write_caption(img_md, caption: str):
-                if caption:
-                    img_md['caption'] = str(caption)
-                return img_md
+                return {'caption': caption}
 
             caption.blur(
                 fn=data_edition_handler(write_caption),
@@ -1303,7 +1248,7 @@ def create_ui(
             )
 
             def undo(img_md):
-                return buffer.undo(img_md['image_key']) or img_md
+                return buffer.undo(img_md['image_key'])
 
             undo_btn.click(
                 fn=data_edition_handler(undo),
@@ -1313,7 +1258,7 @@ def create_ui(
             )
 
             def redo(img_md):
-                return buffer.redo(img_md['image_key']) or img_md
+                return buffer.redo(img_md['image_key'])
 
             redo_btn.click(
                 fn=data_edition_handler(redo),
@@ -1393,13 +1338,12 @@ def create_ui(
                     caption += tags
                 else:
                     caption = tags + caption
-                img_md['caption'] = caption.text
-                return img_md
+                return {'caption': caption.text}
 
             def remove_tags(img_md, tags, do_regex):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
+                    return None
                 caption = Caption(caption)
                 if isinstance(tags, str):
                     tags = [tags]
@@ -1414,8 +1358,7 @@ def create_ui(
                     except re.error as e:
                         raise gr.Error(f"invalid regex: {e}")
                 caption -= tags
-                img_md['caption'] = caption.text
-                return img_md
+                return {'caption': caption.text}
 
             # ========================================= Custom Tagging ========================================= #
 
@@ -1436,7 +1379,7 @@ def create_ui(
             def replace_tag(img_md, old, new, match_tag, do_regex):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
+                    return
                 caption = Caption(caption)
                 if do_regex:
                     try:
@@ -1452,8 +1395,7 @@ def create_ui(
                         caption[old] = new
                     else:
                         caption = Caption(caption.text.replace(old, new))
-                img_md['caption'] = caption.text
-                return img_md
+                return {'caption': caption.text}
 
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
@@ -1505,8 +1447,7 @@ def create_ui(
                 attrs_dict = data_utils.read_attrs(img_md['image_path'], types=types)
                 if not attrs_dict:
                     return None
-                img_md.update(attrs_dict)
-                return img_md
+                return attrs_dict
 
             read_attrs_btn.click(
                 fn=data_edition_handler(read_attrs),
@@ -1516,15 +1457,17 @@ def create_ui(
             )
 
             def parse_caption_attrs(img_md):
-                if img_md.get('caption', None) is None:
-                    return img_md
-                caption = Caption(img_md['caption']).parsed()
-                img_md['caption'] = caption.text
+                caption = img_md.get('caption', None)
+                if caption is None:
+                    return None
+                caption = Caption(caption).parsed()
+                attr_dict = {}
+                attr_dict['caption'] = caption.text
                 attrs = caption.attrs
                 attrs.pop('tags')
                 for attr, value in attrs.items():
-                    img_md[attr] = caption.sep.join(value)
-                return img_md
+                    attr_dict[attr] = caption.sep.join(value)
+                return attr_dict
 
             parse_caption_attrs_btn.click(
                 fn=data_edition_handler(parse_caption_attrs),
@@ -1536,9 +1479,8 @@ def create_ui(
             def sort_caption(img_md):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
-                img_md['caption'] = Caption(caption).sorted().text
-                return img_md
+                    return None
+                return {'caption': Caption(caption).sorted().text}
 
             sort_caption_btn.click(
                 fn=data_edition_handler(sort_caption),
@@ -1550,7 +1492,7 @@ def create_ui(
             def formalize_caption(img_md, formats):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
+                    return None
                 if isinstance(formats, str):
                     formats = [formats]
                 if language != 'en':
@@ -1558,8 +1500,7 @@ def create_ui(
                 caption = Caption(caption)
                 for fmt in formats:
                     caption.format(FORMAT_PRESETS[fmt])
-                img_md['caption'] = caption.text
-                return img_md
+                return {'caption': caption.text}
 
             formalize_caption_btn.click(
                 fn=data_edition_handler(formalize_caption),
@@ -1571,9 +1512,8 @@ def create_ui(
             def deduplicate_caption(img_md):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
-                img_md['caption'] = Caption(caption).deduplicated().text
-                return img_md
+                    return None
+                return {'caption': Caption(caption).deduplicated().text}
 
             deduplicate_caption_btn.click(
                 fn=data_edition_handler(deduplicate_caption),
@@ -1585,9 +1525,8 @@ def create_ui(
             def deoverlap_caption(img_md):
                 caption = img_md.get('caption', None)
                 if caption is None:
-                    return img_md
-                img_md['caption'] = Caption(caption).deoverlapped().text
-                return img_md
+                    return None
+                return {'caption': Caption(caption).deoverlapped().text}
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deoverlap_caption),
@@ -1597,13 +1536,12 @@ def create_ui(
             )
 
             def decharacterize_caption(img_md, feature_type, freq_thres):
-                if language != 'en':
-                    feature_type = translate(feature_type, 'en')
                 caption = img_md.get('caption', None)
                 if caption is None:
                     return None
-                img_md['caption'] = Caption(caption).decharacterized(feature_type=feature_type, freq_thres=freq_thres).text
-                return img_md
+                if language != 'en':
+                    feature_type = translate(feature_type, 'en')
+                return {'caption': Caption(caption).decharacterized(feature_type=feature_type, freq_thres=freq_thres).text}
 
             decharacterize_caption_btn.click(
                 fn=data_edition_handler(decharacterize_caption),
@@ -1614,10 +1552,14 @@ def create_ui(
 
             # ========================================= WD ========================================= #
 
-            def wd_tagging(batch: List, model_repo_or_path, general_threshold, character_threshold, overwrite_mode):
+            def wd_tagging(batch: List[DataDict], model_repo_or_path, general_threshold, character_threshold, overwrite_mode) -> List[ResultDict]:
                 nonlocal waifu_tagger
-                if language != 'en':
+                if language != 'en':  # translate overwrite_mode
                     overwrite_mode = translate(overwrite_mode, 'en')
+                if overwrite_mode not in ('ignore', 'overwrite', 'append', 'prepend'):  # check overwrite_mode
+                    raise ValueError(f"invalid os_mode: {overwrite_mode}")
+
+                # make batch
                 if not isinstance(batch, list):
                     batch = [batch]
                 if overwrite_mode == 'ignore':
@@ -1637,16 +1579,15 @@ def create_ui(
 
                 batch_images = [Image.open(img_md['image_path']) for img_md in batch]
                 batch_pred_tags = waifu_tagger(batch_images, general_threshold=general_threshold, character_threshold=character_threshold)
+                batch_results = []
                 for img_md, pred_tags in zip(batch, batch_pred_tags):
                     if overwrite_mode == 'overwrite' or overwrite_mode == 'ignore':
                         tags = pred_tags
                     elif overwrite_mode == 'append':
                         tags = img_md.get('caption', '').split(', ') + pred_tags
-                    elif overwrite_mode == 'prepend':
+                    else:  # elif overwrite_mode == 'prepend':
                         tags = pred_tags + img_md.get('caption', []).split(', ')
-                    else:
-                        raise ValueError(f"invalid os_mode: {overwrite_mode}")
-                    img_md['caption'] = ', '.join(tags)
+                    batch_results.append({'caption': ', '.join(tags)})
                 return batch
 
             wd_run_btn.click(
@@ -1657,7 +1598,7 @@ def create_ui(
             )
 
             # ========================================= WS ========================================= #
-            def ws_scoring(batch, model_repo_or_path, overwrite_mode) -> List[Dict]:
+            def ws_scoring(batch: List[DataDict], model_repo_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
                 if language != 'en':
                     overwrite_mode = translate(overwrite_mode, 'en')
 
@@ -1679,14 +1620,12 @@ def create_ui(
                 if len(batch) == 0:
                     return []
                 images = [Image.open(img_md['image_path']) for img_md in batch]
-                pred_scores = waifu_scorer(images)
-                if isinstance(pred_scores, float):  # single output
-                    pred_scores = [pred_scores]
-                for i, img_md in enumerate(batch):
-                    img_md['aesthetic_score'] = pred_scores[i]
-                return batch
+                aesthetic_scores = waifu_scorer(images)
+                if isinstance(aesthetic_scores, float):  # single output
+                    aesthetic_scores = [aesthetic_scores]
+                return [{'aesthetic_score': score} for score in aesthetic_scores]
 
-            ws_run_btn.click(
+            ws_add_score_btn.click(
                 fn=data_edition_handler(ws_scoring),
                 inputs=[cur_img_key, general_edit_opts, ws_batch_size, ws_model, ws_overwrite_mode],
                 outputs=cur_img_key_change_listeners,
@@ -1695,17 +1634,40 @@ def create_ui(
             )
 
             def set_aesthetic_score(img_md, score):
-                img_md['aesthetic_score'] = score
-                return img_md
+                return {'aesthetic_score': score}
 
-            ws_delabel_btn.click(
+            ws_del_score_btn.click(
                 fn=data_edition_handler(partial(set_aesthetic_score, score=None)),
                 inputs=[cur_img_key, general_edit_opts],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
             )
 
+            def set_quality(img_md, quality):
+                img_md['quality'] = quality
+                if (caption := img_md.get('caption', None)) is not None and 'quality' in caption:
+                    caption = Caption(caption)
+                    caption[r"(.+)[\s_]quality"] = rf"{quality}\2quality"
+                return {'caption': caption.text, 'quality': quality}
+
+            def set_score_to_quality(img_md):
+                aesthetic_score = img_md.get('aesthetic_score', None)
+                if aesthetic_score is None:
+                    return img_md
+                if not 0 <= aesthetic_score <= 10:
+                    raise gr.Error(f"invalid score: {aesthetic_score}")
+                quality = convert_score2quality(aesthetic_score)
+                return {**set_quality(img_md, quality), 'aesthetic_score': aesthetic_score}
+
+            ws_score2quality_btn.click(
+                fn=data_edition_handler(set_score_to_quality),
+                inputs=[cur_img_key, general_edit_opts],
+                outputs=cur_img_key_change_listeners,
+                concurrency_limit=1,
+            )
+
             # ========================================= Perceptual Hash ========================================= #
+
             def get_perceptual_hash(img_md, os_mode):
                 if language != 'en':
                     os_mode = translate(os_mode, 'en')
@@ -1718,8 +1680,7 @@ def create_ui(
                     return img_md
                 image = Image.open(img_md['image_path'])
                 p_hash = imagehash.phash(image)
-                img_md['perceptual_hash'] = p_hash
-                return img_md
+                return {'perceptual_hash': str(p_hash)}
 
             hasher_run_btn.click(
                 fn=data_edition_handler(get_perceptual_hash),
@@ -1729,8 +1690,7 @@ def create_ui(
             )
 
             def set_perceptual_hash(img_md, p_hash):
-                img_md['perceptual_hash'] = p_hash
-                return img_md
+                return {'perceptual_hash': p_hash}
 
             hasher_dehash_btn.click(
                 fn=data_edition_handler(partial(set_perceptual_hash, p_hash=None)),

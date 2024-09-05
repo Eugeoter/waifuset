@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from typing import Dict, List, Literal, Callable, Iterable, overload
+from typing import Dict, List, Any, Literal, Callable, Iterable, overload
 from .dataset import Dataset
 from .dataset_mixin import DiskIOMixin
 from ..database.sqlite3_database import SQLite3Database, SQL3Table, get_sql_value_str, get_row_dict
@@ -148,7 +148,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def clear(self):
         self.cursor.execute(f"DELETE FROM {self.table.name}")
 
-    def set(self, key, value):
+    def set(self, key: str, value: Dict[str, Any] = None):
         if key in self:
             self.table.update_where(value, where=f"{self.table.primary_key} = {get_sql_value_str(key)}")
         else:

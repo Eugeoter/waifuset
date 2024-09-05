@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Union
 
 StrPath = Union[str, Path]
-ROOT = Path(__file__).parent
+WAIFUSET_ROOT = Path(__file__).parent
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.jfif', '.webp'}
 CAPTION_EXT = '.txt'
 CACHE_EXT = '.npz'

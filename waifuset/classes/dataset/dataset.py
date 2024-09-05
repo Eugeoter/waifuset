@@ -1,7 +1,7 @@
 import pandas as pd
 import copy
 import functools
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, overload
 from abc import abstractmethod
 from collections import OrderedDict
 from .dataset_mixin import ConfigMixin
@@ -92,8 +92,14 @@ class Dataset(ConfigMixin):
     def get(self, key, default=None):
         pass
 
+    @overload
     @abstractmethod
     def set(self, key, value):
+        pass
+
+    @overload
+    @abstractmethod
+    def set(self, dic: Dict):
         pass
 
     @abstractmethod

@@ -6,24 +6,25 @@ from .const import WS_REPOS
 from ... import logging
 
 
-def repo2path(model_repo_and_path: str):
+def repo2path(model_repo_and_path: str, use_safetensors=True):
+    ext = ".safetensors" if use_safetensors else ".pth"
     if os.path.isfile(model_repo_and_path):
         model_path = model_repo_and_path
     elif os.path.isdir(model_repo_and_path):
-        model_path = os.path.join(model_repo_and_path, "model.pth")
+        model_path = os.path.join(model_repo_and_path, "model" + ext)
     elif model_repo_and_path in WS_REPOS:
-        model_path = model_repo_and_path + '/model.pth'
+        model_path = model_repo_and_path + '/' + 'model' + ext
     else:
         raise ValueError(f"Invalid model_repo_and_path: {model_repo_and_path}")
     return model_path
 
 
 class WaifuScorer(object):
-    def __init__(self, model_path: str = None, cache_dir: str = None, device: str = 'cuda', verbose=False):
+    def __init__(self, model_path: Union[str, None] = None, cache_dir: str = None, device: str = 'cuda', verbose=False):
         self.verbose = verbose
         self.logger = logging.get_logger(self.__class__.__name__)
-        if model_path is None:
-            model_path = repo2path(WS_REPOS[0])
+        if model_path is None:  # auto
+            model_path = repo2path(WS_REPOS[0], use_safetensors=is_safetensors_installed())
             if self.verbose:
                 self.logger.print(f"model path not set, switch to default: `{model_path}`")
         if not os.path.isfile(model_path):
@@ -67,6 +68,14 @@ class WaifuScorer(object):
         return scores
 
 
+def is_safetensors_installed():
+    try:
+        import safetensors
+        return True
+    except ImportError:
+        return False
+
+
 def load_clip_models(name: str = "ViT-L/14", device='cuda'):
     import clip
     model2, preprocess = clip.load(name, device=device)  # RN50x64
@@ -77,8 +86,12 @@ def load_model(model_path: str = None, input_size=768, device: str = 'cuda', dty
     from .mlp import MLP
     model = MLP(input_size=input_size)
     if model_path:
-        s = torch.load(model_path, map_location=device, weights_only=True)
-        model.load_state_dict(s)
+        if model_path.endswith(".safetensors"):
+            from safetensors.torch import load_file
+            state_dict = load_file(model_path)
+        else:
+            state_dict = torch.load(model_path, map_location=device, weights_only=True)
+        model.load_state_dict(state_dict)
         model.to(device)
     if dtype:
         model = model.to(dtype=dtype)

@@ -4,12 +4,21 @@ import json
 from pathlib import Path
 from argparse import Namespace
 from functools import wraps
-from typing import Union, Tuple, Literal, Iterable, Dict, Callable, overload
+from typing import Union, Tuple, Literal, Iterable, Dict, Any, Callable, overload
 from waifuset import logging, tagging
 
-ROOT = Path(__file__).parent.parent
+WAIFUI_ROOT = Path(__file__).parent
+JSON_ROOT = WAIFUI_ROOT / 'json'
 
 logger = logging.get_logger('UI')
+
+
+def search_file(filename, search_path):
+    for root, dirs, files in os.walk(search_path):
+        if filename in files:
+            return os.path.abspath(os.path.join(root, filename))
+    return None
+
 
 COL2TYPE_BASE = {
     'image_key': str,
@@ -38,8 +47,7 @@ COL2TYPE = {
     **COL2TYPE_CAPTION,
 }
 
-SORTING_METHODS: Dict[str, Callable] = {
-}
+SORTING_METHODS: Dict[str, Callable] = {}
 
 FORMAT_PRESETS = {
     'train': tagging.fmt2train,
@@ -49,6 +57,21 @@ FORMAT_PRESETS = {
     'unescape': tagging.fmt2unescape,
     'escape': tagging.fmt2escape,
 }
+
+SCORE2QUALITY_PATH = search_file('quality2score.json', JSON_ROOT)
+QUALITY2SCORE = None
+
+TRANSLATION_EN2CN = None
+TRANSLATION_CN2EN = None
+TRANSLATION_TABLE_PATH = search_file('translation_cn.json', JSON_ROOT)
+if TRANSLATION_TABLE_PATH is None:
+    logger.warning(f'missing translation file under {JSON_ROOT}: translation_cn.json')
+else:
+    logger.debug(f'found translation file: {TRANSLATION_TABLE_PATH}')
+
+# typing
+DataDict = Dict[str, Any]
+ResultDict = Dict[str, Any]
 
 
 class UIState(Namespace):
@@ -161,51 +184,37 @@ def open_file_folder(path: str):
     os.system(command)
 
 
-def search_file(filename, search_path):
-    for root, dirs, files in os.walk(search_path):
-        if filename in files:
-            return os.path.abspath(os.path.join(root, filename))
-    return None
-
-
-EN2CN = None
-CN2EN = None
-TRANSLATION_TABLE_PATH = search_file('translation_cn.json', ROOT)
-if TRANSLATION_TABLE_PATH is None:
-    logger.warning(f'missing translation file under {ROOT}: translation_cn.json')
-
-
 def init_cn_translation():
-    global EN2CN, CN2EN
-    if EN2CN is not None and CN2EN is not None:
+    global TRANSLATION_EN2CN, TRANSLATION_CN2EN
+    if TRANSLATION_EN2CN is not None and TRANSLATION_CN2EN is not None:
         return
     try:
         with open(TRANSLATION_TABLE_PATH, 'r', encoding='utf-8') as f:
-            EN2CN = json.load(f)
-        EN2CN = {k.lower(): v for k, v in EN2CN.items()}
-        CN2EN = {v: k for k, v in EN2CN.items()}
+            TRANSLATION_EN2CN = json.load(f)
+        TRANSLATION_EN2CN = {k.lower(): v for k, v in TRANSLATION_EN2CN.items()}
+        TRANSLATION_CN2EN = {v: k for k, v in TRANSLATION_EN2CN.items()}
     except FileNotFoundError:
-        EN2CN = {}
-        CN2EN = {}
-        logging.warn(f'missing translation file: {TRANSLATION_TABLE_PATH}')
+        TRANSLATION_EN2CN = {}
+        TRANSLATION_CN2EN = {}
+        logger.warning(f'missing translation file: {TRANSLATION_TABLE_PATH}')
     except Exception as e:
-        EN2CN = {}
-        CN2EN = {}
-        logging.warn('translation_cn.json error: %s' % e)
+        TRANSLATION_EN2CN = {}
+        TRANSLATION_CN2EN = {}
+        logger.warning('translation_cn.json error: %s' % e)
 
 
 def en2cn(text):
     if text is None:
         return None
     init_cn_translation()
-    return EN2CN.get(text.lower(), text)
+    return TRANSLATION_EN2CN.get(text.strip().replace('_', ' ').lower(), text)
 
 
 def cn2en(text):
     if text is None:
         return None
     init_cn_translation()
-    return CN2EN.get(text, text)
+    return TRANSLATION_CN2EN.get(text.strip().replace('_', ' ').lower(), text)
 
 
 def translate(text, language='en'):
@@ -215,11 +224,36 @@ def translate(text, language='en'):
     }
     translator = translator.get(language, cn2en)
     if isinstance(text, str):
-        return translator(text.replace('_', ' '))
+        return translator(text)
     elif isinstance(text, Iterable):
-        return [translator(t.replace('_', ' ')) for t in text]
+        return [translator(t) for t in text]
     else:
         raise TypeError(f'Unsupported type: {type(text)}')
+
+
+def get_quality2score():
+    global QUALITY2SCORE
+    if QUALITY2SCORE is not None:
+        return QUALITY2SCORE
+    try:
+        with open(SCORE2QUALITY_PATH, 'r', encoding='utf-8') as f:
+            QUALITY2SCORE = json.load(f)
+        QUALITY2SCORE = {k: v for k, v in sorted(QUALITY2SCORE.items(), key=lambda item: item[1], reverse=True)}
+    except FileNotFoundError:
+        QUALITY2SCORE = {}
+        raise gr.Error(f'missing score2quality file: {SCORE2QUALITY_PATH}')
+    except Exception as e:
+        QUALITY2SCORE = {}
+        raise gr.Error('score2quality.json error: %s' % e)
+    return QUALITY2SCORE
+
+
+def convert_score2quality(score):
+    score2quality = get_quality2score()
+    for quality, score_range in score2quality.items():
+        if score >= score_range:
+            return quality
+    return None
 
 
 def kwargs_setter(func, **preset_kwargs):

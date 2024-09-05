@@ -3,7 +3,7 @@ import json
 import hashlib
 import os
 from typing import Literal
-from .const import ROOT
+from .const import WAIFUSET_ROOT
 from . import logging
 
 
@@ -16,37 +16,37 @@ def search_file(filename, search_path):
 
 TAG_TYPES = ('artist', 'character', 'style', 'quality', 'aesthetic', 'copyright', 'meta', 'safety')
 
-CUSTOM_TAGS_PATH = search_file('custom_tags.json', ROOT)
-PRIORITY_TABLE_PATH = search_file('priority_table.json', ROOT)
-OVERLAP_TABLE_PATH = search_file('overlap_tags.json', ROOT)
+CUSTOM_TAGS_PATH = search_file('custom_tags.json', WAIFUSET_ROOT)
+PRIORITY_TABLE_PATH = search_file('priority_table.json', WAIFUSET_ROOT)
+OVERLAP_TABLE_PATH = search_file('overlap_tags.json', WAIFUSET_ROOT)
 
-CH2PHYSICS_PATH = search_file('ch2physics.json', ROOT)
-CH2CLOTHES_PATH = search_file('ch2clothes.json', ROOT)
+CH2PHYSICS_PATH = search_file('ch2physics.json', WAIFUSET_ROOT)
+CH2CLOTHES_PATH = search_file('ch2clothes.json', WAIFUSET_ROOT)
 
-ARTIST_TAGS_PATH = search_file('artist_tags.json', ROOT)
-CHARACTER_TAGS_PATH = search_file('character_tags.json', ROOT)
-COPYRIGHT_TAGS_PATH = search_file('copyright_tags.json', ROOT)
-META_TAGS_PATH = search_file('meta_tags.json', ROOT)
+ARTIST_TAGS_PATH = search_file('artist_tags.json', WAIFUSET_ROOT)
+CHARACTER_TAGS_PATH = search_file('character_tags.json', WAIFUSET_ROOT)
+COPYRIGHT_TAGS_PATH = search_file('copyright_tags.json', WAIFUSET_ROOT)
+META_TAGS_PATH = search_file('meta_tags.json', WAIFUSET_ROOT)
 
 if not CUSTOM_TAGS_PATH:
-    logging.warning(f'custom tag config not found in root: {ROOT}')
+    logging.warning(f'custom tag config not found in root: {WAIFUSET_ROOT}')
 if not PRIORITY_TABLE_PATH:
-    logging.warning(f'priority table not found in root: {ROOT}')
+    logging.warning(f'priority table not found in root: {WAIFUSET_ROOT}')
 if not OVERLAP_TABLE_PATH:
-    logging.warning(f'overlap table not found in root: {ROOT}')
+    logging.warning(f'overlap table not found in root: {WAIFUSET_ROOT}')
 if not CH2PHYSICS_PATH:
-    logging.warning(f'ch2physics not found in root: {ROOT}')
+    logging.warning(f'ch2physics not found in root: {WAIFUSET_ROOT}')
 if not CH2CLOTHES_PATH:
-    logging.warning(f'ch2clothes table not found in root: {ROOT}')
+    logging.warning(f'ch2clothes table not found in root: {WAIFUSET_ROOT}')
 
 if not ARTIST_TAGS_PATH:
-    logging.warning(f'artist tags not found in root: {ROOT}')
+    logging.warning(f'artist tags not found in root: {WAIFUSET_ROOT}')
 if not CHARACTER_TAGS_PATH:
-    logging.warning(f'character tags not found in root: {ROOT}')
+    logging.warning(f'character tags not found in root: {WAIFUSET_ROOT}')
 if not COPYRIGHT_TAGS_PATH:
-    logging.warning(f'copyright tags not found in root: {ROOT}')
+    logging.warning(f'copyright tags not found in root: {WAIFUSET_ROOT}')
 if not META_TAGS_PATH:
-    logging.warning(f'meta tags not found in root: {ROOT}')
+    logging.warning(f'meta tags not found in root: {WAIFUSET_ROOT}')
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
 PATTERN_QUALITY_TAG = r'\b((amazing|best|high|normal|low|worst|horrible)([\s_]quality))\b'  # match `xxx quality`

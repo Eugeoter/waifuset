@@ -112,7 +112,9 @@ class Caption(Data):
                 raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(value).__name__}'")
 
         elif isinstance(index, str):
-            if isinstance(value, str):
+            if index not in self.tags:
+                return
+            elif isinstance(value, str):
                 self.tags[self.tags.index(index)] = value
             elif isinstance(value, Caption) and len(value) == 1:
                 self.tags[self.tags.index(index)] = value.tags[0]
