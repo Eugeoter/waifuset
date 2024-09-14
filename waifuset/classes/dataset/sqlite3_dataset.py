@@ -1,11 +1,12 @@
 import sqlite3
 import os
 from typing import Dict, List, Any, Literal, Callable, Iterable, overload
-from .dataset import Dataset
+from .dataset import Dataset, get_column2type
 from .dataset_mixin import DiskIOMixin
-from ..database.sqlite3_database import SQLite3Database, SQL3Table, get_sql_value_str, get_row_dict
+from ..database.sqlite3_database import SQLite3Database, SQL3Table, get_sql_value_str, get_row_dict, PY2SQL3
 from ..data.data import Data
 from ...const import StrPath
+from ... import logging
 
 
 class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
@@ -94,38 +95,38 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def postprocessor(self, row, enable=True):
         return get_row_dict(row, self.table.header) if enable else row
 
-    def items(self, postprocess=True):
-        self.cursor.execute(f"SELECT * FROM {self.table.name}")
+    def items(self, postprocess=True, sort_by_key=None):
+        self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {self.sort_by_key}" if sort_by_key else ""))
         for row in self.cursor.fetchall():
             val = self.postprocessor(row, enable=postprocess)
             key = val[self.table.primary_key] if postprocess else row[0]
             yield key, val
 
-    def keys(self):
-        self.cursor.execute(f"SELECT {self.table.primary_key} FROM {self.table.name}")
+    def keys(self, sort_by_key=None, reverse=False):
+        order_clause = f" ORDER BY {sort_by_key} {'DESC' if reverse else 'ASC'}" if sort_by_key else ""
+        self.cursor.execute(f"SELECT {self.table.primary_key} FROM {self.table.name}{order_clause}")
         for row in self.cursor.fetchall():
             yield row[0]
 
-    def values(self, postprocess=True):
-        self.cursor.execute(f"SELECT * FROM {self.table.name}")
+    def values(self, postprocess=True, sort_by_key=None, reverse=False):
+        order_clause = f" ORDER BY {sort_by_key} {'DESC' if reverse else 'ASC'}" if sort_by_key else ""
+        self.cursor.execute(f"SELECT * FROM {self.table.name}{order_clause}")
         for row in self.cursor.fetchall():
             val = self.postprocessor(row, enable=postprocess)
             val.pop(self.table.primary_key)
             yield val
 
-    def kvalues(self, key, distinct=False, where: str = None, **kwargs):
-        command = f"SELECT {'DISTINCT ' if distinct else ''}{key} FROM {self.table.name}"
-        if where is not None:
-            command += f" WHERE {where}"
-        self.cursor.execute(command)
+    def kvalues(self, key, distinct=False, where: str = None, sort_by_key=None, reverse=False, **kwargs):
+        order_clause = f" ORDER BY {sort_by_key} {'DESC' if reverse else 'ASC'}" if sort_by_key else ""
+        where_clause = f" WHERE {where}" if where is not None else ""
+        self.cursor.execute(f"SELECT {'DISTINCT ' if distinct else ''}{key} FROM {self.table.name}{where_clause}{order_clause}")
         for row in self.cursor.fetchall():
             yield row[0]
 
-    def kitems(self, key, where: str = None, **kwargs):
-        command = f"SELECT {self.table.primary_key}, {key} FROM {self.table.name}"
-        if where is not None:
-            command += f" WHERE {where}"
-        self.cursor.execute(command)
+    def kitems(self, key, where: str = None, sort_by_key=None, reverse=False, **kwargs):
+        order_clause = f" ORDER BY {sort_by_key} {'DESC' if reverse else 'ASC'}" if sort_by_key else ""
+        where_clause = f" WHERE {where}" if where is not None else ""
+        self.cursor.execute(f"SELECT {self.table.primary_key}, {key} FROM {self.table.name}{where_clause}{order_clause}")
         for row in self.cursor.fetchall():
             yield row[0], row[1]
 
@@ -135,8 +136,8 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         except KeyError:
             return default
 
-    def update(self, other):
-        if isinstance(other, SQLite3Dataset):
+    def update(self, other, executemany=False):
+        if executemany and isinstance(other, SQLite3Dataset):
             column_names = other.table.header
             columns = ', '.join(column_names)
             placeholders = ', '.join(['?' for _ in column_names])
@@ -208,8 +209,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         if 'col2type' in kwargs:
             col2type = kwargs.pop('col2type')
         elif dic:
-            v0 = next(iter(dic.values()))
-            col2type = {k: type(v) for k, v in v0.items()}
+            col2type = get_column2type(dic)
         else:
             col2type = {}
         dataset = cls(tbname=tbname, primary_key=primary_key, col2type=col2type, **kwargs)
@@ -337,4 +337,20 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
 
         if self.table.primary_key in column_mapping:
             self.register_to_config(primary_key=column_mapping[self.table.primary_key])
+        return self
+
+    def reset_column_type(self, column, new_type):
+        old_type = self.table.col2type.get(column, None)
+        if new_type == old_type:
+            logging.warning(f"Column {column} is already of type {new_type}.")
+            return
+        new_type = PY2SQL3.get(new_type, 'TEXT')
+        tbname = self.table.name
+        self.cursor.execute(f"ALTER TABLE {tbname} RENAME COLUMN {column} TO {column}_old;")
+        self.cursor.execute(f"ALTER TABLE {tbname} ADD COLUMN {column} {new_type};")
+        self.cursor.execute(f"UPDATE {tbname} SET {column} = {column}_old;")
+        self.remove_columns([f"{column}_old"])
+
+    def sort(self, column, reverse=False, **kwargs):
+        self.table.sort(column, reverse)
         return self

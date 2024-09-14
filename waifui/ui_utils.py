@@ -67,7 +67,7 @@ TRANSLATION_TABLE_PATH = search_file('translation_cn.json', JSON_ROOT)
 if TRANSLATION_TABLE_PATH is None:
     logger.warning(f'missing translation file under {JSON_ROOT}: translation_cn.json')
 else:
-    logger.debug(f'found translation file: {TRANSLATION_TABLE_PATH}')
+    logger.info(f'located translation file at: {TRANSLATION_TABLE_PATH}')
 
 # typing
 DataDict = Dict[str, Any]
@@ -116,11 +116,17 @@ class UIBuffer(object):
         return self.buffer[key][0][-1]
 
     def latest(self, key):
+        r"""
+        Return the latest value of the key in the buffer.
+        """
         if key not in self.buffer or len(self.buffer[key][0]) <= 1:
             return None
         return self.buffer[key][0][-1]
 
-    def latests(self):
+    def latests(self) -> Dict[str, Any]:
+        r"""
+        Return the latest value of each key in the buffer.
+        """
         latests = {key: self.latest(key) for key in self.keys()}
         latests = {key: value for key, value in latests.items() if value is not None}
         return latests

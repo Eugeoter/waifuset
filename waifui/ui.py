@@ -65,8 +65,9 @@ class UIManager(class_utils.FromConfigMixin):
                     self.logger.print('patching image path base info')
                     dataset.add_columns(['image_path', 'image_key', 'category', 'source', 'caption', 'description'])
                     dataset.apply_map(patch_image_path_base_info)
-            dataset = UIDataset(
+            dataset = UIDataset.from_dataset(
                 dataset,
+                host=dataset,
                 page_size=self.ui_page_size
             )
         # self.logger.print(dataset, no_prefix=True)
@@ -104,6 +105,11 @@ def create_ui(
     render='full',
 ):
     # ========================================= UI ========================================= #
+    assert isinstance(univset, UIDataset), f"expected `univset` to be an instance of `UIDataset`, but got {type(univset)}"
+    assert isinstance(buffer, UIBuffer), f"expected `buffer` to be an instance of `UIBuffer`, but got {type(buffer)}"
+    assert language in ('en', 'cn'), f"expected `language` to be one of ('en', 'cn'), but got {language}"
+    assert render in ('full', 'demo'), f"expected `render` to be one of ('full', 'demo'), but got {render}"
+
     logger = logging.get_logger('UI')
     state = UIState(
         page_index=0,
@@ -693,8 +699,9 @@ def create_ui(
 
             def correct_page_index(dataset: UISubset, page_index):
                 r"""
-                Correct the chunk index of `dset` to `chunk_index`
+                Correct the chunk index of `dataset` to `page_index`
                 """
+                assert isinstance(dataset, UISubset), f"expected `dataset` to be an instance of `UISubset`, but got {type(dataset)}"
                 if page_index is None or page_index == 0:
                     page_index = 1
                 else:
@@ -734,9 +741,9 @@ def create_ui(
                 r"""
                 Convert `showset` to gallery value and image key that should be selected
                 """
-                if issubclass(type(showset), Dataset):
-                    new_page_index = correct_page_index(showset, new_page_index)
-                    page = showset.page(new_page_index - 1)
+                assert isinstance(showset, UISubset), f"expected `showset` to be an instance of `UISubset`, but got {type(showset)}"
+                new_page_index = correct_page_index(showset, new_page_index)
+                page = showset.page(new_page_index - 1)
                 # elif isinstance(showset, Dataset):
                 #     page = showset
                 #     new_page_index = 1
@@ -833,15 +840,14 @@ def create_ui(
                 logger.print(f"loading subset from categories: {categories}")
                 if not categories:
                     catset = univset.fullset
-                elif isinstance(rootset := univset.rootset, SQLite3Dataset):
+                elif isinstance(rootset := univset.root, SQLite3Dataset):
                     if 'category' in rootset.header:
-                        catset = UISubset(rootset.select_in('category', categories) if len(categories) > 1 else rootset.select_is('category', categories[0]), univset)
+                        catset = rootset.select_in('category', categories) if len(categories) > 1 else rootset.select_is('category', categories[0])
                     else:
                         catset = rootset.select_like('image_path', f"%{categories[0]}%")
                         catset = catset.subset(condition=lambda img_md: os.path.basename(os.path.dirname(img_md['image_path'])) in set(categories))
-                        catset = UISubset(catset, univset)
                 else:
-                    catset = univset.subset(condition=lambda img_md: img_md.get('category', None) or os.path.basename(os.path.dirname(img_md['image_path'])) in set(categories))
+                    catset = univset.subset(condition=lambda img_md: (img_md.get('category', None) or os.path.basename(os.path.dirname(img_md['image_path']))) in set(categories))
                 return load_subset_from_dataset(catset, new_page_index=1, sorting_methods=sorting_methods, reverse=reverse)
 
             dataset_change_inputs = [cur_page_number, sorting_methods_dropdown, sorting_reverse_checkbox]
@@ -1218,20 +1224,20 @@ def create_ui(
                         if univset.header != orig_header:
                             logger.info(f"add new columns: {', '.join(set(univset.header) - set(orig_header))}")
                         ret = track_img_key(selected_img_key)
-                        if not selected_img_key:
+                        if do_batch:  # batch processing
                             ret.update({log_box: f"{formatted_func_name}: update {len(res_dict)} over {len(editset)}"})
-                        else:
+                        else:  # single processing
                             ret.update({log_box: f"{formatted_func_name}: update `{selected_img_key}`"})
                         return ret
                     else:
                         return {log_box: f"{formatted_func_name}: no change"}
                 return wrapper
 
-            def cancel():
-                return {log_box: "cancelled."}
+            def cancel_edition_process():
+                return {log_box: "processing is cancelled."}
 
             cancel_event = cancel_btn.click(
-                fn=cancel,
+                fn=cancel_edition_process,
                 outputs=[log_box],
                 concurrency_limit=1,
             )
@@ -1718,7 +1724,7 @@ def create_ui(
             # ========================================= Buffer ========================================= #
 
             def show_buffer():
-                bufferset = UISubset(buffer.latests(), host=univset)
+                bufferset = UISubset.from_dict(buffer.latests(), host=univset)
                 return {
                     buffer_df: bufferset.df(),
                     buffer_metadata_df: convert_dataset_to_statistic_dataframe(bufferset),
@@ -1758,7 +1764,7 @@ def create_ui(
                     if resset is None:
                         return {log_box: f"invalid query result"}
                     if do_complement:
-                        resset = UISubset([img_key for img_key in queryset.keys() if img_key not in resset], host=univset)
+                        resset = UISubset.from_keys([img_key for img_key in queryset.keys() if img_key not in resset], host=univset)
                     logger.print(f"`{funcname}` found: {len(resset)}/{len(queryset)}")
                     result = load_subset_from_dataset(resset, sorting_methods=sorting_methods, reverse=reverse)
                     result.update({log_box: f"[{funcname}] found: {len(resset)}/{len(queryset)}"})
@@ -1773,7 +1779,7 @@ def create_ui(
                         ressset = [row[0] for row in rootset.table.select_is(attr, None)]
                     else:
                         ressset = rootset.subkeys(lambda img_md: img_md.get(attr, '') is None)
-                    return UISubset(ressset, host=univset)
+                    return UISubset.from_dataset(ressset, host=univset)
                 if do_regex:
                     def match(attr, pattern):
                         return re.match(pattern, attr) is not None
@@ -1787,7 +1793,7 @@ def create_ui(
                         ressset = [row[0] for row in rootset.table.select_is(attr, pattern)]
                 else:
                     ressset = rootset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))
-                return UISubset(ressset, host=univset)
+                return UISubset.from_dataset(ressset, host=univset)
 
             query_attr_btn.click(
                 fn=query_handler(query_attr),

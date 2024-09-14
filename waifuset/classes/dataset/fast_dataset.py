@@ -63,51 +63,55 @@ def load_fast_dataset(
     datasets = []
     for i, src in enumerate(source):
         if isinstance(src, Dataset):
-            datasets.append(src)
-            if not hasattr(src, 'priority'):
-                src.priority = i
-            continue
-        src = dict(src)
-        name_or_path = src.pop('name_or_path')
-        primary_key = src.pop('primary_key', 'image_key')
-        if local_only or os.path.exists(name_or_path):
-            dataset = load_local_dataset(
-                name_or_path,
-                dataset_cls=dataset_cls,
-                primary_key=primary_key,
-                column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', None)),
-                remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
+            dataset = src
+            if not hasattr(dataset, 'priority'):
+                dataset.priority = i
+            verbose_local = default_kwargs.get('verbose', False)
 
-                fp_key=src.pop('fp_key', default_kwargs.get('fp_key', 'image_path')),
-                recur=src.pop('recur', default_kwargs.get('recur', True)),
-                exts=src.pop('exts', default_kwargs.get('exts', IMAGE_EXTS)),
-                tbname=src.pop('tbname', default_kwargs.get('tbname', None)),
-                read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs', False)),
-                verbose=src.pop('verbose', verbose),
-                **src,
-            )
         else:
-            dataset = load_huggingface_dataset(
-                name_or_path=name_or_path,
-                dataset_cls=dataset_cls,
-                primary_key=primary_key,
-                column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', {k: 'image' for k in ('image', 'png', 'jpg', 'jpeg', 'webp', 'jfif')})),
-                remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
+            src = dict(src)
+            name_or_path = src.pop('name_or_path')
+            primary_key = src.pop('primary_key', 'image_key')
+            if local_only or os.path.exists(name_or_path):
+                dataset = load_local_dataset(
+                    name_or_path,
+                    dataset_cls=dataset_cls,
+                    primary_key=primary_key,
+                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', None)),
+                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
 
-                cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir', None)),
-                token=src.pop('token', default_kwargs.get('token', None)),
-                split=src.pop('split', default_kwargs.get('split', 'train')),
-                max_retries=src.pop('max_retries', default_kwargs.get('max_retries', None)),
-                verbose=src.pop('verbose', verbose),
-                **src,
-            )
-        if (mapping := src.pop('mapping', None)) is not None:
-            dataset = mapping(dataset)
-        dataset.priority = src.pop('priority', i)
+                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key', 'image_path')),
+                    recur=src.pop('recur', default_kwargs.get('recur', True)),
+                    exts=src.pop('exts', default_kwargs.get('exts', IMAGE_EXTS)),
+                    tbname=src.pop('tbname', default_kwargs.get('tbname', None)),
+                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs', False)),
+                    verbose=src.pop('verbose', verbose),
+                    **src,
+                )
+            else:
+                dataset = load_huggingface_dataset(
+                    name_or_path=name_or_path,
+                    dataset_cls=dataset_cls,
+                    primary_key=primary_key,
+                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', {k: 'image' for k in ('image', 'png', 'jpg', 'jpeg', 'webp', 'jfif')})),
+                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
+
+                    cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir', None)),
+                    token=src.pop('token', default_kwargs.get('token', None)),
+                    split=src.pop('split', default_kwargs.get('split', 'train')),
+                    max_retries=src.pop('max_retries', default_kwargs.get('max_retries', None)),
+                    verbose=src.pop('verbose', verbose),
+                    **src,
+                )
+            if (mapping := src.pop('mapping', None)) is not None:
+                dataset = mapping(dataset)
+            dataset.priority = src.pop('priority', i)
+            verbose_local = src.pop('verbose', False)
+
         datasets.append(dataset)
-        verbose_local = src.pop('verbose', False)
         logger.info(f"[{i}/{len(source)}] {dataset.name}: ", disable=not verbose_local)
         logger.info(dataset, no_prefix=True, disable=not verbose_local)
+
     if merge_mode != 'no':
         datasets.sort(key=lambda x: x.priority, reverse=True)
         dataset = accumulate_datasets(datasets, mode=merge_mode, verbose=verbose)

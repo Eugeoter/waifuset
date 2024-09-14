@@ -8,15 +8,20 @@ from waifuset import logging
 
 
 class UISubset(ParasiteDataset):
-    def __init__(self, source, host=None, **kwargs):
+    def __init__(self, source, host=None, page_size=None, **kwargs):
+        assert page_size is not None, "page_size must be specified"
         super().__init__(source, host=host)
+        self.page_size = page_size
+        self.register_to_config(
+            page_size=page_size,
+        )
 
     def get_categories(self):
         if not hasattr(self, "categories"):
             self.categories = get_categories(self)
         return self.categories
 
-    @ property
+    @property
     def num_pages(self):
         return int(math.ceil(len(self) / self.page_size))
 
@@ -29,14 +34,13 @@ class UISubset(ParasiteDataset):
 
 
 class UIDataset(UISubset):
-    def __init__(self, source=None, page_size=40, **kwargs):
-        super().__init__(source, host=source)
-        self.page_size = page_size
+    def __init__(self, source=None, host=None, page_size=None, **kwargs):
+        super().__init__(source, host=host, page_size=page_size, **kwargs)
         self.curset = self.fullset
 
     @ property
     def fullset(self):
-        return UISubset(self.root, self)
+        return UISubset.from_dataset(self.root, host=self)
 
     @ property
     def header(self):
@@ -54,7 +58,7 @@ class UIDataset(UISubset):
         if isinstance(subset, UISubset):
             self.curset = subset
         elif isinstance(subset, Iterable):
-            self.curset = UISubset(subset, self)
+            self.curset = UISubset.from_dataset(subset, self)
         else:
             raise ValueError(f"subset must be a list or a Dataset, not {type(subset)}")
 
@@ -71,10 +75,6 @@ class UIDataset(UISubset):
         else:
             raise NotImplementedError
 
-    @ classmethod
-    def from_dict(cls, dic: Dict, host, **kwargs):
-        return UISubset.from_dict(dic, host, **kwargs)
-
 
 def get_root(dataset: Dataset):
     return dataset.root if hasattr(dataset, 'root') else dataset
@@ -82,18 +82,23 @@ def get_root(dataset: Dataset):
 
 def get_categories(dataset: Dataset):
     rootset = get_root(dataset)
-    if 'category' in rootset.header:
-        cats = set(cat for cat in rootset.kvalues('category', distinct=True) if cat is not None)
+
+    # find image keys without category
+    if 'category' in dataset.header:
+        cats = set(cat for cat in dataset.kvalues('category', distinct=True) if cat is not None)
+        # select images without category
         if rootset.__class__.__name__ == 'SQLite3Dataset':
-            uncat_keys = [v[0] for v in rootset.table.select_is('category', None)]
+            uncat_keys = [v[0] for v in rootset.table.select_is('category', None)]  # search keys without category in the root sqlite3 dataset
+            uncat_keys = [key for key in uncat_keys if key in dataset]  # and intersect with the dataset
         else:
-            uncat_keys = [k for k, v in rootset.items() if v.get('category') is None]
-        rootset = ParasiteDataset(uncat_keys, host=rootset)
+            uncat_keys = [k for k, v in dataset.items() if v.get('category') is None]  # search keys without category in the dataset
+        uncat_dataset = ParasiteDataset.from_keys(uncat_keys, host=rootset)
     else:
         cats = set()
-        uncat_keys = rootset.keys()
+        uncat_dataset = dataset.keys()  # all images are uncat
+
     if uncat_keys:
-        for img_key, img_path in rootset.kitems('image_path'):
+        for img_key, img_path in uncat_dataset.kitems('image_path'):
             cat = Path(img_path).parent.name
             dataset.set(img_key, {'category': cat})
             if cat not in cats:

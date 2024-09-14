@@ -17,19 +17,19 @@ def get_header(dic):
     return list(columns.keys())
 
 
-def get_column_types(dic, header=None):
+def get_column2type(dic, header=None):
     header = header or get_header(dic)
-    types = {}
+    col2type = {}
     for v in dic.values():
         for i in range(len(header)):
             h = header[i]
-            if h not in types and v.get(h, None) is not None:
-                types[h] = type(v[h])
+            if h not in col2type and v.get(h, None) is not None:
+                col2type[h] = type(v[h])
                 header.pop(i)
                 if len(header) == 0:
-                    return types
+                    return col2type
                 break
-    return types
+    return col2type
 
 
 class Dataset(ConfigMixin):
@@ -116,22 +116,34 @@ class Dataset(ConfigMixin):
         pass
 
     @property
-    def header(self):
+    def header(self) -> List[str]:
         if not hasattr(self, '_header'):
             self.update_header()
         return self._header
+
+    @property
+    def column_names(self) -> List[str]:
+        return self.header
 
     def update_header(self, header=None):
         self._header = header or get_header(self.dict())
 
     @functools.cached_property
     def types(self):
-        return get_column_types(self.dict(), self.header)
+        r"""
+        Get the mapping from column name to its data type.
+        """
+        return get_column2type(self.dict(), self.header)
 
     @classmethod
     def from_dataset(cls, dataset: 'Dataset', **kwargs):
-        if dataset.__class__ == cls:
-            return dataset
+        r"""
+        Initialize a new dataset from another dataset.
+
+        Inherit the config from the original dataset and update with the new kwargs.
+        """
+        # if dataset.__class__ == cls:
+        #     return dataset
         kwargs = {**dataset.config, **kwargs}
         return cls.from_dict(dataset.dict(), **kwargs)
 
@@ -139,6 +151,9 @@ class Dataset(ConfigMixin):
         return dict(self.items())
 
     def df(self):
+        r"""
+        Return a pandas DataFrame of the dataset.
+        """
         d = self.dict()
         if not d:
             return pd.DataFrame()
@@ -146,6 +161,9 @@ class Dataset(ConfigMixin):
         return pd.DataFrame(data, columns=self.header)
 
     def __str__(self):
+        r"""
+        Return a well-formatted string representation of the dataset.
+        """
         df_str = str(self.df())
         width = max(len(line) for line in df_str.split('\n'))
         title = logging.magenta(self.name.center(width))
@@ -156,11 +174,17 @@ class Dataset(ConfigMixin):
         return self.__str__()
 
     def subkeys(self, condition: Callable[[Dict], bool], **kwargs):
+        r"""
+        Return a generator of the keys in the dataset that satisfy the condition.
+        """
         for k, v in self.items():
             if condition(v):
                 yield k
 
     def subset(self, condition: Callable[[Dict], bool], type=None, **kwargs):
+        r"""
+        Return a subset of the dataset that satisfy the condition.
+        """
         subset_dict = {}
         for k, v in self.logger.tqdm(self.items(), desc=f"subset", total=len(self)):
             if condition(v):
@@ -184,6 +208,15 @@ class Dataset(ConfigMixin):
     def chunk(self, i, n, type=None, **kwargs):
         r"""
         Chunk the dataset into some parts with equal size n and get the i-th chunk of the dataset.
+
+        For example, if the dataset has 10 items and n=3, then the dataset will be chunked into 4 parts:
+        | chunk idx | keys |
+        | --- | --- |
+        | 0 | 0, 1, 2 |
+        | 1 | 3, 4, 5 |
+        | 2 | 6, 7, 8 |
+        | 3 | 9 |
+        The chunk 0 will be returned if i=0.
         """
         chunk_dict = dict(list(self.items())[i*n:(i+1)*n])
         config = self.config.copy()
@@ -194,6 +227,14 @@ class Dataset(ConfigMixin):
     def chunks(self, n, type=None, **kwargs):
         r"""
         Chunk the dataset into some parts with equal size n and get all chunks of the dataset.
+
+        For example, if the dataset has 10 items and n=3, then the dataset will be chunked into 4 parts:
+        | chunk idx | keys |
+        | --- | --- |
+        | 0 | 0, 1, 2 |
+        | 1 | 3, 4, 5 |
+        | 2 | 6, 7, 8 |
+        | 3 | 9 |
         """
         chunk_dicts = [dict(list(self.items())[i*n:(i+1)*n]) for i in range(n)]
         config = self.config.copy()
@@ -204,6 +245,14 @@ class Dataset(ConfigMixin):
     def split(self, i, n, type=None, **kwargs):
         r"""
         Split the dataset into n parts with equal size and get the i-th split of the dataset.
+
+        For example, if the dataset has 10 items and n=3, then the dataset will be split into 3 parts:
+        | split idx | keys |
+        | --- | --- |
+        | 0 | 0, 3, 6, 9 |
+        | 1 | 1, 4, 7 |
+        | 2 | 2, 5, 8 |
+        The split 0 will be returned if i=0.
         """
         split_dict = dict(list(self.items())[i::n])
         config = self.config.copy()
@@ -214,6 +263,13 @@ class Dataset(ConfigMixin):
     def splits(self, n, type=None, **kwargs):
         r"""
         Split the dataset into n parts with equal size and get all splits of the dataset.
+
+        For example, if the dataset has 10 items and n=3, then the dataset will be split into 3 parts:
+        | split idx | keys |
+        | --- | --- |
+        | 0 | 0, 3, 6, 9 |
+        | 1 | 1, 4, 7 |
+        | 2 | 2, 5, 8 |
         """
         split_dicts = [dict(list(self.items())[i::n]) for i in range(n)]
         config = self.config.copy()
@@ -221,22 +277,41 @@ class Dataset(ConfigMixin):
         kwargs = {**config, **kwargs}
         return [(type or self.__class__).from_dict(split_dict, **kwargs) for split_dict in split_dicts]
 
-    def kvalues(self, key: str, **kwargs):
-        for k, kv in self.kitems(key, **kwargs):
+    def kvalues(self, column: str, **kwargs):
+        r"""
+        Return a generator of the values of the key in the dataset.
+        """
+        for k, kv in self.kitems(column, **kwargs):
             yield kv
 
-    def kitems(self, key: str, **kwargs):
+    def kitems(self, column: str, **kwargs):
+        r"""
+        Return a generator of the items of the column in the dataset.
+        """
         for k, v in self.items():
             try:
-                yield k, v[key]
+                yield k, v[column]
             except KeyError as e:
-                raise KeyError(f"key `{key}` not found in item `{k}`: `{v}`. ") from e
+                raise KeyError(f"key `{column}` not found in item `{k}`: `{v}`. ") from e
 
     def redirect(self, columns, tarset: 'Dataset'):
+        r"""
+        Set the columns of the dataset to the corresponding columns of the target dataset.
+        """
         for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
             self.set(k, {h: v[h] for h in columns if h in self.header})
 
     def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
+        r"""
+        Apply a function to each item in the dataset and update the dataset with the new values.
+
+        The return value of the function should be a dictionary that maps from column name to the new value.
+
+        @param func: the function to apply to each item in the dataset.
+        @param args: the positional arguments to pass to the function.
+        @param condition: the condition that the item should satisfy to be updated.
+        @param kwargs: the keyword arguments to pass to the function. The keyword arguments starting with 'tqdm_' will be passed to the tqdm logger (with the 'tqdm_' prefix removed).
+        """
         postfix = {'done': 0, 'skip': 0}
         tqdm_kwargs = dict(total=len(self), desc=func.__name__.replace('_', ' '), postfix=postfix)
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
@@ -257,11 +332,28 @@ class Dataset(ConfigMixin):
         self.update_header()
 
     def with_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
+        r"""
+        Return a new dataset with the function applied to each item in the dataset.
+
+        The return value of the function should be a dictionary that maps from column name to the new value.
+
+        @param func: the function to apply to each item in the dataset.
+        @param args: the positional arguments to pass to the function.
+        @param condition: the condition that the item should satisfy to be updated.
+        @param kwargs: the keyword arguments to pass to the function. The keyword arguments starting with 'tqdm_' will be passed to the tqdm logger (with the 'tqdm_' prefix removed).
+        """
         new = self.copy()
         new.apply_map(func, *args, condition=condition, **kwargs)
         return new
 
-    def add_columns(self, columns, **kwargs):
+    def add_columns(self, columns: List[str], **kwargs):
+        r"""
+        Add columns to the dataset. The new columns will be filled with None.
+        """
+        if not isinstance(columns, list):
+            raise ValueError(f"columns must be a list, not {type(columns)}")
+        if not all(isinstance(col, str) for col in columns):
+            raise ValueError(f"all columns must be strings, but got {columns} whose types are {set(type(col) for col in columns)}")
         tqdm_kwargs = dict(desc='add columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -271,7 +363,14 @@ class Dataset(ConfigMixin):
         self.update_header(self.header + [col for col in columns if col not in self.header])
         return self
 
-    def remove_columns(self, columns, **kwargs):
+    def remove_columns(self, columns: List[str], **kwargs):
+        r"""
+        Remove columns from the dataset.
+        """
+        if not isinstance(columns, list):
+            raise ValueError(f"columns must be a list, not {type(columns)}")
+        if not all(isinstance(col, str) for col in columns):
+            raise ValueError(f"all columns must be strings, but got {columns} whose types are {set(type(col) for col in columns)}")
         tqdm_kwargs = dict(desc='remove columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -281,7 +380,15 @@ class Dataset(ConfigMixin):
         self.update_header([col for col in self.header if col not in columns])
         return self
 
-    def rename_columns(self, column_mapping, **kwargs):
+    def rename_columns(self, column_mapping: Dict[str, str], **kwargs):
+        r"""
+        Rename columns in the dataset.
+        """
+        if not isinstance(column_mapping, dict):
+            raise ValueError(f"column_mapping must be a dictionary, not {type(column_mapping)}")
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in column_mapping.items()):
+            raise ValueError(
+                f"all keys and values in column_mapping must be strings, but got {column_mapping} whose types are {set(type(k) for k in column_mapping.keys())} and {set(type(v) for v in column_mapping.values())}")
         tqdm_kwargs = dict(desc='rename columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -297,14 +404,28 @@ class Dataset(ConfigMixin):
         return copy.deepcopy(self)
 
     def batch_keys(self, batch_size) -> List[List[str]]:
+        r"""
+        Return a list of batches of keys in the dataset with the given batch size.
+
+        For example, if the dataset has 10 items and the batch size is 3, then the keys will be batched into 4 parts:
+        | batch idx | keys |
+        | --- | --- |
+        | 0 | 0, 1, 2 |
+        | 1 | 3, 4, 5 |
+        | 2 | 6, 7, 8 |
+        | 3 | 9 |
+        """
         img_keys = list(self.keys())
         return [img_keys[i:i + batch_size] for i in range(0, len(self), batch_size)]
 
-    def set_verbose(self, verbose):
+    def set_verbose(self, verbose: bool):
+        r"""
+        Set the verbosity of the dataset.
+        """
         self.verbose = verbose
-        self.logger.get_disable = not verbose
+        self.logger.set_disable(not verbose)
         self.register_to_config(verbose=verbose)
 
-    def set_dtype(self, dtype):
+    def set_dtype(self, dtype: type):
         self.dtype = dtype
         self.register_to_config(dtype=dtype)

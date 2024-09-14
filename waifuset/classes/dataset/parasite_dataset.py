@@ -18,7 +18,7 @@ class ParasiteDataset(Dataset):
     }
 
     def __init__(self, source: Iterable[str], host: Dataset, **kwargs):
-        assert issubclass(type(host), Dataset), f"host must be a Dataset, not {type(host)}"
+        assert isinstance(host, Dataset), f"host must be a Dataset, got {type(host)}"
         self.host = host
         self.root = get_root(host)
         self.part = {k: None for k in source} if source else {}
@@ -129,7 +129,33 @@ class ParasiteDataset(Dataset):
 
     @classmethod
     def from_dict(cls, dic: Dict, host, **kwargs):
-        return cls(dic, host, **kwargs)
+        r"""
+        Initialize a ParasiteDataset from a dictionary. The keys of the dictionary will be used as the parasite keys.
+
+        Inherit the config from the dataset.
+        """
+        return cls.from_keys(dic.keys(), host=host, **kwargs)
+
+    @classmethod
+    def from_keys(cls, keys: Iterable[str], host, **kwargs):
+        r"""
+        Initialize a ParasiteDataset from a list of keys in a host dataset.
+
+        Inherit the config from the dataset.
+        """
+        kwargs = {**host.config, **kwargs}
+        kwargs['host'] = host
+        return cls(keys, **kwargs)
+
+    @classmethod
+    def from_dataset(cls, dataset: Dataset, host=None, **kwargs):
+        r"""
+        Initialize a ParasiteDataset from a Dataset. If host is not specified, it will be set to the dataset itself.
+
+        Inherit the config from the dataset.
+        """
+        host = host or dataset
+        return cls.from_keys(dataset.keys(), host=host, **kwargs)
 
     def subset(self, condition: Callable[[Dict], bool], **kwargs):
         kwargs = {'host': self.root, 'type': None, **kwargs}

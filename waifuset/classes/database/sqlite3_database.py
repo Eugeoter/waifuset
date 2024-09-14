@@ -43,7 +43,7 @@ def get_primary_key(cursor, table):
 
 
 def get_sql_value_str(value, recursive=True):
-    if value is None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
         return 'NULL'
     elif isinstance(value, bool):
         return '1' if value else '0'
@@ -189,7 +189,7 @@ class SQL3Table(object):
         try:
             self.cursor.execute(cmd)
         except sqlite3.OperationalError as e:
-            if 'no column' in str(e):
+            if 'no column' in str(e) in str(e):
                 for key, value in col2data.items():
                     if key not in self.header:
                         self.add_columns({key: type(value)})
@@ -349,7 +349,10 @@ class SQLite3Database(object):
         return [self.get_table(name) for name in self.get_all_tablenames()]
 
     def begin_transaction(self):
-        self.cursor.execute("BEGIN TRANSACTION;")
+        try:
+            self.cursor.execute("BEGIN TRANSACTION;")
+        except sqlite3.OperationalError:
+            logging.error("Cannot start a transaction within a transaction.")
         return self
 
     def commit_transaction(self):

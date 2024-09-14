@@ -1,11 +1,20 @@
+import torch
+import datasets
 from .dict_data import DictData
+
+DATASET_TYPES = (torch.utils.data.Dataset, datasets.Dataset)
 
 
 class HuggingFaceData(DictData):
+    def __new__(cls, *args, **kwargs):
+        if len(args) > 0 and isinstance(args[0], dict):
+            return args[0]
+        return super().__new__(cls)
+
     def __init__(
         self,
         torch_dataset,
-        index: int,
+        index: int = None,
         **kwargs,
     ):
         self.host = torch_dataset
@@ -18,7 +27,7 @@ class HuggingFaceData(DictData):
         return super().get(key, default)
 
     def __getattr__(self, name):
-        if name in self.host.column_names:
+        if 'host' in self.__dict__ and name in self.host.column_names:
             return self.host[self.index][name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
