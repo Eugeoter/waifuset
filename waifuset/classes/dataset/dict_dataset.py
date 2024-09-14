@@ -4,7 +4,9 @@ from .dataset import Dataset
 
 class DictDataset(Dataset):
     def __init__(self, source: Dict[str, Any], **kwargs):
-        assert isinstance(source, dict), f"source must be a dict, not {type(source)}"
+        if not isinstance(source, dict):
+            raise TypeError(f"source must be a dict, not {type(source)}")
+
         self.data = source
         super().__init__(**kwargs)
 
@@ -68,6 +70,8 @@ class DictDataset(Dataset):
 
     @classmethod
     def from_dict(cls, dic: Dict, **kwargs):
+        if not isinstance(dic, dict):
+            raise TypeError(f"dic must be a dict, not {type(dic)}")
         return cls(dic, **kwargs)
 
     def __add__(self, other):

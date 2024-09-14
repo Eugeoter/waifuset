@@ -2,6 +2,7 @@ import os
 import re
 import gradio as gr
 import inspect
+import time
 import pandas
 from pathlib import Path
 from PIL import Image
@@ -31,6 +32,7 @@ class UIManager(class_utils.FromConfigMixin):
     ui_language: Literal['en', 'cn'] = 'cn'
     ui_page_size: int = 40
     cpu_max_workers: int = 1
+    enable_category: bool = True
     verbose: bool = False
 
     logger: logging.ConsoleLogger
@@ -85,6 +87,7 @@ class UIManager(class_utils.FromConfigMixin):
                     cpu_max_workers=self.cpu_max_workers,
                     language=self.ui_language,
                     render='full',
+                    enable_category=self.enable_category,
                 )
 
     def launch(self):
@@ -103,6 +106,7 @@ def create_ui(
     cpu_max_workers=1,
     language='en',
     render='full',
+    enable_category=True,
 ):
     # ========================================= UI ========================================= #
     assert isinstance(univset, UIDataset), f"expected `univset` to be an instance of `UIDataset`, but got {type(univset)}"
@@ -111,27 +115,33 @@ def create_ui(
     assert render in ('full', 'demo'), f"expected `render` to be one of ('full', 'demo'), but got {render}"
 
     logger = logging.get_logger('UI')
+    logger.debug(f"initializing UI state")
     state = UIState(
         page_index=0,
         selected=UIGallerySelectData(),
     )
     waifu_tagger = None
     waifu_scorer = None
+    # logger.debug(f"initializing custom tags")
     tagging.init_custom_tags()
 
     def convert_dataset_to_statistic_dataframe(dataset: UISubset):
         num_images = len(dataset)
-        categories = sorted(dataset.get_categories()) if len(dataset) > 0 else []
-        num_cats = len(categories)
-        if num_cats > 5:
-            categories = categories[:5] + ['...']
-        df = pandas.DataFrame(
-            data={
-                translate('Number of images', language): [num_images],
-                translate('Number of categories', language): [num_cats],
-                translate('Categories', language): [categories],
-            },
-        )
+        data = {
+            'Number of images': [num_images],
+        }
+        if enable_category:
+            categories = sorted(dataset.get_categories()) if len(dataset) > 0 else []
+            num_cats = len(categories)
+            if num_cats > 5:
+                categories = categories[:5] + ['...']
+            data.update({
+                'Number of categories': [num_cats],
+                'Categories': [categories],
+            })
+        # translate keys
+        data = {translate(k, language): v for k, v in data.items()}
+        df = pandas.DataFrame(data)
         return df
 
     def convert_dataset_to_gallery(dataset: Dataset):
@@ -145,11 +155,13 @@ def create_ui(
 
                 with gr.Row():
                     with gr.Column():
-                        with gr.Tab(translate('Category', language)):
+                        # Disable when `enable_category` is False
+                        with gr.Tab(translate('Category', language), visible=enable_category):
                             with gr.Row():
+                                # logger.debug(f"initializing categories")
                                 category_selector = gr.Dropdown(
                                     label=translate('Category', language),
-                                    choices=univset.get_categories(),
+                                    choices=univset.get_categories() if enable_category else [],
                                     value=None,
                                     container=False,
                                     multiselect=True,
@@ -157,6 +169,36 @@ def create_ui(
                                     min_width=256,
                                 )
                                 reload_category_btn = EmojiButton(Emoji.anticlockwise)
+
+                        with gr.Tab(translate('Query', language)):
+                            with gr.Tab(translate("Attribute", language)) as query_tag_tab:
+                                with gr.Row(variant='compact'):
+                                    query_attr_selector = gr.Dropdown(
+                                        choices=univset.header,
+                                        value=None,
+                                        multiselect=False,
+                                        allow_custom_value=False,
+                                        show_label=False,
+                                        container=False,
+                                        min_width=96,
+                                    )
+                                    query_attr_pattern = gr.Textbox(
+                                        value=None,
+                                        show_label=False,
+                                        container=False,
+                                        min_width=128,
+                                        lines=1,
+                                        max_lines=1,
+                                        placeholder=translate('Value', language),
+                                    )
+                                    query_attr_btn = EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
+                            with gr.Row():
+                                query_opts = gr.CheckboxGroup(
+                                    choices=[translate('Subset', language), translate('Complement', language), translate('Regex', language)],
+                                    value=None,
+                                    container=False,
+                                    scale=1,
+                                )
 
                         with gr.Tab(translate('Sort', language)):
                             with gr.Row():
@@ -176,38 +218,8 @@ def create_ui(
                                     value=False,
                                     scale=0,
                                     min_width=128,
-                                    container=False,
+                                    container=True,
                                 )
-
-                        with gr.Tab(translate('Query', language)):
-                            with gr.Row():
-                                query_opts = gr.CheckboxGroup(
-                                    choices=[translate('Subset', language), translate('Complement', language), translate('Regex', language)],
-                                    value=None,
-                                    container=False,
-                                    scale=1,
-                                )
-                            with gr.Tab(translate("Attribute", language)) as query_tag_tab:
-                                with gr.Row(variant='compact'):
-                                    query_attr_selector = gr.Dropdown(
-                                        choices=univset.header,
-                                        value=None,
-                                        multiselect=False,
-                                        allow_custom_value=False,
-                                        show_label=False,
-                                        container=False,
-                                        min_width=96,
-                                    )
-                                    query_attr_pattern = gr.Textbox(
-                                        value=None,
-                                        show_label=False,
-                                        container=False,
-                                        min_width=128,
-                                        lines=1,
-                                        max_lines=1,
-                                        placeholder='Pattern',
-                                    )
-                                    query_attr_btn = EmojiButton(Emoji.right_pointing_magnifying_glass, variant='primary')
 
                     with gr.Column():
                         with gr.Row():
@@ -221,9 +233,10 @@ def create_ui(
                     with gr.Row():
                         with gr.Column():
                             with gr.Row():
+                                # logger.debug(f"initializing showcase")
                                 showcase = gr.Gallery(
                                     label=translate('Showcase', language),
-                                    value=convert_dataset_to_gallery(univset.curset.page(0)),
+                                    value=convert_dataset_to_gallery(univset.curset.get_page(0)),
                                     rows=4,
                                     columns=4,
                                     container=True,
@@ -241,6 +254,7 @@ def create_ui(
                                 with gr.Column():
                                     ...
                             with gr.Row():
+                                # logger.debug(f"initializing dataset metadata")
                                 dataset_metadata_df = gr.Dataframe(
                                     value=convert_dataset_to_statistic_dataframe(univset.curset),
                                     label=translate('Dataset Information', language),
@@ -340,195 +354,195 @@ def create_ui(
                                     container=False,
                                     scale=1,
                                 )
+                            with gr.Tab(label=translate('Tagging', language)):
+                                with gr.Tab(label=translate('Custom Tagging', language)):
+                                    with gr.Tab(translate("Add/Remove", language)) as add_remove_tab:
+                                        def custom_add_rem_tagging_row():
+                                            with gr.Row(variant='compact'):
+                                                add_tag_btn = EmojiButton(Emoji.plus, variant='primary')
+                                                tag_selector = gr.Dropdown(
+                                                    choices=list(tagging.CUSTOM_TAGS or []),
+                                                    value=None,
+                                                    multiselect=True,
+                                                    allow_custom_value=True,
+                                                    show_label=False,
+                                                    container=False,
+                                                    min_width=96,
+                                                )
+                                                remove_tag_btn = EmojiButton(Emoji.minus, variant='stop')
+                                            return add_tag_btn, tag_selector, remove_tag_btn
 
-                            with gr.Tab(label=translate('Custom Tagging', language)):
-                                with gr.Tab(translate("Add/Remove", language)) as add_remove_tab:
-                                    def custom_add_rem_tagging_row():
-                                        with gr.Row(variant='compact'):
-                                            add_tag_btn = EmojiButton(Emoji.plus, variant='primary')
-                                            tag_selector = gr.Dropdown(
-                                                choices=list(tagging.CUSTOM_TAGS or []),
-                                                value=None,
-                                                multiselect=True,
-                                                allow_custom_value=True,
-                                                show_label=False,
-                                                container=False,
-                                                min_width=96,
-                                            )
-                                            remove_tag_btn = EmojiButton(Emoji.minus, variant='stop')
-                                        return add_tag_btn, tag_selector, remove_tag_btn
-
-                                    add_tag_btns = []
-                                    tag_selectors = []
-                                    remove_tag_btns = []
-                                    for r in range(3):
-                                        add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
-                                        add_tag_btns.append(add_tag_btn)
-                                        tag_selectors.append(tag_selector)
-                                        remove_tag_btns.append(remove_tag_btn)
-
-                                    with gr.Accordion(label=translate('More', language), open=False):
-                                        for r in range(6):
+                                        add_tag_btns = []
+                                        tag_selectors = []
+                                        remove_tag_btns = []
+                                        for r in range(3):
                                             add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
                                             add_tag_btns.append(add_tag_btn)
                                             tag_selectors.append(tag_selector)
                                             remove_tag_btns.append(remove_tag_btn)
 
-                                with gr.Tab(translate("Replace", language)) as replace_tab:
-                                    def custom_replace_tagging_row():
-                                        with gr.Row(variant='compact'):
-                                            replace_tag_btn = EmojiButton(Emoji.clockwise_downwards_and_upwards_open_circle_arrows, variant='primary')
-                                            old_tag_selector = gr.Dropdown(
-                                                # label=translate('Replacer', global_args.language),
-                                                choices=list(tagging.CUSTOM_TAGS or []),
-                                                value=None,
-                                                container=False,
-                                                multiselect=False,
-                                                allow_custom_value=True,
-                                                min_width=96,
-                                            )
-                                            new_tag_selector = gr.Dropdown(
-                                                # label=translate('Replacement', global_args.language),
-                                                choices=list(tagging.CUSTOM_TAGS or []),
-                                                value=None,
-                                                container=False,
-                                                multiselect=False,
-                                                allow_custom_value=True,
-                                                min_width=96,
-                                            )
-                                        return replace_tag_btn, old_tag_selector, new_tag_selector
+                                        with gr.Accordion(label=translate('More', language), open=False):
+                                            for r in range(6):
+                                                add_tag_btn, tag_selector, remove_tag_btn = custom_add_rem_tagging_row()
+                                                add_tag_btns.append(add_tag_btn)
+                                                tag_selectors.append(tag_selector)
+                                                remove_tag_btns.append(remove_tag_btn)
 
-                                    replace_tag_btns = []
-                                    old_tag_selectors = []
-                                    new_tag_selectors = []
-                                    for r in range(3):
-                                        replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
-                                        replace_tag_btns.append(replace_tag_btn)
-                                        old_tag_selectors.append(old_tag_selector)
-                                        new_tag_selectors.append(new_tag_selector)
+                                    with gr.Tab(translate("Replace", language)) as replace_tab:
+                                        def custom_replace_tagging_row():
+                                            with gr.Row(variant='compact'):
+                                                replace_tag_btn = EmojiButton(Emoji.clockwise_downwards_and_upwards_open_circle_arrows, variant='primary')
+                                                old_tag_selector = gr.Dropdown(
+                                                    # label=translate('Replacer', global_args.language),
+                                                    choices=list(tagging.CUSTOM_TAGS or []),
+                                                    value=None,
+                                                    container=False,
+                                                    multiselect=False,
+                                                    allow_custom_value=True,
+                                                    min_width=96,
+                                                )
+                                                new_tag_selector = gr.Dropdown(
+                                                    # label=translate('Replacement', global_args.language),
+                                                    choices=list(tagging.CUSTOM_TAGS or []),
+                                                    value=None,
+                                                    container=False,
+                                                    multiselect=False,
+                                                    allow_custom_value=True,
+                                                    min_width=96,
+                                                )
+                                            return replace_tag_btn, old_tag_selector, new_tag_selector
 
-                                    match_tag_checkbox = gr.Checkbox(
-                                        label=translate('Match Tag', language),
-                                        value=True,
-                                        scale=0,
-                                        min_width=128,
-                                    )
-
-                                    with gr.Accordion(label=translate('More', language), open=False):
-                                        for r in range(6):
+                                        replace_tag_btns = []
+                                        old_tag_selectors = []
+                                        new_tag_selectors = []
+                                        for r in range(3):
                                             replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
                                             replace_tag_btns.append(replace_tag_btn)
                                             old_tag_selectors.append(old_tag_selector)
                                             new_tag_selectors.append(new_tag_selector)
 
-                            # ! Deprecated
-                            # with gr.Tab(label=translate('Operational Tagging', global_args.language)):
-                            #     with gr.Row(variant='compact'):
-                            #         cap_op_op_dropdown = gr.Dropdown(
-                            #             label=translate('Op', global_args.language),
-                            #             choices=translate(list(OPS.keys()), global_args.language),
-                            #             value=translate(list(OPS.keys())[0], global_args.language),
-                            #             multiselect=False,
-                            #             allow_custom_value=False,
-                            #             scale=0,
-                            #             min_width=128,
-                            #         )
-                            #         cap_op_op_tag_dropdown = gr.Dropdown(
-                            #             label=translate('Tags', global_args.language),
-                            #             choices=[],
-                            #             value=None,
-                            #             allow_custom_value=True,
-                            #             multiselect=True,
-                            #         )
-
-                            #         operate_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary')
-
-                            #     with gr.Row(variant='compact'):
-                            #         cap_op_cond_dropdown = gr.Dropdown(
-                            #             label=translate('If', global_args.language),
-                            #             choices=translate(list(CONDITION.keys()), global_args.language),
-                            #             value=translate(list(CONDITION.keys())[0], global_args.language),
-                            #             multiselect=False,
-                            #             allow_custom_value=False,
-                            #             scale=0,
-                            #             min_width=128,
-                            #         )
-
-                            #         cap_op_cond_tag_dropdown = gr.Dropdown(
-                            #             label=translate('Tags', global_args.language),
-                            #             choices=[],
-                            #             value=None,
-                            #             allow_custom_value=True,
-                            #             multiselect=True,
-                            #         )
-
-                            #         cap_op_incl_rel_dropdown = gr.Dropdown(
-                            #             label=translate('Inclusion', global_args.language),
-                            #             choices=translate(list(INCLUSION_RELATIONSHIP.keys()), global_args.language),
-                            #             value=translate(list(INCLUSION_RELATIONSHIP.keys())[0], global_args.language),
-                            #             multiselect=False,
-                            #             allow_custom_value=False,
-                            #             scale=0,
-                            #             min_width=144,
-                            #         )
-
-                            with gr.Tab(label=translate('Optimizers', language)):
-                                with gr.Tab(translate('Read', language)):
-                                    with gr.Row(variant='compact'):
-                                        read_attrs_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                    with gr.Row(variant='compact'):
-                                        read_attrs_types = gr.CheckboxGroup(
-                                            label=translate('Types', language),
-                                            choices=translate(['txt', 'danbooru'], language),
-                                            value=translate(['txt', 'danbooru'], language),
-                                            scale=1,
-                                        )
-                                with gr.Tab(translate('Parse', language)):
-                                    with gr.Row(variant='compact'):
-                                        parse_caption_attrs_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Sort', language)):
-                                    with gr.Row(variant='compact'):
-                                        sort_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Deduplicate', language)):
-                                    with gr.Row(variant='compact'):
-                                        deduplicate_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Deoverlap', language)):
-                                    with gr.Row(variant='compact'):
-                                        deoverlap_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                with gr.Tab(translate('Defeature', language)):
-                                    with gr.Row(variant='compact'):
-                                        decharacterize_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
-                                    with gr.Row(variant='compact'):
-                                        dechar_feature_type = gr.Radio(
-                                            label=translate('Feature Type', language),
-                                            choices=translate(['physics', 'clothes'], language),
-                                            value=translate('physics', language),
-                                            scale=1,
+                                        match_tag_checkbox = gr.Checkbox(
+                                            label=translate('Match Tag', language),
+                                            value=True,
+                                            scale=0,
                                             min_width=128,
                                         )
-                                        dechar_freq_thres = gr.Slider(
-                                            label=translate('Frequency Threshold', language),
-                                            value=0.3,
-                                            minimum=0,
-                                            maximum=1,
-                                            step=0.01,
-                                            scale=1,
-                                            min_width=128,
-                                        )
-                                with gr.Tab(translate('Formalize', language)):
-                                    with gr.Row(variant='compact'):
-                                        formalize_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, scale=0, min_width=40, variant='primary')
-                                    with gr.Row(variant='compact'):
-                                        formalize_caption_dropdown = gr.Dropdown(
-                                            label=translate('Format', language),
-                                            choices=translate(list(FORMAT_PRESETS.keys()), language),
-                                            value=None,
-                                            multiselect=True,
-                                            allow_custom_value=False,
-                                            scale=1,
-                                        )
 
-                            with gr.Tab(label=translate('Tools', language)):
+                                        with gr.Accordion(label=translate('More', language), open=False):
+                                            for r in range(6):
+                                                replace_tag_btn, old_tag_selector, new_tag_selector = custom_replace_tagging_row()
+                                                replace_tag_btns.append(replace_tag_btn)
+                                                old_tag_selectors.append(old_tag_selector)
+                                                new_tag_selectors.append(new_tag_selector)
+
+                                # ! Deprecated
+                                # with gr.Tab(label=translate('Operational Tagging', global_args.language)):
+                                #     with gr.Row(variant='compact'):
+                                #         cap_op_op_dropdown = gr.Dropdown(
+                                #             label=translate('Op', global_args.language),
+                                #             choices=translate(list(OPS.keys()), global_args.language),
+                                #             value=translate(list(OPS.keys())[0], global_args.language),
+                                #             multiselect=False,
+                                #             allow_custom_value=False,
+                                #             scale=0,
+                                #             min_width=128,
+                                #         )
+                                #         cap_op_op_tag_dropdown = gr.Dropdown(
+                                #             label=translate('Tags', global_args.language),
+                                #             choices=[],
+                                #             value=None,
+                                #             allow_custom_value=True,
+                                #             multiselect=True,
+                                #         )
+
+                                #         operate_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary')
+
+                                #     with gr.Row(variant='compact'):
+                                #         cap_op_cond_dropdown = gr.Dropdown(
+                                #             label=translate('If', global_args.language),
+                                #             choices=translate(list(CONDITION.keys()), global_args.language),
+                                #             value=translate(list(CONDITION.keys())[0], global_args.language),
+                                #             multiselect=False,
+                                #             allow_custom_value=False,
+                                #             scale=0,
+                                #             min_width=128,
+                                #         )
+
+                                #         cap_op_cond_tag_dropdown = gr.Dropdown(
+                                #             label=translate('Tags', global_args.language),
+                                #             choices=[],
+                                #             value=None,
+                                #             allow_custom_value=True,
+                                #             multiselect=True,
+                                #         )
+
+                                #         cap_op_incl_rel_dropdown = gr.Dropdown(
+                                #             label=translate('Inclusion', global_args.language),
+                                #             choices=translate(list(INCLUSION_RELATIONSHIP.keys()), global_args.language),
+                                #             value=translate(list(INCLUSION_RELATIONSHIP.keys())[0], global_args.language),
+                                #             multiselect=False,
+                                #             allow_custom_value=False,
+                                #             scale=0,
+                                #             min_width=144,
+                                #         )
+
+                                with gr.Tab(label=translate('Optimizers', language)):
+                                    with gr.Tab(translate('Read', language)):
+                                        with gr.Row(variant='compact'):
+                                            read_attrs_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                        with gr.Row(variant='compact'):
+                                            read_attrs_types = gr.CheckboxGroup(
+                                                label=translate('Types', language),
+                                                choices=translate(['txt', 'danbooru'], language),
+                                                value=translate(['txt', 'danbooru'], language),
+                                                scale=1,
+                                            )
+                                    with gr.Tab(translate('Parse', language)):
+                                        with gr.Row(variant='compact'):
+                                            parse_caption_attrs_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                    with gr.Tab(translate('Sort', language)):
+                                        with gr.Row(variant='compact'):
+                                            sort_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                    with gr.Tab(translate('Deduplicate', language)):
+                                        with gr.Row(variant='compact'):
+                                            deduplicate_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                    with gr.Tab(translate('Deoverlap', language)):
+                                        with gr.Row(variant='compact'):
+                                            deoverlap_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                    with gr.Tab(translate('Defeature', language)):
+                                        with gr.Row(variant='compact'):
+                                            decharacterize_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                        with gr.Row(variant='compact'):
+                                            dechar_feature_type = gr.Radio(
+                                                label=translate('Feature Type', language),
+                                                choices=translate(['physics', 'clothes'], language),
+                                                value=translate('physics', language),
+                                                scale=1,
+                                                min_width=128,
+                                            )
+                                            dechar_freq_thres = gr.Slider(
+                                                label=translate('Frequency Threshold', language),
+                                                value=0.3,
+                                                minimum=0,
+                                                maximum=1,
+                                                step=0.01,
+                                                scale=1,
+                                                min_width=128,
+                                            )
+                                    with gr.Tab(translate('Formalize', language)):
+                                        with gr.Row(variant='compact'):
+                                            formalize_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, scale=0, min_width=40, variant='primary')
+                                        with gr.Row(variant='compact'):
+                                            formalize_caption_dropdown = gr.Dropdown(
+                                                label=translate('Format', language),
+                                                choices=translate(list(FORMAT_PRESETS.keys()), language),
+                                                value=None,
+                                                multiselect=True,
+                                                allow_custom_value=False,
+                                                scale=1,
+                                            )
+
+                            with gr.Tab(label=translate('Toolbox', language)):
 
                                 with gr.Tab(label=translate('Tagger', language)):
                                     with gr.Row(variant='compact'):
@@ -548,9 +562,9 @@ def create_ui(
                                         wd_batch_size = gr.Number(
                                             value=1,
                                             label=translate('Batch Size', language),
-                                            min_width=128,
+                                            min_width=96,
                                             precision=0,
-                                            scale=1,
+                                            scale=0,
                                         )
 
                                         wd_overwrite_mode = gr.Radio(
@@ -623,6 +637,18 @@ def create_ui(
                                             min_width=128,
                                         )
 
+                            with gr.Tab(label=translate('Labeling', language)):
+                                with gr.Tab(label=translate('Quality Labeling', language)):
+                                    with gr.Row(variant='compact'):
+                                        quality_label_btns = [
+                                            gr.Button(
+                                                value=translate(quality, language),
+                                                scale=1,
+                                                min_width=96,
+                                                variant='primary' if i == 0 else 'stop' if i == len(get_quality2score()) - 1 else 'secondary',
+                                            ) for i, quality in enumerate(get_quality2score())
+                                        ]
+
                     with gr.Row():
                         with gr.Column(scale=4):
                             with gr.Tab(translate('Image Key', language)):
@@ -677,6 +703,8 @@ def create_ui(
                         row_count=(20, 'fixed'),
                     )
 
+            # logger.debug(f"initializing functions")
+
             # ========================================= Functions ========================================= #
 
             def partial(func, **preset_kwargs):
@@ -710,7 +738,7 @@ def create_ui(
 
             def change_current_subset(newset: UISubset, sorting_methods=None, reverse=False):
                 r"""
-                Change the current dataset to `dset`
+                Change the current dataset to a new dataset.
                 """
                 # pre-sorting
                 # if sorting_methods is not None and len(sorting_methods) > 0:
@@ -731,7 +759,7 @@ def create_ui(
                 #         func_param_names = list(func_params.keys())
                 #         sorting_keys.append((func, {k: v for k, v in extra_kwargs.items() if k in func_param_names}))
 
-                univset.change_curset(newset)
+                univset.set_curset(newset)
 
                 # post-sorting
                 # if sorting_methods is not None and len(sorting_methods) > 0:
@@ -743,7 +771,7 @@ def create_ui(
                 """
                 assert isinstance(showset, UISubset), f"expected `showset` to be an instance of `UISubset`, but got {type(showset)}"
                 new_page_index = correct_page_index(showset, new_page_index)
-                page = showset.page(new_page_index - 1)
+                page = showset.get_page(new_page_index - 1)
                 # elif isinstance(showset, Dataset):
                 #     page = showset
                 #     new_page_index = 1
@@ -761,7 +789,7 @@ def create_ui(
                 Convert `dataset` to dataframe
                 """
                 new_page_index = correct_page_index(dataset, new_page_index)
-                page = dataset.page(new_page_index - 1) if isinstance(dataset, UISubset) else dataset
+                page = dataset.get_page(new_page_index - 1) if isinstance(dataset, UISubset) else dataset
                 df = page.df()
                 return {
                     database: df,
@@ -833,22 +861,30 @@ def create_ui(
                     res = show_database(newset, new_page_index)
                 return res
 
-            def load_subset_from_categories(categories, sorting_methods=None, reverse=False):
+            def load_subset_from_categories(categories: List[str], sorting_methods=None, reverse=False):
                 r"""
-                Change current dataset to another dataset with category `category` and show its chunk
+                Change current dataset to a new dataset whose images are all belong to one of the specified categories.
                 """
-                logger.print(f"loading subset from categories: {categories}")
+                logger.info(f"loading subset from categories: {', '.join([logging.yellow(category) for category in categories])}")
+                tic = time.time()
+
+                # If no categories are selected, show the full dataset
                 if not categories:
                     catset = univset.fullset
+                # If the backbone is SQLite3Dataset, use SQL query to select the subset to improve efficiency
                 elif isinstance(rootset := univset.root, SQLite3Dataset):
                     if 'category' in rootset.header:
                         catset = rootset.select_in('category', categories) if len(categories) > 1 else rootset.select_is('category', categories[0])
                     else:
                         catset = rootset.select_like('image_path', f"%{categories[0]}%")
                         catset = catset.subset(condition=lambda img_md: os.path.basename(os.path.dirname(img_md['image_path'])) in set(categories))
+                    catset = UISubset.from_dataset(catset, host=univset)
+                # Otherwise, directly use Python to select the subset
                 else:
                     catset = univset.subset(condition=lambda img_md: (img_md.get('category', None) or os.path.basename(os.path.dirname(img_md['image_path']))) in set(categories))
-                return load_subset_from_dataset(catset, new_page_index=1, sorting_methods=sorting_methods, reverse=reverse)
+                subset = load_subset_from_dataset(catset, new_page_index=1, sorting_methods=sorting_methods, reverse=reverse)
+                logger.info(f"loaded {logging.yellow(len(catset))} data from {logging.yellow(len(categories))} categories in {time.time() - tic:.3f}s")
+                return subset
 
             dataset_change_inputs = [cur_page_number, sorting_methods_dropdown, sorting_reverse_checkbox]
             dataset_change_listeners = [showcase, dataset_metadata_df, cur_img_key, database, cur_page_number, category_selector, log_box]
@@ -1276,19 +1312,28 @@ def create_ui(
             def save_to_disk(fp, progress: gr.Progress = gr.Progress(track_tqdm=True)):
                 rootset = univset.root
 
-                # patch for DirectoryDataset
+                # if rootset is ToDiskMixin, save to disk
                 if isinstance(rootset, ToDiskMixin):
-                    os.makedirs(os.path.dirname(fp), exist_ok=True)
-                    rootset.commit() if fp else rootset.dump(fp)
-                    return f"saved: {rootset.path}"
+                    if fp:
+                        os.makedirs(os.path.dirname(fp), exist_ok=True)
+                        rootset.dump(fp)
+                        logger.info(f"dump dataset to: {fp}")
+                    else:
+                        fp = rootset.fp
+                        rootset.commit()
+                        logger.info(f"commit dataset to: {fp}")
+                    return f"saved: {fp}"
+                # if rootset is not ToDiskMixin but save path is provided, try to dump the dataset to the save path
                 elif fp:
                     ext = os.path.splitext(fp)[1]
                     if ext not in ('.json', '.csv', '.sqlite3', '.db'):
                         raise gr.Error(f"unsupported extension: {ext}")
                         return {log_box: f"unsupported extension: {ext}"}
                     os.makedirs(os.path.dirname(fp), exist_ok=True)
-                    AutoDataset.dump(rootset, fp)
+                    FastDataset.dump(rootset, fp)
+                    logger.info(f"dump dataset to: {fp}")
                     return f"saved: {fp}"
+                # if rootset is DirectoryDataset, save the dataset as txt caption files
                 elif rootset.__class__.__name__ == "DirectoryDataset":
                     def save_one(img_md):
                         img_path = Path(img_md['image_path'])
@@ -1299,10 +1344,10 @@ def create_ui(
                     save_one = track_progress(progress, desc=f"[{save_to_disk.__name__}]", total=len(buffer))(save_one)
                     for img_md in buffer.latests().values():
                         save_one(img_md)
+                    logger.info(f"save dataset to txt caption files")
                     return f"saved"
                 else:
                     raise gr.Error(f"failed to save dataset: Dataset type not supported or invalid save path")
-                    return {log_box: f"failed to save dataset: Dataset type not supported or invalid save path"}
 
             save_btn.click(
                 fn=save_to_disk,
@@ -1656,6 +1701,14 @@ def create_ui(
                     caption[r"(.+)[\s_]quality"] = rf"{quality}\2quality"
                 return {'caption': caption.text, 'quality': quality}
 
+            for quality, quality_label_btn in zip(get_quality2score().keys(), quality_label_btns):
+                quality_label_btn.click(
+                    fn=data_edition_handler(partial(set_quality, quality=quality)),
+                    inputs=[cur_img_key, general_edit_opts],
+                    outputs=cur_img_key_change_listeners,
+                    concurrency_limit=1,
+                )
+
             def set_score_to_quality(img_md):
                 aesthetic_score = img_md.get('aesthetic_score', None)
                 if aesthetic_score is None:
@@ -1771,15 +1824,18 @@ def create_ui(
                     return result
                 return wrapper
 
-            def query_attr(queryset: UISubset, attr, pattern, do_regex=False):
+            def query_attr(queryset: UISubset, attr: str, pattern: str, do_regex: bool = False):
+                r"""
+                Query the dataset by a specific attribute.
+                """
                 if not attr:
                     return None
                 if not pattern:
                     if isinstance(rootset := queryset.root, SQLite3Dataset):
-                        ressset = [row[0] for row in rootset.table.select_is(attr, None)]
+                        result_keys = [row[0] for row in rootset.table.select_is(attr, None)]
                     else:
-                        ressset = rootset.subkeys(lambda img_md: img_md.get(attr, '') is None)
-                    return UISubset.from_dataset(ressset, host=univset)
+                        result_keys = rootset.subkeys(lambda img_md: img_md.get(attr, '') is None)
+                    return UISubset.from_keys(result_keys, host=univset)
                 if do_regex:
                     def match(attr, pattern):
                         return re.match(pattern, attr) is not None
@@ -1788,12 +1844,12 @@ def create_ui(
                         return attr == pattern
                 if isinstance(rootset := queryset.root, SQLite3Dataset):
                     if do_regex:
-                        ressset = [row[0] for row in rootset.table.select_func(match, '$' + attr + '$', pattern)]
+                        result_keys = [row[0] for row in rootset.table.select_func(match, '$' + attr + '$', pattern)]
                     else:
-                        ressset = [row[0] for row in rootset.table.select_is(attr, pattern)]
+                        result_keys = [row[0] for row in rootset.table.select_is(attr, pattern)]
                 else:
-                    ressset = rootset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))
-                return UISubset.from_dataset(ressset, host=univset)
+                    result_keys = rootset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))
+                return UISubset.from_keys(result_keys, host=univset)
 
             query_attr_btn.click(
                 fn=query_handler(query_attr),

@@ -310,7 +310,7 @@ class SQL3Table(object):
 
 
 class SQLite3Database(object):
-    def __init__(self, fp=None, read_only=False):
+    def __init__(self, fp: str = None, read_only: bool = False):
         self.fp = fp or ':memory:'
         self.conn = sqlite3.connect(self.fp, check_same_thread=False, uri=read_only and fp != ':memory:')  # auto-commit
         self.cursor = self.conn.cursor()
@@ -321,25 +321,41 @@ class SQLite3Database(object):
     def commit(self):
         self.conn.commit()
 
-    def create_table(self, name, col2type: Dict[str, type] = {}, exists_ok=False, primary_key=None):
-        if exists_ok and name in self.get_all_tablenames():
+    def create_table(self, table_name: str, col2type: Dict[str, type] = {}, exists_ok: str = False, primary_key: str = None):
+        if not isinstance(table_name, str):
+            raise TypeError(f"table_name must be a str, not {type(table_name)}")
+        if not isinstance(col2type, dict):
+            raise TypeError(f"col2type must be a dict, not {type(col2type)}")
+        for col, dtype in col2type.items():
+            if not isinstance(dtype, type):
+                raise TypeError(f"column type must be a type, not {type(dtype)}")
+
+        if exists_ok and table_name in self.get_all_tablenames():
             return self
         if primary_key:
             col2type[primary_key] = col2type.get(primary_key, str)
         assert len(col2type) > 0, "At least one column must be specified."
         col2type_str = ', '.join([f"{k} {PY2SQL3.get(v, 'TEXT')}" for k, v in col2type.items()]) + (f", PRIMARY KEY ({primary_key})" if primary_key else "")
-        self.cursor.execute(f"CREATE TABLE {name} ({col2type_str});")
+        self.cursor.execute(f"CREATE TABLE {table_name} ({col2type_str});")
         return self
 
-    def drop_table(self, name):
-        self.cursor.execute(f"DROP TABLE {name}")
+    def drop_table(self, table_name):
+        if not isinstance(table_name, str):
+            raise TypeError(f"`table_name` must be a str, not {type(table_name)}")
+        if table_name not in self.get_all_tablenames():
+            raise ValueError(f"Table {table_name} does not exist. All tables: {self.get_all_tablenames()}")
+
+        self.cursor.execute(f"DROP TABLE {table_name}")
         return self
 
-    def get_table(self, name, cls=SQL3Table, **kwargs):
-        if name not in self.get_all_tablenames():
-            raise ValueError(f"Table {name} does not exist. All tables: {self.get_all_tablenames()}")
+    def get_table(self, table_name: str, cls=SQL3Table, **kwargs):
+        if not isinstance(table_name, str):
+            raise TypeError(f"table_name must be a str, not {type(table_name)}")
+        if table_name not in self.get_all_tablenames():
+            raise ValueError(f"Table {table_name} does not exist. All tables: {self.get_all_tablenames()}")
+
         assert issubclass(cls, SQL3Table), "cls must be a subclass of SQL3DatabaseTable"
-        return cls(self, name, **kwargs)
+        return cls(self, table_name, **kwargs)
 
     def get_all_tablenames(self):
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -364,10 +380,16 @@ class SQLite3Database(object):
         return self
 
     def vacuum(self):
+        r"""
+        Clean up the database.
+        """
         self.cursor.execute("VACUUM;")
         return self
 
     def set_read_only(self):
+        r"""
+        Set the database to read-only mode.
+        """
         self.conn.close()
 
         if self.fp == ':memory:':

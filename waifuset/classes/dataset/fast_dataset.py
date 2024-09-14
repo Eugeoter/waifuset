@@ -1,7 +1,7 @@
 import requests
 import os
 from pathlib import Path
-from typing import Dict, List, Any, Literal, Union, Tuple
+from typing import Dict, List, Any, Literal, Union, Tuple, Iterable
 from .auto_dataset import AutoDataset
 from .dict_dataset import DictDataset
 from .sqlite3_dataset import SQLite3Dataset
@@ -14,7 +14,7 @@ logger = logging.get_logger("dataset")
 
 
 class FastDataset(AutoDataset):
-    def __new__(cls, *source, dataset_cls=None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', local_only=False, **default_kwargs) -> Dataset:
+    def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', local_only: bool = False, **default_kwargs) -> Dataset:
         source = parse_source_input(source)
         if merge_mode == 'no' and len(source) > 1:
             from .chain_dataset import ChainDataset
@@ -22,7 +22,7 @@ class FastDataset(AutoDataset):
         else:
             return load_fast_dataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, local_only=local_only, **default_kwargs)
 
-    def __init__(self, *source, dataset_cls=None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', local_only=False, **default_kwargs) -> Dataset:
+    def __init__(self, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', local_only: bool = False, **default_kwargs) -> Dataset:
         r"""
         Initialize the dataset from a specified source.
 
@@ -49,12 +49,35 @@ class FastDataset(AutoDataset):
 
 
 def load_fast_dataset(
-    *source: List[str],
+    *source: List[Union[str, Dict[str, Any], Dataset]],
     merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union',
-    local_only=False,
-    dataset_cls=None,
+    local_only: bool = False,
+    dataset_cls: type = None,
     **default_kwargs,
 ) -> Union[Dataset, List[Dataset]]:
+    r"""
+    Load dataset(s) from the specified source(s) and merge them into a single dataset.
+
+    @param source: The source of the dataset(s). This can be one or multiple sources, each of which can be of the following types:
+        - str or Path: The name or path to a local dataset (e.g., image directory, CSV, JSON, SQLite3) or a HuggingFace dataset (repository ID).
+        - dict: The configuration for a local dataset or a HuggingFace dataset, with the following
+            keys:
+            - name_or_path: The name or path to a local dataset or a HuggingFace dataset.
+            - primary_key: The primary key of the dataset. Default is 'image_key'.
+            - column_mapping: The mapping of the dataset columns.
+            - match_columns: Indicates whether to match the dataset columns. If True, columns not in the column_mapping will be removed.
+            - fp_key: The key for the file path in the dataset. Default is 'image_path'. Applicable only for local datasets.
+            - exts: The extensions of the images. Default is common image extensions ('jpg', 'jpeg', 'png', 'webp', 'jfif'). Applicable only for local datasets.
+            - recur: Specifies whether to recursively search for images in the directory. Default is True. Applicable only for local datasets.
+            - tbname: The table name of the SQLite3 dataset. Default is None, which means the dataset is assumed to be in a single table format. Applicable only for SQLite3 datasets.
+        - Dataset: An instance of the Dataset class.
+    @param merge_mode: The mode to merge multiple datasets. Default is 'union'.
+    @param local_only: Whether to load local datasets only. Default is False.
+    @param dataset_cls: An optional class to use for the dataset. If not provided, a default dataset class will be used.
+    @param **default_kwargs: Additional keyword arguments to pass to the dataset constructor.
+
+    @returns: An instance of the Dataset class.
+    """
     verbose = default_kwargs.get('verbose', False)
     source = parse_source_input(source)
     if not source:
@@ -253,22 +276,39 @@ def patch_key(dataset, primary_key) -> Dataset:
     return dataset
 
 
-def accumulate_datasets(datasets, mode: Literal['union', 'intersection', 'update'] = 'union', verbose=True) -> Dataset:
+def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'intersection', 'update'] = 'union', verbose=True) -> Dataset:
+    r"""
+    Accumulate multiple datasets into a single dataset. 
+
+    The overlapping order is determined by the order of the input datasets. The former dataset has a higher priority.
+    """
+    if not isinstance(datasets, Iterable) or isinstance(datasets, str):
+        raise TypeError(f"datasets must be an iterable of Dataset, not {type(datasets)}")
+    for i, ds in enumerate(datasets):
+        if not isinstance(ds, Dataset):
+            raise TypeError(f"datasets[{i}] must be an instance of Dataset, not {type(ds)}")
+
+    # If datasets is empty, return an empty DictDataset
     if not datasets:
         return DictDataset.from_dict({})
-    if len(datasets) == 1:
+    # If there is only one dataset, return itself
+    elif len(datasets) == 1:
         return datasets[0]
+    # If types of some datasets are inconsistent, use DictDataset by default
     elif not all(ds.__class__ == datasets[0].__class__ for ds in datasets):
-        logger.warning(f"Accumulating datasets with different types: {[ds.__class__.__name__ for ds in datasets]}, the type of the first dataset, DictDataset, will be used.")
+        logger.warning(f"because some types of datasets are inconsistent when accumulating, use {DictDataset.__name__} by default")
         dataset_cls = DictDataset
+    # Otherwise, use the type of all these datasets
     else:
         dataset_cls = datasets[0].__class__
 
+    # Merge the configurations of all datasets
     pivot_config = {}
     for ds in datasets:
         pivot_config.update(ds.config)
     pivot_config.pop('name', 'FastDataset')
     pivot_config['verbose'] = verbose
+
     pivotset = dataset_cls.from_dataset(datasets[0], **pivot_config)
     if 'header' in pivotset.__dict__:
         del pivotset.__dict__['header']
@@ -287,14 +327,15 @@ def accumulate_datasets(datasets, mode: Literal['union', 'intersection', 'update
     elif mode == 'update':
         pass
     else:
-        raise ValueError(f"Invalid mode: {mode}")
+        raise ValueError(f"Invalid merge mode: {mode}")
 
-    for ds in logger.tqdm(datasets[1:], desc='accumulate datasets', position=1, disable=not verbose):
+    for i, ds in logger.tqdm(enumerate(datasets[1:]), desc='accumulate datasets', position=1, disable=not verbose):
         if mode == 'update':
             pivotset.update(ds)
-        else:
-            for img_key in logger.tqdm(img_keys, desc='accumulate data', position=2, disable=not verbose):
+        else:  # mode in ['union', 'intersection']
+            for img_key in logger.tqdm(img_keys, desc=f'accumulate {i + 1}/{len(datasets[1:])}-th dataset', position=2, disable=not verbose):
                 if (new_img_md := ds.get(img_key)) is not None:
+                    # High level data prioritize low level data when they conflict
                     if (old_img_md := pivotset.get(img_key)) is not None:
                         old_img_md.update(new_img_md)
                         if issubclass(new_img_md.__class__, old_img_md.__class__):

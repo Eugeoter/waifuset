@@ -3,6 +3,10 @@ import copy
 
 
 class Data(object):
+    r"""
+    Basic data object. Only used when complex data type is needed.
+    """
+
     def dict(self, flatten=False):
         d = {}
         for k, v in self.items():

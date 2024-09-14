@@ -118,7 +118,7 @@
     "categories": "类别",
     "scorer": "美学评分器",
     "aesthetic score": "美学评分",
-    "tagger": "标注器",
+    "tagger": "打标器",
     "average": "平均",
     "overwrite mode": "覆盖模式",
     "filename": "文件名",
@@ -183,5 +183,13 @@
     "date": "日期",
     "safety": "安全性",
     "feature type": "特征类型",
-    "physics": "物理"
+    "physics": "物理",
+    "attribute": "属性",
+    "pattern": "模式",
+    "value": "值",
+    "model": "模型",
+    "tagging": "标签",
+    "toolbox": "工具箱",
+    "labeling": "标注",
+    "quality labeling": "质量标注"
 }

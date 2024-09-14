@@ -1,7 +1,7 @@
 import pandas as pd
 import copy
 import functools
-from typing import Callable, Dict, List, overload
+from typing import Callable, Dict, List, Iterable, overload
 from abc import abstractmethod
 from collections import OrderedDict
 from .dataset_mixin import ConfigMixin
@@ -117,12 +117,18 @@ class Dataset(ConfigMixin):
 
     @property
     def header(self) -> List[str]:
+        r"""
+        Return the header of the dataset.
+        """
         if not hasattr(self, '_header'):
             self.update_header()
         return self._header
 
     @property
     def column_names(self) -> List[str]:
+        r"""
+        Return the column names of the dataset. Alias of `header`.
+        """
         return self.header
 
     def update_header(self, header=None):
@@ -181,7 +187,7 @@ class Dataset(ConfigMixin):
             if condition(v):
                 yield k
 
-    def subset(self, condition: Callable[[Dict], bool], type=None, **kwargs):
+    def subset(self, condition: Callable[[Dict], bool], dataset_cls: type = None, **kwargs):
         r"""
         Return a subset of the dataset that satisfy the condition.
         """
@@ -192,9 +198,9 @@ class Dataset(ConfigMixin):
         config = self.config
         config['name'] += '.subset'
         kwargs = {**config, **kwargs}
-        return (type or self.__class__).from_dict(subset_dict, **kwargs)
+        return (dataset_cls or self.__class__).from_dict(subset_dict, **kwargs)
 
-    def sample(self, n=1, randomly=True, type=None, **kwargs):
+    def sample(self, n=1, randomly=True, dataset_cls: type = None, **kwargs):
         if randomly:
             import random
             sample_dict = dict(random.sample(list(self.items()), n))
@@ -203,9 +209,9 @@ class Dataset(ConfigMixin):
         config = self.config.copy()
         config['name'] += '.subset'
         kwargs = {**config, **kwargs}
-        return (type or self.__class__).from_dict(sample_dict, **kwargs)
+        return (dataset_cls or self.__class__).from_dict(sample_dict, **kwargs)
 
-    def chunk(self, i, n, type=None, **kwargs):
+    def chunk(self, i: int, n: int, dataset_cls: type = None, **kwargs):
         r"""
         Chunk the dataset into some parts with equal size n and get the i-th chunk of the dataset.
 
@@ -222,9 +228,9 @@ class Dataset(ConfigMixin):
         config = self.config.copy()
         config['name'] += '.chunk'
         kwargs = {**config, **kwargs}
-        return (type or self.__class__).from_dict(chunk_dict, **kwargs)
+        return (dataset_cls or self.__class__).from_dict(chunk_dict, **kwargs)
 
-    def chunks(self, n, type=None, **kwargs):
+    def chunks(self, n: int, dataset_cls: type = None, **kwargs):
         r"""
         Chunk the dataset into some parts with equal size n and get all chunks of the dataset.
 
@@ -240,9 +246,9 @@ class Dataset(ConfigMixin):
         config = self.config.copy()
         config['name'] += '.chunk'
         kwargs = {**config, **kwargs}
-        return [(type or self.__class__).from_dict(chunk_dict, **kwargs) for chunk_dict in chunk_dicts]
+        return [(dataset_cls or self.__class__).from_dict(chunk_dict, **kwargs) for chunk_dict in chunk_dicts]
 
-    def split(self, i, n, type=None, **kwargs):
+    def split(self, i: int, n: int, dataset_cls: type = None, **kwargs):
         r"""
         Split the dataset into n parts with equal size and get the i-th split of the dataset.
 
@@ -258,9 +264,9 @@ class Dataset(ConfigMixin):
         config = self.config.copy()
         config['name'] += '.split'
         kwargs = {**config, **kwargs}
-        return (type or self.__class__).from_dict(split_dict, **kwargs)
+        return (dataset_cls or self.__class__).from_dict(split_dict, **kwargs)
 
-    def splits(self, n, type=None, **kwargs):
+    def splits(self, n: int, dataset_cls: type = None, **kwargs):
         r"""
         Split the dataset into n parts with equal size and get all splits of the dataset.
 
@@ -275,12 +281,17 @@ class Dataset(ConfigMixin):
         config = self.config.copy()
         config['name'] += '.split'
         kwargs = {**config, **kwargs}
-        return [(type or self.__class__).from_dict(split_dict, **kwargs) for split_dict in split_dicts]
+        return [(dataset_cls or self.__class__).from_dict(split_dict, **kwargs) for split_dict in split_dicts]
 
     def kvalues(self, column: str, **kwargs):
         r"""
         Return a generator of the values of the key in the dataset.
         """
+        if not isinstance(column, str):
+            raise ValueError(f"column must be a string, not {type(column)}")
+        if column not in self.header:
+            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+
         for k, kv in self.kitems(column, **kwargs):
             yield kv
 
@@ -288,18 +299,31 @@ class Dataset(ConfigMixin):
         r"""
         Return a generator of the items of the column in the dataset.
         """
+        if not isinstance(column, str):
+            raise ValueError(f"column must be a string, not {type(column)}")
+        if column not in self.header:
+            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+
         for k, v in self.items():
             try:
                 yield k, v[column]
             except KeyError as e:
                 raise KeyError(f"key `{column}` not found in item `{k}`: `{v}`. ") from e
 
-    def redirect(self, columns, tarset: 'Dataset'):
+    def redirect(self, columns: List[str], tarset: 'Dataset'):
         r"""
         Set the columns of the dataset to the corresponding columns of the target dataset.
         """
+        if not isinstance(columns, Iterable) or isinstance(columns, str):
+            raise ValueError(f"columns must be an iterable of strings, not {type(columns)}")
+        for col in columns:
+            if not isinstance(col, str):
+                raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
+            if col not in tarset.header:
+                raise ValueError(f"column `{col}` not found in the header of the target dataset: {tarset.header}")
+
         for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
-            self.set(k, {h: v[h] for h in columns if h in self.header})
+            self.set(k, {col: v[col] for col in columns if col in self.header})
 
     def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
         r"""
@@ -352,8 +376,12 @@ class Dataset(ConfigMixin):
         """
         if not isinstance(columns, list):
             raise ValueError(f"columns must be a list, not {type(columns)}")
-        if not all(isinstance(col, str) for col in columns):
-            raise ValueError(f"all columns must be strings, but got {columns} whose types are {set(type(col) for col in columns)}")
+        for col in columns:
+            if not isinstance(col, str):
+                raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
+            if col in self.header:
+                raise ValueError(f"column `{col}` already exists in the header: {self.header}")
+
         tqdm_kwargs = dict(desc='add columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -369,8 +397,12 @@ class Dataset(ConfigMixin):
         """
         if not isinstance(columns, list):
             raise ValueError(f"columns must be a list, not {type(columns)}")
-        if not all(isinstance(col, str) for col in columns):
-            raise ValueError(f"all columns must be strings, but got {columns} whose types are {set(type(col) for col in columns)}")
+        for col in columns:
+            if not isinstance(col, str):
+                raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
+            if col not in self.header:
+                raise ValueError(f"column `{col}` not found in the header: {self.header}")
+
         tqdm_kwargs = dict(desc='remove columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -386,9 +418,14 @@ class Dataset(ConfigMixin):
         """
         if not isinstance(column_mapping, dict):
             raise ValueError(f"column_mapping must be a dictionary, not {type(column_mapping)}")
-        if not all(isinstance(k, str) and isinstance(v, str) for k, v in column_mapping.items()):
-            raise ValueError(
-                f"all keys and values in column_mapping must be strings, but got {column_mapping} whose types are {set(type(k) for k in column_mapping.keys())} and {set(type(v) for v in column_mapping.values())}")
+        for k, v in column_mapping.items():
+            if not isinstance(k, str) or not isinstance(v, str):
+                raise ValueError(f"all keys and values in column_mapping must be strings, but got {k} and {v} whose types are {type(k)} and {type(v)}")
+            if k not in self.header:
+                raise ValueError(f"column `{k}` not found in the header: {self.header}")
+            if v in self.header:
+                raise ValueError(f"column `{v}` already exists in the header: {self.header}")
+
         tqdm_kwargs = dict(desc='rename columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
@@ -403,7 +440,7 @@ class Dataset(ConfigMixin):
     def copy(self):
         return copy.deepcopy(self)
 
-    def batch_keys(self, batch_size) -> List[List[str]]:
+    def batch_keys(self, batch_size: int) -> List[List[str]]:
         r"""
         Return a list of batches of keys in the dataset with the given batch size.
 
@@ -415,6 +452,11 @@ class Dataset(ConfigMixin):
         | 2 | 6, 7, 8 |
         | 3 | 9 |
         """
+        if not isinstance(batch_size, int):
+            raise ValueError(f"batch_size must be an integer, not {type(batch_size)}")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be a positive integer, not {batch_size}")
+
         img_keys = list(self.keys())
         return [img_keys[i:i + batch_size] for i in range(0, len(self), batch_size)]
 

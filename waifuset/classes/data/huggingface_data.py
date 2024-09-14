@@ -6,6 +6,9 @@ DATASET_TYPES = (torch.utils.data.Dataset, datasets.Dataset)
 
 
 class HuggingFaceData(DictData):
+    r"""
+    A dictionary-like data object that supports huggingface datasets.
+    """
     def __new__(cls, *args, **kwargs):
         if len(args) > 0 and isinstance(args[0], dict):
             return args[0]

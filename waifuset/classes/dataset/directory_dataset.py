@@ -1,4 +1,5 @@
 import os
+from typing import Iterable
 from .dataset_mixin import FromDiskMixin
 from .dict_dataset import DictDataset
 from ...utils import file_utils
@@ -11,7 +12,14 @@ class DirectoryDataset(DictDataset, FromDiskMixin):
     }
 
     @classmethod
-    def from_disk(cls, fp, fp_key='path', exts=None, recur=True, fp_type=str, fp_abspath=False, **kwargs):
+    def from_disk(cls, fp: str, fp_key='path', exts: Iterable[str] = None, recur: bool = True, fp_type: type = str, fp_abspath: bool = False, **kwargs):
+        if not isinstance(fp, str):
+            raise TypeError(f"fp must be a str, not {type(fp)}")
+        if not os.path.exists(fp):
+            raise FileNotFoundError(f"fp not found: {fp}")
+        if not os.path.isdir(fp):
+            raise NotADirectoryError(f"fp must be a directory, not a file: {fp}")
+
         data = {os.path.splitext(os.path.basename(f))[0]: {fp_key: f} for f in file_utils.listdir(
             fp,
             exts=exts,

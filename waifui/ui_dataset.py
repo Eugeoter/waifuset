@@ -1,31 +1,42 @@
 import math
 import os
 import gradio as gr
-from typing import Union, Tuple, Dict, Iterable
+from typing import Union, Tuple, Dict, Iterable, List
 from pathlib import Path
 from waifuset import Dataset, ParasiteDataset, DictDataset
 from waifuset import logging
 
 
 class UISubset(ParasiteDataset):
+    page_size: int
+    categories: List[str]
+
     def __init__(self, source, host=None, page_size=None, **kwargs):
+        # check inputs
         assert page_size is not None, "page_size must be specified"
-        super().__init__(source, host=host)
+        assert isinstance(page_size, int), "page_size must be an integer"
+        assert page_size > 0, "page_size must be greater than 0"
+
+        super().__init__(source, host=host, **kwargs)
         self.page_size = page_size
+        self.categories = None
         self.register_to_config(
             page_size=page_size,
         )
 
-    def get_categories(self):
-        if not hasattr(self, "categories"):
+    def get_categories(self) -> List[str]:
+        if self.categories is None:
             self.categories = get_categories(self)
         return self.categories
 
+    def set_categories(self, categories: Iterable[str]):
+        self.categories = list(categories)
+
     @property
-    def num_pages(self):
+    def num_pages(self) -> int:
         return int(math.ceil(len(self) / self.page_size))
 
-    def page(self, i: int, **kwargs):
+    def get_page(self, i: int, **kwargs) -> DictDataset:
         r"""
         Get the i-th page of the dataset.
         """
@@ -34,35 +45,52 @@ class UISubset(ParasiteDataset):
 
 
 class UIDataset(UISubset):
+    r"""
+    UIDataset controls the current subset of the dataset to be displayed. The current dataset have to be a UISubset object.
+    """
+
     def __init__(self, source=None, host=None, page_size=None, **kwargs):
         super().__init__(source, host=host, page_size=page_size, **kwargs)
-        self.curset = self.fullset
+        self.curset: UISubset = self.fullset
 
-    @ property
+    @property
     def fullset(self):
         return UISubset.from_dataset(self.root, host=self)
 
-    @ property
+    @property
     def header(self):
         return self.root.header
 
-    @ property
+    @property
+    def column_names(self):
+        return self.root.column_names
+
+    @property
     def types(self):
         return self.root.types
 
-    @ property
+    @property
     def info(self):
         return self.root.info
 
-    def change_curset(self, subset=None):
+    def set_curset(self, subset: UISubset = None):
+        r"""
+        Set the current dataset to a new UISubset.
+        """
         if isinstance(subset, UISubset):
             self.curset = subset
-        elif isinstance(subset, Iterable):
-            self.curset = UISubset.from_dataset(subset, self)
         else:
-            raise ValueError(f"subset must be a list or a Dataset, not {type(subset)}")
+            raise ValueError(f"subset must be an instance of UISubset, but got {type(subset)}")
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
+        r"""
+        Set the current selected data to a new one.
+
+        @param selected: The new selected data. It can be one of the following types:
+            - gr.SelectData: The selected data of the gr.Gallery object.
+            - Tuple[int, str]: The [index, image_key] pair of the selected data.
+            - None: Empty the selected data.
+        """
         if isinstance(selected, gr.SelectData):
             self.selected.index = selected.index
             image_filename = selected.value['image']['orig_name']
@@ -73,7 +101,7 @@ class UIDataset(UISubset):
         elif selected is None:
             self.selected.index, self.selected.image_key = None, None
         else:
-            raise NotImplementedError
+            raise ValueError(f"selected must be an instance of gr.SelectData or Tuple[int, str], but got {type(selected)}")
 
 
 def get_root(dataset: Dataset):
@@ -83,9 +111,11 @@ def get_root(dataset: Dataset):
 def get_categories(dataset: Dataset):
     rootset = get_root(dataset)
 
+    logging.debug(f"Searching categories for {len(dataset)} images...")
+
     # find image keys without category
     if 'category' in dataset.header:
-        cats = set(cat for cat in dataset.kvalues('category', distinct=True) if cat is not None)
+        cats = set(cat for cat in dataset.kvalues('category', distinct=True) if cat)  # get all categories
         # select images without category
         if rootset.__class__.__name__ == 'SQLite3Dataset':
             uncat_keys = [v[0] for v in rootset.table.select_is('category', None)]  # search keys without category in the root sqlite3 dataset
