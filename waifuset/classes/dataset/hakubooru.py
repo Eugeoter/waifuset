@@ -3,6 +3,7 @@
 import os
 import requests
 import json
+from huggingface_hub import hf_hub_download
 from .sqlite3_dataset import SQLite3Dataset
 
 TAG_ID_2_TYPE = {
@@ -20,6 +21,9 @@ RATING_ID_2_TYPE = {
     3: "e",
 }
 
+REPO_ID = "KBlueLeaf/danbooru2023-metadata-database"
+DB_FILE = "danbooru2023.db"
+
 
 class Hakubooru(SQLite3Dataset):
     def __init__(self, fp, **kwargs):
@@ -29,11 +33,25 @@ class Hakubooru(SQLite3Dataset):
         self._tagbase = None
         self._tagwiki = None
 
+    @classmethod
+    def from_huggingface(cls, repo_id=None, filename=None, cache_dir=None):
+        repo_id = repo_id or REPO_ID
+        filename = filename or DB_FILE
+        db_file = hf_hub_download(
+            repo_id,
+            filename,
+            cache_dir=cache_dir,
+        )
+        return cls(db_file)
+
     def query_post(
         self,
         tags,
         postprocess=True,
     ):
+        r"""
+        Query posts that contains ALL the tags.
+        """
         tags = tags if isinstance(tags, list) else [tags]
         tag_ids = [dec_to_base36(self.tag2id[tag]) for tag in tags]
         cond = ' AND '.join(f"tag_list GLOB \'*[$#]{tag_id}#*\'" for tag_id in tag_ids)
@@ -42,19 +60,28 @@ class Hakubooru(SQLite3Dataset):
         for row in rows:
             yield self.postprocessor(row, enable=postprocess)
 
-    def query_tag_wiki(self, tag):
-        tag_id = self.tag2id.get(tag)
-        if tag_id is None:
-            return None
-        return self.tagwiki.get(tag_id)
-
-    def query_tag(self, tag):
+    def query_tag_info(self, tag):
+        r"""
+        Query tag metadata by tag name.
+        """
         tag_id = self.tag2id.get(tag)
         if tag_id is None:
             return None
         return self.tagbase.get(tag_id)
 
+    def query_tag_wiki(self, tag):
+        r"""
+        Query tag wiki by tag name.
+        """
+        tag_id = self.tag2id.get(tag)
+        if tag_id is None:
+            return None
+        return self.tagwiki.get(tag_id)
+
     def postprocessor(self, row, enable=True):
+        r"""
+        Postprocess a row to a dict.
+        """
         if not enable:
             return row
         datadict = super().postprocessor(row, enable)
@@ -63,7 +90,7 @@ class Hakubooru(SQLite3Dataset):
     @property
     def tagbase(self):
         r"""
-        Tag database. A dict with tag_id as key and tag metadata as value.
+        Tag database. A dict with tag id as key and tag metadata as value.
         """
         if self._tagbase is None:
             self._tagbase = get_tagbase(self.conn)

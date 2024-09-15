@@ -44,6 +44,7 @@ class Emoji:
     switch = '\U000021C5'  # ⇅
     triangular_ruler = '\U0001F4D0'  # 📐
     clipboard = '\U0001f4cb'  # 📋
+    page_with_curl = '\U0001f4c3'  # 📃
     flower_playing_cards = '\U0001F3B4'  # 🎴
     check_correct = u'\u2714\ufe0f'  # ✔️
     plus = u'\u2795'

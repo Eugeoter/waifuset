@@ -4,6 +4,7 @@ import gradio as gr
 import inspect
 import time
 import pandas
+import pyperclip
 from pathlib import Path
 from PIL import Image
 from functools import wraps
@@ -228,6 +229,16 @@ def create_ui(
                                 lines=1,
                                 max_lines=1,
                             )
+                        with gr.Row():
+                            save_btn = EmojiButton(Emoji.floppy_disk, variant='primary')
+                            save_path = gr.Textbox(
+                                value=None,
+                                show_label=False,
+                                max_lines=1,
+                                lines=1,
+                                show_copy_button=True,
+                                interactive=True,
+                            )
 
                 with gr.Tab(translate('Dataset', language)) as tagging_tab:
                     with gr.Row():
@@ -265,15 +276,19 @@ def create_ui(
                         with gr.Column():
                             with gr.Row():
                                 with gr.Tab(translate('Caption', language)) as caption_tab:
-                                    caption = gr.Textbox(
-                                        show_label=False,
-                                        value=None,
-                                        container=True,
-                                        show_copy_button=True,
-                                        lines=6,
-                                        max_lines=6,
-                                        placeholder=translate('empty', language),
-                                    )
+                                    with gr.Row():
+                                        caption = gr.Textbox(
+                                            show_label=False,
+                                            value=None,
+                                            container=True,
+                                            show_copy_button=True,
+                                            lines=6,
+                                            max_lines=6,
+                                            placeholder=translate('empty', language),
+                                        )
+                                    with gr.Row():
+                                        copy_caption_btn = EmojiButton(Emoji.clipboard)
+                                        copy_caption_as_prompt_btn = EmojiButton(Emoji.page_with_curl)
                                 with gr.Tab(translate('Metadata', language)) as metadata_tab:
                                     with gr.Row():
                                         caption_metadata_df = gr.Dataframe(
@@ -336,15 +351,6 @@ def create_ui(
                                 # set_category_btn = EmojiButton(Emoji.top_left_arrow)
                                 undo_btn = EmojiButton(Emoji.leftwards)
                                 redo_btn = EmojiButton(Emoji.rightwards)
-                                save_btn = EmojiButton(Emoji.floppy_disk, variant='primary')
-                                save_path = gr.Textbox(
-                                    value=None,
-                                    show_label=False,
-                                    max_lines=1,
-                                    lines=1,
-                                    show_copy_button=True,
-                                    interactive=True,
-                                )
                                 cancel_btn = EmojiButton(Emoji.no_entry, variant='stop')
                             with gr.Row():
                                 general_edit_opts = gr.CheckboxGroup(
@@ -1356,6 +1362,34 @@ def create_ui(
                 concurrency_limit=1,
             )
 
+            def copy_to_clipboard(text):
+                r"""
+                Copy text to clipboard
+                """
+                max_log_caption_length = 50
+                pyperclip.copy(text)
+                return f"copied: {text if len(text) < max_log_caption_length else text[:max_log_caption_length] + '...'}"
+
+            copy_caption_btn.click(
+                fn=copy_to_clipboard,
+                inputs=[caption],
+                outputs=[log_box],
+                concurrency_limit=1,
+            )
+
+            def copy_to_clipboard_as_prompt(text):
+                tags = text.split(', ')
+                tags = [tagging.fmt2awa(tag) for tag in tags]
+                text = ', '.join(tags)
+                return copy_to_clipboard(text)
+
+            copy_caption_as_prompt_btn.click(
+                fn=copy_to_clipboard_as_prompt,
+                inputs=[caption],
+                outputs=[log_box],
+                concurrency_limit=1,
+            )
+
             # ========================================= Quick Tagging ========================================= #
 
             def format_tag(img_md, tag):
@@ -1848,7 +1882,7 @@ def create_ui(
 
                 if do_regex:
                     def match(attr, pattern):
-                        return re.match(pattern, attr) is not None
+                        return re.match(pattern, str(attr)) is not None
                 else:
                     def match(attr, pattern):
                         return attr == pattern
