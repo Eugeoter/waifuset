@@ -3,7 +3,7 @@ tqdm
 numpy
 pillow
 imagehash
-gradio==4.13.0
+gradio>=4.31.3
 opencv-contrib-python
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger

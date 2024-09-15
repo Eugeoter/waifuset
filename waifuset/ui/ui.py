@@ -2263,5 +2263,7 @@ def create_ui(
                     translator_ui = translator.create_ui(univargs)
                 except ModuleNotFoundError:
                     invalid_install_warning()
+                except Exception as e:
+                    logu.warn(f"failed to load translator: {e}")
 
     return demo
