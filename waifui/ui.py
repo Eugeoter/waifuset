@@ -1695,11 +1695,7 @@ def create_ui(
             )
 
             def set_quality(img_md, quality):
-                img_md['quality'] = quality
-                if (caption := img_md.get('caption', None)) is not None and 'quality' in caption:
-                    caption = Caption(caption)
-                    caption[r"(.+)[\s_]quality"] = rf"{quality}\2quality"
-                return {'caption': caption.text, 'quality': quality}
+                return {'quality': quality}
 
             for quality, quality_label_btn in zip(get_quality2score().keys(), quality_label_btns):
                 quality_label_btn.click(
@@ -1716,7 +1712,7 @@ def create_ui(
                 if not 0 <= aesthetic_score <= 10:
                     raise gr.Error(f"invalid score: {aesthetic_score}")
                 quality = convert_score2quality(aesthetic_score)
-                return {**set_quality(img_md, quality), 'aesthetic_score': aesthetic_score}
+                return set_quality(img_md, quality)
 
             ws_score2quality_btn.click(
                 fn=data_edition_handler(set_score_to_quality),
@@ -1812,8 +1808,13 @@ def create_ui(
                     if queryset is None or len(queryset) == 0:
                         return {log_box: f"empty query range"}
 
-                    # QUERY
+                    logger.info(f"querying: {funcname}")
+                    logger.info(f"  - options: {', '.join([logging.yellow(opt) for opt in opts])}", no_prefix=True)
+                    logger.info(f"  - query range: {len(queryset)}", no_prefix=True)
+
+                    # query start
                     resset = func(queryset, *args, **extra_kwargs, **kwargs)
+
                     if resset is None:
                         return {log_box: f"invalid query result"}
                     if do_complement:
@@ -1824,31 +1825,42 @@ def create_ui(
                     return result
                 return wrapper
 
-            def query_attr(queryset: UISubset, attr: str, pattern: str, do_regex: bool = False):
+            def query_attr(queryset: UISubset, attr: str, pattern: str, do_regex: bool = False) -> UISubset:
                 r"""
-                Query the dataset by a specific attribute.
+                Query the dataset by a specific attribute within the query set.
                 """
                 if not attr:
+                    logger.warning(f"no attribute selected when querying by attribute, empty will be returned")
                     return None
+
+                rootset = univset.root
+                # if rootset is SQLite3Dataset and queryset is large, use SQL query
+                use_sql_query = isinstance(rootset, SQLite3Dataset) and (len(queryset) >= 0.5 * len(univset))
+
+                # if pattern is empty, select None
                 if not pattern:
-                    if isinstance(rootset := queryset.root, SQLite3Dataset):
-                        result_keys = [row[0] for row in rootset.table.select_is(attr, None)]
+                    if use_sql_query:
+                        result_keys = [row[0] for row in rootset.table.select_in(attr, ['', None]) if row[0] in queryset]
+                    # else, use python query
                     else:
-                        result_keys = rootset.subkeys(lambda img_md: img_md.get(attr, '') is None)
+                        result_keys = queryset.subkeys(lambda img_md: not img_md.get(attr, ''))
                     return UISubset.from_keys(result_keys, host=univset)
+
                 if do_regex:
                     def match(attr, pattern):
                         return re.match(pattern, attr) is not None
                 else:
                     def match(attr, pattern):
                         return attr == pattern
-                if isinstance(rootset := queryset.root, SQLite3Dataset):
+
+                if use_sql_query:
                     if do_regex:
-                        result_keys = [row[0] for row in rootset.table.select_func(match, '$' + attr + '$', pattern)]
+                        result_keys = [row[0] for row in rootset.table.select_func(match, '$' + attr + '$', pattern) if row[0] in queryset]
                     else:
-                        result_keys = [row[0] for row in rootset.table.select_is(attr, pattern)]
+                        result_keys = [row[0] for row in rootset.table.select_is(attr, pattern) if row[0] in queryset]
+                # else, use python query
                 else:
-                    result_keys = rootset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))
+                    result_keys = queryset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))
                 return UISubset.from_keys(result_keys, host=univset)
 
             query_attr_btn.click(
