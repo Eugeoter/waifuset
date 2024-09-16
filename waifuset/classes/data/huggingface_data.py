@@ -1,8 +1,4 @@
-import torch
-import datasets
 from .dict_data import DictData
-
-DATASET_TYPES = (torch.utils.data.Dataset, datasets.Dataset)
 
 
 class HuggingFaceData(DictData):
