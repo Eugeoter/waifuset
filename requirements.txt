@@ -3,7 +3,7 @@ tqdm
 numpy
 pillow
 imagehash
-gradio>=4.31.3
+gradio>=4.31.3,<4.41.0
 datasets
 opencv-python
 absl-py
