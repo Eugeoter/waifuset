@@ -12,6 +12,25 @@ from ... import mapping, logging
 
 logger = logging.get_logger("dataset")
 
+DEFAULT_KWARGS = {
+    'verbose': False,
+    'column_mapping': None,
+    'remove_columns': None,
+    'mapping': None,
+    'priority': 0,
+
+    'tbname': None,
+    'primary_key': 'image_key',
+    'fp_key': 'image_path',
+    'exts': IMAGE_EXTS,
+    'recur': True,
+    'read_attrs': False,
+    'cache_dir': None,
+    'token': None,
+    'split': 'train',
+    'max_retries': None,
+}
+
 
 class FastDataset(AutoDataset):
     def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', local_only: bool = False, **default_kwargs) -> Dataset:
@@ -47,6 +66,13 @@ class FastDataset(AutoDataset):
         @returns: An instance of the Dataset class.
         """
 
+    @staticmethod
+    def dump(dataset, fp, *args, **kwargs):
+        kwargs = {**DEFAULT_KWARGS, **kwargs}
+        if kwargs['tbname'] is None:
+            kwargs['tbname'] = 'metadata'
+        return AutoDataset.dump(dataset, fp, *args, **kwargs)
+
 
 def load_fast_dataset(
     *source: List[Union[str, Dict[str, Any], Dataset]],
@@ -78,6 +104,7 @@ def load_fast_dataset(
 
     @returns: An instance of the Dataset class.
     """
+    default_kwargs = {**DEFAULT_KWARGS, **default_kwargs}
     verbose = default_kwargs.get('verbose', False)
     source = parse_source_input(source)
     if not source:
@@ -100,14 +127,14 @@ def load_fast_dataset(
                     name_or_path,
                     dataset_cls=dataset_cls,
                     primary_key=primary_key,
-                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', None)),
-                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
+                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
 
-                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key', 'image_path')),
-                    recur=src.pop('recur', default_kwargs.get('recur', True)),
-                    exts=src.pop('exts', default_kwargs.get('exts', IMAGE_EXTS)),
-                    tbname=src.pop('tbname', default_kwargs.get('tbname', None)),
-                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs', False)),
+                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
+                    recur=src.pop('recur', default_kwargs.get('recur')),
+                    exts=src.pop('exts', default_kwargs.get('exts')),
+                    tbname=src.pop('tbname', default_kwargs.get('tbname')),
+                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
                     verbose=src.pop('verbose', verbose),
                     **src,
                 )
@@ -116,13 +143,13 @@ def load_fast_dataset(
                     name_or_path=name_or_path,
                     dataset_cls=dataset_cls,
                     primary_key=primary_key,
-                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping', {k: 'image' for k in ('image', 'png', 'jpg', 'jpeg', 'webp', 'jfif')})),
-                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns', None)),
+                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
 
-                    cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir', None)),
-                    token=src.pop('token', default_kwargs.get('token', None)),
-                    split=src.pop('split', default_kwargs.get('split', 'train')),
-                    max_retries=src.pop('max_retries', default_kwargs.get('max_retries', None)),
+                    cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir')),
+                    token=src.pop('token', default_kwargs.get('token')),
+                    split=src.pop('split', default_kwargs.get('split')),
+                    max_retries=src.pop('max_retries', default_kwargs.get('max_retries')),
                     verbose=src.pop('verbose', verbose),
                     **src,
                 )

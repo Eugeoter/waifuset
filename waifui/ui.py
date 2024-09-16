@@ -8,12 +8,13 @@ import pyperclip
 from pathlib import Path
 from PIL import Image
 from functools import wraps
-from typing import Callable, Any, Tuple, Dict, List, Iterable, Union, Optional, Literal
+from typing import Callable, Any, Tuple, Dict, List, Union, Optional, Literal
 from pathlib import Path
 from copy import deepcopy
 from waifuset.const import IMAGE_EXTS
 from waifuset import logging
-from waifuset import Dataset, Caption, SQLite3Dataset, AutoDataset, FastDataset
+from waifuset import Dataset, SQLite3Dataset, FastDataset
+from waifuset import Caption
 from waifuset.utils import image_utils, class_utils
 from waifuset.classes.dataset.dataset_mixin import ToDiskMixin
 from waifuset.classes.data import data_utils
@@ -1845,6 +1846,7 @@ def create_ui(
                     logger.info(f"querying: {funcname}")
                     logger.info(f"  - options: {', '.join([logging.yellow(opt) for opt in opts])}", no_prefix=True)
                     logger.info(f"  - query range: {len(queryset)}", no_prefix=True)
+                    tic = time.time()
 
                     # query start
                     resset = func(queryset, *args, **extra_kwargs, **kwargs)
@@ -1853,7 +1855,7 @@ def create_ui(
                         return {log_box: f"invalid query result"}
                     if do_complement:
                         resset = UISubset.from_keys([img_key for img_key in queryset.keys() if img_key not in resset], host=univset)
-                    logger.print(f"`{funcname}` found: {len(resset)}/{len(queryset)}")
+                    logger.print(f"{funcname} found: {len(resset)}/{len(queryset)} in {time.time() - tic:.2f}s")
                     result = load_subset_from_dataset(resset, sorting_methods=sorting_methods, reverse=reverse)
                     result.update({log_box: f"[{funcname}] found: {len(resset)}/{len(queryset)}"})
                     return result
@@ -1880,6 +1882,7 @@ def create_ui(
                         result_keys = queryset.subkeys(lambda img_md: not img_md.get(attr, ''))
                     return UISubset.from_keys(result_keys, host=univset)
 
+                # create match function
                 if do_regex:
                     def match(attr, pattern):
                         return re.match(pattern, str(attr)) is not None

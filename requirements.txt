@@ -8,6 +8,7 @@ datasets
 opencv-python
 absl-py
 ml-collections
+pyperclip
 # huggingface-hub # required by downloading models
 # onnxruntime-gpu # required by Waifu Tagger
 # onnxruntime # required by Waifu Tagger (cpu model only)

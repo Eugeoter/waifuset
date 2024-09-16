@@ -170,10 +170,17 @@ class SQL3Table(object):
         return self.select(column, f"BETWEEN {get_sql_value_str(lower)} AND {get_sql_value_str(upper)}", **kwargs)
 
     def select_in(self, column, values, **kwargs):
+        if None in values:  # handle None
+            values = [v for v in values if v is not None]
+            return self.select(column, f"IN {get_sql_value_str(values)} OR {column} IS NULL", **kwargs)
         return self.select(column, f"IN {get_sql_value_str(values)}", **kwargs)
 
     def select_not_in(self, column, values, **kwargs):
-        return self.select(column, f"NOT IN {get_sql_value_str(values)}", **kwargs)
+        if None in values:  # handle None
+            values = [v for v in values if v is not None]
+            return self.select(column, f"NOT IN {get_sql_value_str(values)} AND {column} IS NOT NULL", **kwargs)
+        else:
+            return self.select(column, f"NOT IN {get_sql_value_str(values)}", **kwargs)
 
     def select_is(self, column, value, **kwargs):
         return self.select(column, f"IS {get_sql_value_str(value)}", **kwargs)
