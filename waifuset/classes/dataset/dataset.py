@@ -370,7 +370,7 @@ class Dataset(ConfigMixin):
         new.apply_map(func, *args, condition=condition, **kwargs)
         return new
 
-    def add_columns(self, columns: List[str], **kwargs):
+    def add_columns(self, columns: List[str], exist_ok=True, **kwargs):
         r"""
         Add columns to the dataset. The new columns will be filled with None.
         """
@@ -379,7 +379,7 @@ class Dataset(ConfigMixin):
         for col in columns:
             if not isinstance(col, str):
                 raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
-            if col in self.header:
+            if not exist_ok and col in self.header:
                 raise ValueError(f"column `{col}` already exists in the header: {self.header}")
 
         tqdm_kwargs = dict(desc='add columns')
