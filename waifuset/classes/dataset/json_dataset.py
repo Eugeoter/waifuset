@@ -15,13 +15,12 @@ class JSONDataset(DictDataset, DiskIOMixin):
 
     def __init__(self, source: Dict[str, Any], fp=None, **kwargs):
         super().__init__(source, **kwargs)
+        self.fp = fp
+        self.encoding = kwargs.get('encoding', None)
         self.register_to_config(
             fp=fp,
-            encoding=kwargs.get('encoding', None)
+            encoding=self.encoding,
         )
-
-    def commit(self, indent=4, **kwargs):
-        return self.dump(self.config['fp'], indent=indent, **kwargs)
 
     @classmethod
     def from_disk(cls, fp, encoding='utf-8', **kwargs):
@@ -33,6 +32,9 @@ class JSONDataset(DictDataset, DiskIOMixin):
         config = dict(fp=os.path.abspath(fp), encoding=encoding)
         kwargs = {**config, **kwargs}
         return cls(data, **kwargs)
+
+    def commit(self, indent=4, **kwargs):
+        return self.dump(self.fp, indent=indent, **kwargs)
 
     def dump(self, fp, mode='w', indent=4):
         if mode == 'a' and os.path.exists(fp):

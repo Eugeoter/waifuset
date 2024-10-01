@@ -25,27 +25,53 @@ def repo2path(model_repo_and_path: str, use_safetensors=True):
 
 
 class WaifuScorer(object):
-    def __init__(self, model_path: Union[str, None] = None, emb_cache_dir: str = None, cache_dir: str = None, device: str = 'cuda', verbose=False):
-        self.verbose = verbose
-        self.logger = logging.get_logger(self.__class__.__name__)
-        if model_path is None:  # auto
-            model_path = repo2path(WS_REPOS[0], use_safetensors=is_safetensors_installed())
-            if self.verbose:
-                self.logger.print(f"model path not set, switch to default: `{model_path}`")
-        if not os.path.isfile(model_path):
-            from ...utils.file_utils import download_from_url
-            self.logger.info(f"model path not found in local, trying to download from url: `{model_path}`")
-            model_path = download_from_url(model_path, cache_dir=cache_dir)
-
-        self.logger.print(f"loading pretrained model from `{logging.stylize(model_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
-        with logging.timer("load model", logger=self.logger):
-            self.mlp = load_model(model_path, input_size=768, device=device)
-            self.model2, self.preprocess = load_clip_models("ViT-L/14", device=device)
-            self.device = self.mlp.device
-            self.dtype = self.mlp.dtype
-            self.mlp.eval()
-
+    def __init__(
+        self,
+        mlp: Union[str, None] = None,
+        emb_cache_dir: str = None,
+        device='cuda' if torch.cuda.is_available() else 'cpu',
+        verbose=True
+    ):
+        self.logger = logger
         self.emb_cache_dir = emb_cache_dir
+        self.verbose = verbose
+
+        self.mlp = mlp
+        self.mlp.to(device)
+        self.mlp.eval()
+        with logging.timer("load components", logger=self.logger):
+            self.clip_model, self.clip_preprocessor = load_clip_models("ViT-L/14", device=device)
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str,
+        **kwargs,
+    ):
+        r"""
+        Load WaifuScorer from a pretrained model name or path.
+
+        @param pretrained_model_name_or_path: str, the pretrained model name or path.
+        @param cache_dir: str, optional, the cache directory to save the downloaded model.
+        @param device: str, optional, the device to run the model, default by auto detect.
+        """
+        cache_dir = kwargs.pop("cache_dir", None)
+
+        if pretrained_model_name_or_path is None:  # auto
+            pretrained_model_name_or_path = WS_REPOS[0]
+            logger.warning(f"model path not set, switch to default: `{pretrained_model_name_or_path}`")
+        if not os.path.isfile(pretrained_model_name_or_path):
+            from huggingface_hub import hf_hub_download
+            logger.info(f"downloading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
+            pretrained_model_name_or_path = hf_hub_download(
+                pretrained_model_name_or_path,
+                filename="model.safetensors" if is_safetensors_installed() else "model.pth",
+                cache_dir=cache_dir
+            )
+
+        logger.info(f"loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
+        mlp = load_model(pretrained_model_name_or_path, input_size=768)
+        return cls(mlp, **kwargs)
 
     @torch.no_grad()
     def __call__(self, inputs: List[Union[Image.Image, torch.Tensor, const.StrPath]], cache_paths: Optional[List[const.StrPath]] = None) -> List[float]:
@@ -63,6 +89,18 @@ class WaifuScorer(object):
         predictions = self.mlp(img_embs)
         scores = predictions.clamp(0, 10).cpu().numpy().reshape(-1).tolist()
         return scores
+
+    def to(self, device=None, dtype=None):
+        self.mlp.to(device=device, dtype=dtype)
+        self.clip_model.to(device=device, dtype=dtype)
+
+    @property
+    def device(self):
+        return self.mlp.device
+
+    @property
+    def dtype(self):
+        return self.mlp.dtype
 
     # def open_image(self, img_path: Union[str, Path]) -> Image.Image:
     #     try:
@@ -96,6 +134,7 @@ class WaifuScorer(object):
         r"""
         Encode inputs to image embeddings. If embedding cache directory is set, it will save the embeddings to disk.
         """
+        inputs = inputs.copy()  # copy to avoid inplace modification
         if isinstance(inputs, (Image.Image, torch.Tensor, str, Path)):
             inputs = [inputs]
         if cache_paths is not None:
@@ -108,6 +147,8 @@ class WaifuScorer(object):
             for i, inp in enumerate(inputs):
                 if (cache_paths is not None and os.path.exists(cache_path := cache_paths[i])) or (isinstance(inp, (str, Path)) and os.path.exists(cache_path := self.get_cache_path(inp))):
                     cache = self.get_cache(cache_path)
+                    if len(cache.shape) == 1:
+                        cache = cache.unsqueeze(0)  # add batch dim
                     inputs[i] = cache  # replace input with cached image embedding (Tensor)
 
         # open uncached images
@@ -118,12 +159,12 @@ class WaifuScorer(object):
             images = [image_or_tensors[i] for i in image_idx]  # e.g. [Image, Image, Image]
             if batch_size == 1:
                 images = images * 2  # batch norm
-            img_embs = encode_images(images, self.model2, self.preprocess, device=self.device)  # e.g. [Tensor, Tensor, Tensor]
+            img_embs = encode_images(images, self.clip_model, self.clip_preprocessor, device=self.device)  # e.g. [Tensor, Tensor, Tensor]
             if batch_size == 1:
                 img_embs = img_embs[:1]
             # insert image embeddings back to the image_or_tensors list
             for i, idx in enumerate(image_idx):
-                image_or_tensors[idx] = img_embs[i]
+                image_or_tensors[idx] = img_embs[i].unsqueeze(0)  # add batch dim
 
             # save image embeddings to cache
         if self.emb_cache_dir is not None:
@@ -132,7 +173,7 @@ class WaifuScorer(object):
                 if isinstance(inp, (str, Path)) or cache_paths:
                     cache_path = cache_paths[i] if cache_paths is not None else self.get_cache_path(inp)
                     save_img_emb_to_disk(img_emb, cache_path)
-        return torch.stack(image_or_tensors, dim=0)
+        return torch.cat(image_or_tensors, dim=0)
 
 
 def is_safetensors_installed():
@@ -173,6 +214,9 @@ def normalized(a: torch.Tensor, order=2, dim=-1):
 
 @torch.no_grad()
 def encode_images(images: List[Image.Image], model2, preprocess, device='cuda') -> torch.Tensor:
+    r"""
+    Encode images to image embeddings of shape (batch_size, num_features). The input images should be in RGB format.
+    """
     if isinstance(images, Image.Image):
         images = [images]
     image_tensors = [preprocess(img).unsqueeze(0) for img in images]

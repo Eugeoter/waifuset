@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from typing import Dict, List, Any, Union, Literal, Callable, Iterable, overload
+from typing import Dict, List, Any, Tuple, Union, Literal, Callable, Iterable, Generator, overload
 from .dataset import Dataset, get_column2type
 from .dataset_mixin import DiskIOMixin
 from ..database.sqlite3_database import SQLite3Database, SQL3Table, get_sql_value_str, get_row_dict, PY2SQL3
@@ -50,15 +50,24 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         return cls(fp, **kwargs)
 
     @property
-    def info(self):
+    def info(self) -> Dict[str, Dict[str, Any]]:
         r"""
-        Return the information of the table.
+        Return a dict containing information of the table, with column names as keys and a dict containing column information as values.
+
+        The dict contains the following keys:
+        - `type`: the type of the column
+        - `notnull`: whether the column is not null
+        - `default`: the default value of the column
+        - `primary_key`: whether the column is the primary key
         """
         if self.table is None:
             raise ValueError("table is not set")
         return self.table.info
 
-    def set_table(self, table_name: str):
+    def set_table(self, table_name: str) -> None:
+        r"""
+        Set the table of the dataset by name.
+        """
         if not isinstance(table_name, str):
             raise TypeError(f"table_name must be a str, not {type(table_name)}")
 
@@ -100,23 +109,26 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         self.cursor.execute(f"SELECT COUNT(*) FROM {self.table.name}")
         return self.cursor.fetchone()[0]
 
-    def postprocessor(self, row, enable=True):
+    def postprocessor(self, row, enable=True) -> Dict[str, Any]:
+        r"""
+        Postprocess the row fetched from the database to a dictionary, with column names as keys.
+        """
         return get_row_dict(row, self.table.header) if enable else row
 
-    def items(self, postprocess=True, sort_by_column=None):
+    def items(self, postprocess=True, sort_by_column=None) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
         self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {self.sort_by_column}" if sort_by_column else ""))
         for row in self.cursor.fetchall():
             val = self.postprocessor(row, enable=postprocess)
             key = val[self.table.primary_key] if postprocess else row[0]
             yield key, val
 
-    def keys(self, sort_by_column: str = None, reverse=False):
+    def keys(self, sort_by_column: str = None, reverse=False) -> Generator[str, None, None]:
         order_clause = f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""
         self.cursor.execute(f"SELECT {self.table.primary_key} FROM {self.table.name}{order_clause}")
         for row in self.cursor.fetchall():
             yield row[0]
 
-    def values(self, postprocess=True, sort_by_column: str = None, reverse=False):
+    def values(self, postprocess=True, sort_by_column: str = None, reverse=False) -> Generator[Dict[str, Any], None, None]:
         order_clause = f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""
         self.cursor.execute(f"SELECT * FROM {self.table.name}{order_clause}")
         for row in self.cursor.fetchall():
@@ -124,7 +136,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             val.pop(self.table.primary_key)
             yield val
 
-    def kvalues(self, column: str, distinct=False, where: str = None, sort_by_column: str = None, reverse=False, **kwargs):
+    def kvalues(self, column: str, distinct=False, where: str = None, sort_by_column: str = None, reverse=False, **kwargs) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
         if column not in self.header:
@@ -143,7 +155,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         for row in self.cursor.fetchall():
             yield row[0]
 
-    def kitems(self, column: str, where: str = None, sort_by_column: str = None, reverse=False, **kwargs):
+    def kitems(self, column: str, where: str = None, sort_by_column: str = None, reverse=False, **kwargs) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
         if column not in self.header:
@@ -162,13 +174,13 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         for row in self.cursor.fetchall():
             yield row[0], row[1]
 
-    def get(self, key, default=None):
+    def get(self, key, default=None) -> Dict[str, Any]:
         try:
             return self[key]
         except KeyError:
             return default
 
-    def update(self, other: Union[Dataset, Dict[str, Any]], executemany: bool = False):
+    def update(self, other: Union[Dataset, Dict[str, Any]], executemany: bool = False) -> None:
         r"""
         Update the dataset with another dataset or a dictionary.
         """
@@ -181,10 +193,15 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             for key, value in self.logger.tqdm(other.items(), desc=f"update"):
                 self[key] = value
 
-    def clear(self):
+    def clear(self) -> None:
+        r"""
+        Delete all data in the dataset table.
+
+        Inplace operation.
+        """
         self.cursor.execute(f"DELETE FROM {self.table.name}")
 
-    def set(self, key: Union[str, Dict[str, Any]], value: Dict[str, Any] = None):
+    def set(self, key: Union[str, Dict[str, Any]], value: Dict[str, Any] = None) -> None:
         r"""
         Set the value of a key.
 
@@ -206,7 +223,16 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         else:
             raise ValueError(f"key must be a str or a dict, not {type(key)}")
 
-    def dump(self, fp: str, mode='w', algorithm: Literal['auto', 'iterdump', 'backup'] = 'iterdump'):
+    def dump(self, fp: str, mode='w', algorithm: Literal['auto', 'iterdump', 'backup'] = 'iterdump') -> None:
+        r"""
+        Dump the dataset to a file.
+
+        If the file path is the same as the current file path, the dataset will be committed and no further operation will be performed.
+
+        @param fp: the file path to dump the dataset
+        @param mode: the mode to open the file, 'w' for write, 'a' for append
+        @param algorithm: the algorithm to dump the dataset, 'auto' for automatic selection, 'iterdump' for iterdump, 'backup' for backup
+        """
         if self.fp != ':memory:' and os.path.exists(fp) and os.path.samefile(fp, self.fp):
             self.commit()
             return
@@ -233,23 +259,26 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             self.conn.backup(conn_bak, progress=progress_callback)
             conn_bak.close()
 
-    def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs):
+    def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs) -> None:
         self.begin_transaction()
         super().apply_map(func, *args, condition=condition, **kwargs)
         self.commit_transaction()
 
     @property
-    def header(self):
+    def header(self) -> List[str]:
         return self.table.header
 
     @property
-    def types(self):
+    def types(self) -> Dict[str, str]:
+        r"""
+        Return a dictionary mapping column names to their python types.
+        """
         return {col: info['type'] for col, info in self.info.items()}
 
     def df(self):
         return self.table.df()
 
-    def dict(self):
+    def dict(self) -> Dict[str, Dict[str, Any]]:
         return dict(self.items(postprocess=True))
 
     @classmethod
@@ -270,12 +299,12 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         return dataset
 
     @overload
-    def subkeys(self, condition: Callable[[Dict], bool], **kwargs) -> Iterable[str]: ...
+    def subkeys(self, condition: Callable[[Dict], bool], **kwargs) -> List[str]: ...
 
     @overload
-    def subkeys(self, column: str, statement: str, **kwargs) -> Iterable[str]: ...
+    def subkeys(self, column: str, statement: str, **kwargs) -> List[str]: ...
 
-    def subkeys(self, condition_or_column, statement=None, **kwargs):
+    def subkeys(self, condition_or_column, statement=None, **kwargs) -> List[str]:
         if isinstance(condition_or_column, str) and statement is not None:
             kwargs = {'postprocess': False, **kwargs}
             return [row[0] for row in self.table.select(condition_or_column, statement, **kwargs)]
@@ -289,7 +318,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     @overload
     def subset(self, column: str, statement: str, **kwargs) -> 'SQLite3Dataset': ...
 
-    def subset(self, condition_or_column, statement=None, **kwargs):
+    def subset(self, condition_or_column, statement=None, **kwargs) -> 'SQLite3Dataset':
         kwargs['fp'] = None  # ensure in-memory dataset
         if isinstance(condition_or_column, str) and statement is not None:
             return self.select(condition_or_column, statement, **kwargs)
@@ -297,42 +326,42 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, **kwargs}
             return super().subset(condition_or_column, **kwargs)
 
-    def sample(self, n=1, randomly=True, type=None, **kwargs):
+    def sample(self, n=1, randomly=True, type=None, **kwargs) -> 'SQLite3Dataset':
         sample_lst = self.table.sample(n, randomly)
         sample_lst = [self.postprocessor(s) for s in sample_lst]
         sample_dicts = {s[self.table.primary_key]: s for s in sample_lst}
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.sample', 'verbose': self.verbose, **kwargs}
         return (type or self.__class__).from_dict(sample_dicts, **kwargs)
 
-    def chunk(self, i, n, type=None, **kwargs):
+    def chunk(self, i, n, type=None, **kwargs) -> 'SQLite3Dataset':
         chunk_lst = self.table.chunk(i, n)
         chunk_lst = [self.postprocessor(c) for c in chunk_lst]
         chunk_dicts = {c[self.table.primary_key]: c for c in chunk_lst}
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.chunk', 'verbose': self.verbose, **kwargs}
         return (type or self.__class__).from_dict(chunk_dicts, **kwargs)
 
-    def chunks(self, n, type=None, **kwargs):
+    def chunks(self, n, type=None, **kwargs) -> List['SQLite3Dataset']:
         chunk_lsts = self.table.chunks(n)
         chunk_lsts = [[self.postprocessor(c) for c in chunk_lst] for chunk_lst in chunk_lsts]
         chunk_dicts = [{c[self.table.primary_key]: c for c in chunk_lst} for chunk_lst in chunk_lsts]
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.chunk', 'verbose': self.verbose, **kwargs}
         return [(type or self.__class__).from_dict(chunk_dict, **kwargs) for chunk_dict in chunk_dicts]
 
-    def split(self, i, n, type=None, **kwargs):
+    def split(self, i, n, type=None, **kwargs) -> 'SQLite3Dataset':
         split_lst = self.table.split(i, n)
         split_lst = [self.postprocessor(s) for s in split_lst]
         split_dict = {s[self.table.primary_key]: s for s in split_lst}
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.split', 'verbose': self.verbose, **kwargs}
         return (type or self.__class__).from_dict(split_dict, **kwargs)
 
-    def splits(self, n, type=None, **kwargs):
+    def splits(self, n, type=None, **kwargs) -> List['SQLite3Dataset']:
         split_lsts = self.table.splits(n)
         split_lsts = [[self.postprocessor(s) for s in split_lst] for split_lst in split_lsts]
         split_dicts = [{s[self.table.primary_key]: s for s in split_lst} for split_lst in split_lsts]
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.split', 'verbose': self.verbose, **kwargs}
         return [(type or self.__class__).from_dict(split_dict, *kwargs) for split_dict in split_dicts]
 
-    def subset_from_select(self, select_rows, type=None, **kwargs):
+    def subset_from_select(self, select_rows, type=None, **kwargs) -> 'SQLite3Dataset':
         select_rows = [self.postprocessor(row) for row in select_rows]
         select_dict = {row[self.table.primary_key]: row for row in select_rows}
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.subset', 'verbose': self.verbose, **kwargs}
@@ -341,48 +370,48 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def copy(self):
         raise NotImplementedError
 
-    def select(self, column, statement, type=None, **kwargs):
+    def select(self, column, statement, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select(column, statement, **kwargs), type=type)
 
-    def select_func(self, func, *args, type=None, **kwargs):
+    def select_func(self, func, *args, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_func(func, *args, **kwargs), type=type)
 
-    def select_like(self, column, value, type=None, **kwargs):
+    def select_like(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_like(column, value, **kwargs), type=type)
 
-    def select_glob(self, column, value, type=None, **kwargs):
+    def select_glob(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_glob(column, value, **kwargs), type=type)
 
-    def select_between(self, column, lower, upper, type=None, **kwargs):
+    def select_between(self, column, lower, upper, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_between(column, lower, upper, **kwargs), type=type)
 
-    def select_in(self, column, values, type=None, **kwargs):
+    def select_in(self, column, values, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_in(column, values, **kwargs), type=type)
 
-    def select_not_in(self, column, values, type=None, **kwargs):
+    def select_not_in(self, column, values, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_not_in(column, values, **kwargs), type=type)
 
-    def select_is(self, column, value, type=None, **kwargs):
+    def select_is(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_is(column, value, **kwargs), type=type)
 
-    def select_is_not(self, column, value, type=None, **kwargs):
+    def select_is_not(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
         return self.subset_from_select(self.table.select_is_not(column, value, **kwargs), type=type)
 
-    def add_columns(self, col2type, **kwargs):
+    def add_columns(self, col2type: Dict[str, Any], **kwargs) -> 'SQLite3Dataset':
         if isinstance(col2type, list):
             col2type = {col: 'TEXT' for col in col2type}
         self.table.add_columns(col2type)
         self.register_to_config(col2type=self.types)
         return self
 
-    def remove_columns(self, columns, **kwargs):
+    def remove_columns(self, columns, **kwargs) -> 'SQLite3Dataset':
         if self.table.primary_key in columns:
             raise ValueError(f"Primary key {self.table.primary_key} cannot be removed")
         self.table.remove_columns(columns)
         self.register_to_config(col2type=self.types)
         return self
 
-    def rename_columns(self, column_mapping, **kwargs):
+    def rename_columns(self, column_mapping, **kwargs) -> 'SQLite3Dataset':
         self.table.rename_columns(column_mapping)
         self.register_to_config(col2type=self.types)
 
@@ -390,7 +419,12 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
             self.register_to_config(primary_key=column_mapping[self.table.primary_key])
         return self
 
-    def reset_column_type(self, column, new_type):
+    def set_column_type(self, column: str, new_type: type) -> None:
+        r"""
+        Set the type of a column.
+
+        Inplace operation.
+        """
         old_type = self.table.col2type.get(column, None)
         if new_type == old_type:
             logging.warning(f"Column {column} is already of type {new_type}.")
@@ -402,6 +436,11 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         self.cursor.execute(f"UPDATE {tbname} SET {column} = {column}_old;")
         self.remove_columns([f"{column}_old"])
 
-    def sort(self, column, reverse=False, **kwargs):
+    def sort(self, column, reverse=False, **kwargs) -> 'SQLite3Dataset':
+        r"""
+        Sort the dataset by a column.
+
+        Inplace operation.
+        """
         self.table.sort(column, reverse)
         return self

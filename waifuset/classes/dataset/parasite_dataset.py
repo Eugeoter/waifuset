@@ -1,10 +1,16 @@
-from typing import Dict, List, Iterable, Callable, overload
+from itertools import islice
+from typing import Dict, List, Union, Iterable, Callable, Generator, overload
 from .dataset import Dataset
+from .dict_dataset import DictDataset
 from ... import logging
 
 
 def get_root(dataset: Dataset) -> Dataset:
+    r"""
+    Recursively get the root dataset of a dataset.
+    """
     p = dataset
+    # find the host of host until it is None
     while hasattr(p, 'host') and p.host is not None:
         p = p.host
     return p
@@ -17,11 +23,19 @@ class ParasiteDataset(Dataset):
         'root': None,
     }
 
-    def __init__(self, source: Iterable[str], host: Dataset, **kwargs):
-        assert isinstance(host, Dataset), f"host must be a Dataset, got {type(host)}"
+    host: Dataset
+    root: Dataset
+    part: Dataset
+
+    def __init__(self, source: Dataset, host: Dataset, **kwargs):
+        if not isinstance(source, Dataset):
+            raise TypeError(f"source must be a Dataset, not {type(source)}")
+        if not isinstance(host, Dataset):
+            raise TypeError(f"host must be a Dataset, not {type(host)}")
+
         self.host = host
         self.root = get_root(host)
-        self.part = {k: None for k in source} if source else {}
+        self.part = source
         self.register_to_config(
             host=self.host,
             root=self.root,
@@ -40,6 +54,41 @@ class ParasiteDataset(Dataset):
     def get_host(self):
         return self.host
 
+    def get_key(self, key: Union[str, int, slice]) -> Union[str, Iterable[str]]:
+        r"""
+        Convert the key to a valid key in the host dataset.
+        """
+        if isinstance(key, str):
+            return key
+        elif isinstance(key, int):
+            # use islice to get the key at a specific position
+            try:
+                key_iter = islice(self.part.keys(), key, key + 1)
+                element = next(key_iter)
+                return element
+            except StopIteration:
+                raise IndexError('Index out of range')
+        elif isinstance(key, slice):
+            if len(self.part) == 0:
+                return []
+            # process the start, stop and step of the slice
+            start = key.start if key.start is not None else 0
+            stop = key.stop
+            step = key.step if key.step is not None else 1
+
+            if step == 0:
+                raise ValueError('slice step cannot be zero')
+
+            if stop is None:
+                # cannot slice infinitely on a generator
+                raise ValueError('Slice stop cannot be None when slicing a generator')
+
+            # use islice to get the keys in the required range
+            key_iter = islice(self.part.keys(), start, stop, step)
+            return key_iter
+        else:
+            raise TypeError(f"key must be a str, int or slice, not {type(key)}")
+
     @overload
     def __getitem__(self, key: str) -> Dict: ...
 
@@ -50,19 +99,26 @@ class ParasiteDataset(Dataset):
     def __getitem__(self, slice: slice) -> List[Dict]: ...
 
     def __getitem__(self, key):
+        key = self.get_key(key)
         if isinstance(key, str):
-            if key in self.part:
-                return self.root[key]
-            else:
-                raise KeyError
-        elif isinstance(key, int):
-            key = list(self.part.keys())[key]
             return self.root[key]
-        elif isinstance(key, slice):
-            keys = list(self.part.keys())[key]
-            return [self.root[k] for k in keys]
         else:
-            raise KeyError
+            return [self.root[k] for k in key]
+
+    # def __getitem__(self, key):
+    #     if isinstance(key, str):
+    #         if key in self.part:
+    #             return self.root[key]
+    #         else:
+    #             raise KeyError
+    #     elif isinstance(key, int):
+    #         key = list(self.part.keys())[key]
+    #         return self.root[key]
+    #     elif isinstance(key, slice):
+    #         keys = list(self.part.keys())[key]
+    #         return [self.root[k] for k in keys]
+    #     else:
+    #         raise KeyError
 
     def __setitem__(self, key, value):
         if key in self.part:
@@ -134,7 +190,7 @@ class ParasiteDataset(Dataset):
 
         Inherit the config from the dataset.
         """
-        return cls.from_keys(dic.keys(), host=host, **kwargs)
+        return cls.from_dataset(DictDataset(dic), host, **kwargs)
 
     @classmethod
     def from_keys(cls, keys: Iterable[str], host, **kwargs):
@@ -143,9 +199,7 @@ class ParasiteDataset(Dataset):
 
         Inherit the config from the dataset.
         """
-        kwargs = {**host.config, **kwargs}
-        kwargs['host'] = host
-        return cls(keys, **kwargs)
+        return cls.from_dataset(DictDataset({k: None for k in keys}), host, **kwargs)
 
     @classmethod
     def from_dataset(cls, dataset: Dataset, host=None, **kwargs):
@@ -155,7 +209,9 @@ class ParasiteDataset(Dataset):
         Inherit the config from the dataset.
         """
         host = host or dataset
-        return cls.from_keys(dataset.keys(), host=host, **kwargs)
+        kwargs = {**host.config, **kwargs}
+        kwargs['host'] = host  # overwrite the original host
+        return cls(dataset, **kwargs)
 
     def subset(self, condition: Callable[[Dict], bool], **kwargs):
         kwargs = {'host': self.root, 'type': None, **kwargs}

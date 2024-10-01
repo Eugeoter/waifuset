@@ -2,6 +2,7 @@ import re
 import json
 import hashlib
 import os
+from pathlib import Path
 from typing import Literal
 from .const import WAIFUSET_ROOT
 from . import logging
@@ -16,37 +17,43 @@ def search_file(filename, search_path):
 
 TAG_TYPES = ('artist', 'character', 'style', 'quality', 'aesthetic', 'copyright', 'meta', 'safety')
 
-CUSTOM_TAGS_PATH = search_file('custom_tags.json', WAIFUSET_ROOT)
-PRIORITY_TABLE_PATH = search_file('priority_table.json', WAIFUSET_ROOT)
-OVERLAP_TABLE_PATH = search_file('overlap_tags.json', WAIFUSET_ROOT)
+WIKI_ROOT = WAIFUSET_ROOT / 'wiki'
 
-CH2PHYSICS_PATH = search_file('ch2physics.json', WAIFUSET_ROOT)
-CH2CLOTHES_PATH = search_file('ch2clothes.json', WAIFUSET_ROOT)
+CUSTOM_TAGS_PATH = WIKI_ROOT / 'custom_tags.json'
+TAG_PRIORITIES_PATH = WIKI_ROOT / 'tag_priorities.json'
+TAG_IMPLICATIONS_PATH = WIKI_ROOT / 'tag_implications.json'
+TAG_ALIASES_PATH = WIKI_ROOT / 'tag_aliases.json'
 
-ARTIST_TAGS_PATH = search_file('artist_tags.json', WAIFUSET_ROOT)
-CHARACTER_TAGS_PATH = search_file('character_tags.json', WAIFUSET_ROOT)
-COPYRIGHT_TAGS_PATH = search_file('copyright_tags.json', WAIFUSET_ROOT)
-META_TAGS_PATH = search_file('meta_tags.json', WAIFUSET_ROOT)
+CH2PHYSICS_PATH = WIKI_ROOT / 'ch2physics.json'
+CH2CLOTHES_PATH = WIKI_ROOT / 'ch2clothes.json'
+
+ARTIST_TAGS_PATH = WIKI_ROOT / 'artist_tags.txt'
+CHARACTER_TAGS_PATH = WIKI_ROOT / 'character_tags.txt'
+COPYRIGHT_TAGS_PATH = WIKI_ROOT / 'copyright_tags.txt'
+META_TAGS_PATH = WIKI_ROOT / 'meta_tags.txt'
 
 if not CUSTOM_TAGS_PATH:
-    logging.warning(f'custom tag config not found in root: {WAIFUSET_ROOT}')
-if not PRIORITY_TABLE_PATH:
-    logging.warning(f'priority table not found in root: {WAIFUSET_ROOT}')
-if not OVERLAP_TABLE_PATH:
-    logging.warning(f'overlap table not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'custom tag not found in root: {WIKI_ROOT}')
+if not TAG_PRIORITIES_PATH:
+    logging.warning(f'tag priorities not found in root: {WIKI_ROOT}')
+if not TAG_IMPLICATIONS_PATH:
+    logging.warning(f'tag implications not found in root: {WIKI_ROOT}')
+if not TAG_ALIASES_PATH:
+    logging.warning(f'tag aliases not found in root: {WIKI_ROOT}')
+
 if not CH2PHYSICS_PATH:
-    logging.warning(f'ch2physics not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'ch2physics not found in root: {WIKI_ROOT}')
 if not CH2CLOTHES_PATH:
-    logging.warning(f'ch2clothes table not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'ch2clothes table not found in root: {WIKI_ROOT}')
 
 if not ARTIST_TAGS_PATH:
-    logging.warning(f'artist tags not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'artist tags not found in root: {WIKI_ROOT}')
 if not CHARACTER_TAGS_PATH:
-    logging.warning(f'character tags not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'character tags not found in root: {WIKI_ROOT}')
 if not COPYRIGHT_TAGS_PATH:
-    logging.warning(f'copyright tags not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'copyright tags not found in root: {WIKI_ROOT}')
 if not META_TAGS_PATH:
-    logging.warning(f'meta tags not found in root: {WAIFUSET_ROOT}')
+    logging.warning(f'meta tags not found in root: {WIKI_ROOT}')
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
 PATTERN_QUALITY_TAG = r'\b((amazing|best|high|normal|low|worst|horrible)([\s_]quality))\b'  # match `xxx quality`
@@ -76,6 +83,26 @@ CUSTOM_TAGS = None
 QUALITY_TAGS = None
 AESTHETIC_TAGS = None
 STYLE_TAGS = None
+
+TAG_IMPLICATIONS = None
+TAG_ALIASES = None
+TAG_PRIORITIES = None
+CH2PHYSICS = None
+CH2CLOTHES = None
+
+ARTIST_TAGS = None
+CHARACTER_TAGS = None
+COPYRIGHT_TAGS = None
+META_TAGS = None
+
+SAFE_LEVEL2TAG = {
+    'g': 'general',
+    's': 'sensitive',
+    'q': 'questionable',
+    'e': 'explicit',
+}
+
+LOWEST_PRIORITY = 999
 
 
 def init_custom_tags(path=CUSTOM_TAGS_PATH):
@@ -113,43 +140,7 @@ def get_custom_tags():
 
 
 def compile_or_regex(tags):
-    return '(' + '|'.join([encode_tag(tag) for tag in tags]) + ')' if tags else ''
-
-
-TAG_TABLE = None
-OVERLAP_TABLE = None
-PRIORITY_TABLE = None
-CH2PHYSICS = None
-CH2CLOTHES = None
-
-ARTIST_TAGS = None
-CHARACTER_TAGS = None
-COPYRIGHT_TAGS = None
-META_TAGS = None
-
-SAFE_LEVEL2TAG = {
-    'g': 'general',
-    's': 'sensitive',
-    'q': 'questionable',
-    'e': 'explicit',
-}
-
-
-def hash_tag(tag: str, n_digits=8) -> str:
-    tag = fmt2danbooru(tag)
-    hash_object = hashlib.sha256(tag.encode())
-    hash_hex = hash_object.hexdigest()
-    unique_number = int(hash_hex, 16) % int(eval(f"1e{n_digits}"))
-    return f"{unique_number:0{n_digits}d}"
-
-
-def encode_tag(tag: str):
-    tagtype = get_tagtype_from_tag(tag)
-    if tagtype is not None:
-        tag = tag[len(tagtype) + 1:]
-    tag = hash_tag(tag)
-    tag = f"#{tag}"
-    return tag
+    return '(' + '|'.join(tags) + ')' if tags else ''
 
 
 def init_artist_tags(path=ARTIST_TAGS_PATH):
@@ -157,8 +148,8 @@ def init_artist_tags(path=ARTIST_TAGS_PATH):
     if ARTIST_TAGS is not None:
         return True
     try:
-        with open(path, 'r') as f:
-            ARTIST_TAGS = set(json.load(f))
+        with open(path, 'r', encoding='utf-8') as f:
+            ARTIST_TAGS = set(f.read().splitlines())
     except Exception as e:
         ARTIST_TAGS = None
         return False
@@ -174,12 +165,16 @@ def init_character_tags(path=CHARACTER_TAGS_PATH):
     if CHARACTER_TAGS is not None:
         return True
     try:
-        with open(path, 'r') as f:
-            CHARACTER_TAGS = set(json.load(f))
+        with open(path, 'r', encoding='utf-8') as f:
+            CHARACTER_TAGS = set(f.read().splitlines())
     except Exception as e:
         CHARACTER_TAGS = None
         return False
     return True
+
+
+def get_character_tags():
+    return CHARACTER_TAGS if init_character_tags() else None
 
 
 def init_meta_tags(path=META_TAGS_PATH):
@@ -187,8 +182,8 @@ def init_meta_tags(path=META_TAGS_PATH):
     if META_TAGS is not None:
         return True
     try:
-        with open(path, 'r') as f:
-            META_TAGS = set(json.load(f))
+        with open(path, 'r', encoding='utf-8') as f:
+            META_TAGS = set(f.read().splitlines())
     except Exception as e:
         META_TAGS = None
         return False
@@ -199,17 +194,13 @@ def get_meta_tags():
     return META_TAGS if init_meta_tags() else None
 
 
-def get_character_tags():
-    return CHARACTER_TAGS if init_character_tags() else None
-
-
 def init_copyright_tags(path=COPYRIGHT_TAGS_PATH):
     global COPYRIGHT_TAGS
     if COPYRIGHT_TAGS is not None:
         return True
     try:
-        with open(path, 'r') as f:
-            COPYRIGHT_TAGS = set(json.load(f))
+        with open(path, 'r', encoding='utf-8') as f:
+            COPYRIGHT_TAGS = set(f.read().splitlines())
     except Exception as e:
         COPYRIGHT_TAGS = None
         return False
@@ -220,43 +211,59 @@ def get_copyright_tags():
     return COPYRIGHT_TAGS if init_copyright_tags() else None
 
 
-def init_overlap_table(table_path=OVERLAP_TABLE_PATH):
-    global OVERLAP_TABLE
-    if OVERLAP_TABLE is not None:
+def init_tag_implications(table_path=TAG_IMPLICATIONS_PATH):
+    global TAG_IMPLICATIONS
+    if TAG_IMPLICATIONS is not None:
+        return True
+    try:
+        import json
+        with open(table_path, 'r', encoding='utf-8') as f:
+            TAG_IMPLICATIONS = json.load(f)
+        return True
+    except Exception as e:
+        TAG_IMPLICATIONS = None
+        logging.info(f'failed to read implication table: {e}')
+        return False
+
+
+def get_tag_implications():
+    return TAG_IMPLICATIONS if init_tag_implications() else None
+
+
+def init_tag_aliases(table_path=TAG_ALIASES_PATH):
+    global TAG_ALIASES
+    if TAG_ALIASES is not None:
         return True
     try:
         import json
         with open(table_path, 'r') as f:
-            table = json.load(f)
-        table = {entry['query']: (set(entry.get("has_overlap") or []), set(entry.get("overlap_tags") or [])) for entry in table}
-        table = {k: v for k, v in table.items() if len(v[0]) > 0 or len(v[1]) > 0}
-        OVERLAP_TABLE = table
+            TAG_ALIASES = json.load(f)
         return True
     except Exception as e:
-        OVERLAP_TABLE = None
-        logging.info(f'failed to read overlap table: {e}')
+        TAG_ALIASES = None
+        logging.info(f'failed to read alias table: {e}')
         return False
 
 
-def get_overlap_table():
-    return OVERLAP_TABLE if init_overlap_table() else None
+def get_tag_aliases():
+    return TAG_ALIASES if init_tag_aliases() else None
 
 
-def init_priority_table(table_path=PRIORITY_TABLE_PATH):
-    global PRIORITY_TABLE
-    if PRIORITY_TABLE is not None:
+def init_tag_priorities(table_path=TAG_PRIORITIES_PATH):
+    global TAG_PRIORITIES
+    if TAG_PRIORITIES is not None:
         return True
     try:
         with open(table_path, 'r') as f:
-            PRIORITY_TABLE = json.load(f)
+            TAG_PRIORITIES = json.load(f)
     except Exception as e:
-        PRIORITY_TABLE = None
+        TAG_PRIORITIES = None
         return False
     return True
 
 
-def get_priority_table():
-    return PRIORITY_TABLE if init_priority_table() else None
+def get_tag_priorities():
+    return TAG_PRIORITIES if init_tag_priorities() else None
 
 
 def init_ch2physics(fp=CH2PHYSICS_PATH, freq_thres=0.3):
@@ -301,12 +308,12 @@ def get_ch2clothes():
     return CH2CLOTHES if init_ch2clothes() else None
 
 
-PRIORITY, PRIORITY_REGEX = None, None
+PRIORITY_PATTERN, PRIORITY_REGEX = None, None
 
 
-def init_priority_tags():
-    global PRIORITY, PRIORITY_REGEX
-    if PRIORITY and PRIORITY_REGEX:
+def init_tag_priorities_regex():
+    global PRIORITY_PATTERN, PRIORITY_REGEX
+    if PRIORITY_PATTERN and PRIORITY_REGEX:
         return True
 
     if init_custom_tags():
@@ -315,13 +322,19 @@ def init_priority_tags():
         PATTERN_STYLE_TAGS = r''
 
     # ! spacing captions only.
-    PRIORITY = {
+    PRIORITY_PATTERN = {
         # Role
         'role': [r'\d?\+?(?:boy|girl|other)s?', r'multiple (boys|girls|others)', 'no humans'],
         # Character
-        'character': [PATTERN_CHARACTER, 'cosplay'],
+        'character': [
+            PATTERN_CHARACTER,
+            'cosplay'
+        ],
         # Copyright
-        'copyright': [compile_or_regex(COPYRIGHT_TAGS)],
+        'copyright': [
+            PATTERN_COPYRIGHT,
+            # compile_or_regex(COPYRIGHT_TAGS),
+        ],
         'race': [r'(furry|fox|pig|wolf|elf|oni|horse|cat|dog|arthropod|shark|mouse|lion|slime|tiger|raccoon|bird|squirrel|cow|animal|maid|sheep|bear|monster|mermaid|angel|demon|dark-skinned|mature|spider|fish|plant|goat|inkling|octoling) (female|male|girl|boy)s?',
                  'maid', 'nun', 'androgynous', 'demon', 'oni', 'giant', 'loli', 'angel', 'monster', 'office lady'],
         'solo': ['solo'],
@@ -394,18 +407,31 @@ def init_priority_tags():
         'item': [r'.*\b(weapon|tool|katana|instrument|gadget|device|equipment|item|object|artifact|accessory|prop|earrings|necklace|bracelet|ring|watch|bag|backpack|purse|umbrella|parasol|cane|spear|sword|knife|gun|pistol|revolver|shotgun|rifle|gun|cannon|rocket launcher|grenade|bomb|shield|wing|hoove|antler)s?\b.*'],
 
         # Artist
-        'artist': [PATTERN_ARTIST_TAG, PATTERN_ARTIST],
+        'artist': [
+            PATTERN_ARTIST_TAG,
+            PATTERN_ARTIST,
+        ],
         # Style
-        'style': [PATTERN_STYLE_TAGS, PATTERN_STYLE],
+        'style': [
+            PATTERN_STYLE_TAGS,
+            PATTERN_STYLE,
+        ],
         # Artistic
-        'aesthetic': [compile_or_regex(AESTHETIC_TAGS)],
+        # 'aesthetic': [compile_or_regex(AESTHETIC_TAGS)],
         # Quality
-        'quality': [r'\b(amazing|best|high|normal|low|worst|horrible) quality\b'],
+        'quality': [
+            r'\b(amazing|best|high|normal|low|worst|horrible) quality\b',
+            'masterpiece',
+            r'quality:.*',
+        ],
         # Meta
-        'meta': [compile_or_regex(META_TAGS)],
+        'meta': [
+            PATTERN_META,
+            # compile_or_regex(META_TAGS),
+        ],
     }
 
-    PRIORITY_REGEX = [re.compile('|'.join([pattern for pattern in patterns if pattern.strip() != '']).replace(' ', r'[\s_]')) for patterns in PRIORITY.values()]
+    PRIORITY_REGEX = [re.compile('|'.join([pattern for pattern in patterns if pattern.strip() != '']).replace(' ', r'[\s_]')) for patterns in PRIORITY_PATTERN.values()]
 
     return True
 
@@ -429,9 +455,9 @@ def init_character_features():
 
 
 def get_priority_index_of_tagtype(key):
-    if not PRIORITY:
-        init_priority_tags()
-    return list(PRIORITY.keys()).index(key)
+    if not PRIORITY_PATTERN:
+        init_tag_priorities_regex()
+    return list(PRIORITY_PATTERN.keys()).index(key) if key in PRIORITY_PATTERN else LOWEST_PRIORITY
 
 
 def fmt2unescape(tag):
@@ -488,20 +514,19 @@ def match(pattern, tag):
 
 
 def tag2priority(tag):
-    LOWEST_PRIORITY = 999
     if ':' in tag and any(tag.startswith(tagtype + ':') for tagtype in TAG_TYPES):
         return get_priority_index_of_tagtype(tag.split(':', 1)[0])
     elif tag.endswith('quality'):
         return get_priority_index_of_tagtype('quality')
     elif init_custom_tags() and tag in AESTHETIC_TAGS:
         return get_priority_index_of_tagtype('aesthetic')
-    elif init_priority_table():
+    elif init_tag_priorities():
         dan_tag = fmt2danbooru(tag)
-        if dan_tag in PRIORITY_TABLE:
-            return PRIORITY_TABLE[dan_tag]
+        if dan_tag in TAG_PRIORITIES:
+            return TAG_PRIORITIES[dan_tag]
         else:
             return LOWEST_PRIORITY
-    elif init_priority_tags():
+    elif init_tag_priorities():
         for i, regex in enumerate(PRIORITY_REGEX):
             if regex.match(tag):
                 return i

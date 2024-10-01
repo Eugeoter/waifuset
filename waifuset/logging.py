@@ -1,5 +1,7 @@
 import time
-from typing import Literal
+import json
+import copy
+from typing import Literal, Dict
 
 
 class ANSI:
@@ -50,13 +52,13 @@ class ConsoleLogger:
         self.color = color2ansi(prefix_color) if isinstance(prefix_color, str) else (prefix_color or self._default_color)
         self.disable = disable
 
-    def get_disable(self):
+    def get_disable(self) -> bool:
         return ConsoleLogger.DISABLE or self.disable
 
     def set_disable(self, disable: bool):
         self.disable = disable
 
-    def get_prefix(self, level: Literal['debug', 'info', 'warning', 'error', 'critical'] = 'info', prefix_msg=None, prefix_color=None):
+    def get_prefix(self, level: Literal['debug', 'info', 'warning', 'error', 'critical'] = 'info', prefix_msg=None, prefix_color=None) -> str:
         prefixes = []
         level_color = self._level2color.get(level, "")
         if level != 'info':
@@ -124,11 +126,23 @@ class ConsoleLogger:
         return new_instance
 
 
-def get_logger(name, prefix_msg=None, prefix_color=None, disable: bool = False):
+def get_logger(name, prefix_msg=None, prefix_color=None, disable: bool = False) -> ConsoleLogger:
+    r"""
+    Get or create a logger with the specified name.
+    """
     return ConsoleLogger(name, prefix_msg, prefix_color, disable)
 
 
-def get_all_loggers():
+def getLogger(name, prefix_msg=None, prefix_color=None, disable: bool = False) -> ConsoleLogger:
+    r"""
+    Get or create a logger with the specified name.
+
+    Compatibility with the standard logging module.
+    """
+    return get_logger(name, prefix_msg, prefix_color, disable)
+
+
+def get_all_loggers() -> Dict[str, ConsoleLogger]:
     return ConsoleLogger._loggers
 
 
@@ -145,8 +159,8 @@ class timer:
     def __init__(self, name=None, level: Literal['debug', 'info', 'warning', 'error', 'critical'] = 'info', logger=None):
         self.name = name
         self.level = level
-        assert isinstance(logger, ConsoleLogger), f"logger must be an instance of ConsoleLogger, but got {type(logger)}"
         self.logger = logger or get_logger('timer')
+        assert isinstance(self.logger, ConsoleLogger), f"logger must be an instance of ConsoleLogger, but got {type(self.logger)}"
 
     def __enter__(self):
         self.start_time = time.time()
@@ -177,6 +191,8 @@ def track_tqdm(pbar, n: int = 1):
             return res
         return inner
     return wrapper
+
+# ANSI color tools
 
 
 def stylize(string: str, *ansi_styles, format_spec: str = "", newline: bool = False) -> str:
@@ -236,18 +252,7 @@ def bold(msg: str, format_spec: str = "", newline: bool = False) -> str:
 def underline(msg: str, format_spec: str = "", newline: bool = False) -> str:
     return stylize(msg, ANSI.UNDERLINE, format_spec=format_spec, newline=newline)
 
-
-def title(msg: str = "", sep: str = "="):
-    import shutil
-    width = shutil.get_terminal_size().columns
-    if msg:
-        total_sep_len = (width - len(msg) - 2) // 2
-        centered_msg = sep * total_sep_len + ' ' + msg + ' ' + sep * total_sep_len
-        if len(centered_msg) < width:
-            centered_msg += sep
-    else:
-        centered_msg = sep * width
-    return centered_msg
+# Standard logging tools
 
 
 def info(*msg: str, **kwargs):
@@ -272,3 +277,35 @@ def critical(*msg: str, **kwargs):
 
 def tqdm(*args, **kwargs):
     return logger.tqdm(*args, **kwargs)
+
+# Special logging tools
+
+
+def title(msg: str = "", sep: str = "=") -> str:
+    r"""
+    Get a title string with a centered message.
+
+    Example:
+    >>> title("Hello, world!")
+    ====================== Hello, world! ======================
+
+    >>> title("Hello, world!", sep="-")
+    ---------------------- Hello, world! ----------------------
+    """
+    import shutil
+    width = shutil.get_terminal_size().columns
+    if msg:
+        total_sep_len = (width - len(msg) - 2) // 2
+        centered_msg = sep * total_sep_len + ' ' + msg + ' ' + sep * total_sep_len
+        if len(centered_msg) < width:
+            centered_msg += sep
+    else:
+        centered_msg = sep * width
+    return centered_msg
+
+
+def jsonize(obj, ensure_ascii=False, indent=4, sort_keys=False) -> str:
+    r"""
+    Serialize a data-structure to a json-like string.
+    """
+    return json.dumps(obj, ensure_ascii=ensure_ascii, indent=indent, sort_keys=sort_keys)

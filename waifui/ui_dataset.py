@@ -11,7 +11,7 @@ class UISubset(ParasiteDataset):
     page_size: int
     categories: List[str]
 
-    def __init__(self, source, host=None, page_size=None, **kwargs):
+    def __init__(self, source, host=None, page_size=None, is_full=False, **kwargs):
         # check inputs
         assert page_size is not None, "page_size must be specified"
         assert isinstance(page_size, int), "page_size must be an integer"
@@ -19,10 +19,17 @@ class UISubset(ParasiteDataset):
 
         super().__init__(source, host=host, **kwargs)
         self.page_size = page_size
+        self.is_full = is_full
         self.categories = None
         self.register_to_config(
             page_size=page_size,
         )
+
+    def __getitem__(self, key):
+        if self.is_full:
+            return self.root[key]
+        else:
+            return super().__getitem__(key)
 
     def get_categories(self) -> List[str]:
         if self.categories is None:
@@ -49,13 +56,20 @@ class UIDataset(UISubset):
     UIDataset controls the current subset of the dataset to be displayed. The current dataset have to be a UISubset object.
     """
 
-    def __init__(self, source=None, host=None, page_size=None, **kwargs):
-        super().__init__(source, host=host, page_size=page_size, **kwargs)
-        self.curset: UISubset = self.fullset
+    def __init__(self, source=None, host=None, page_size=None, is_full=False, **kwargs):
+        super().__init__(source, host=host, page_size=page_size, is_full=is_full, **kwargs)
+        self.fullset: UISubset = None
+        self.curset: UISubset = None
 
-    @property
-    def fullset(self):
-        return UISubset.from_dataset(self.root, host=self)
+    def get_curset(self):
+        if self.curset is None:
+            self.curset = self.get_fullset()
+        return self.curset
+
+    def get_fullset(self):
+        if self.fullset is None:
+            self.fullset = UISubset.from_dataset(self.root, host=self, is_full=True)
+        return self.fullset
 
     @property
     def header(self):

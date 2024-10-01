@@ -47,8 +47,15 @@ class AutoDataset(object):
     @staticmethod
     def dump(dataset, fp, *args, **kwargs):
         from .dataset_mixin import ToDiskMixin
+        if isinstance(dataset, Dataset):
+            pass
+        elif isinstance(dataset, dict):
+            from .dict_dataset import DictDataset
+            dataset = DictDataset.from_dict(dataset)
+        else:
+            raise ValueError(f'Unsupported dataset type: {type(dataset)}')
         cls_ = get_dataset_cls_from_source(fp)
         if not issubclass(cls_, ToDiskMixin):
             raise TypeError(f'{cls_} does not support dump')
-        dumpset = cls_.from_dataset(dataset, *args, fp=fp, source=fp, **kwargs)
+        dumpset = cls_.from_dataset(dataset, *args, fp=fp, **kwargs)
         dumpset.commit()

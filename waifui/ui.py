@@ -3,6 +3,7 @@ import re
 import gradio as gr
 import inspect
 import time
+import random
 import pandas
 import pyperclip
 from pathlib import Path
@@ -117,7 +118,7 @@ def create_ui(
     assert render in ('full', 'demo'), f"expected `render` to be one of ('full', 'demo'), but got {render}"
 
     logger = logging.get_logger('UI')
-    logger.debug(f"initializing UI state")
+    # logger.debug(f"initializing UI state")
     state = UIState(
         page_index=0,
         selected=UIGallerySelectData(),
@@ -248,12 +249,13 @@ def create_ui(
                                 # logger.debug(f"initializing showcase")
                                 showcase = gr.Gallery(
                                     label=translate('Showcase', language),
-                                    value=convert_dataset_to_gallery(univset.curset.get_page(0)),
+                                    value=convert_dataset_to_gallery(univset.get_curset().get_page(0)),
                                     rows=4,
                                     columns=4,
                                     container=True,
                                     object_fit='scale-down',
                                     height=512,
+                                    allow_preview=True,
                                 )
                             with gr.Row():
                                 load_pre_page_btn = EmojiButton(Emoji.black_left_pointing_double_triangle, scale=1)
@@ -268,7 +270,7 @@ def create_ui(
                             with gr.Row():
                                 # logger.debug(f"initializing dataset metadata")
                                 dataset_metadata_df = gr.Dataframe(
-                                    value=convert_dataset_to_statistic_dataframe(univset.curset),
+                                    value=convert_dataset_to_statistic_dataframe(univset.get_curset()),
                                     label=translate('Dataset Information', language),
                                     type='pandas',
                                     row_count=(1, 'fixed'),
@@ -348,7 +350,7 @@ def create_ui(
                                         )
 
                             with gr.Row():
-                                # random_btn = EmojiButton(Emoji.dice)
+                                random_btn = EmojiButton(Emoji.dice)
                                 # set_category_btn = EmojiButton(Emoji.top_left_arrow)
                                 undo_btn = EmojiButton(Emoji.leftwards)
                                 redo_btn = EmojiButton(Emoji.rightwards)
@@ -788,7 +790,7 @@ def create_ui(
                     showcase: gallery,
                     dataset_metadata_df: convert_dataset_to_statistic_dataframe(showset),
                     cur_img_key: new_img_key,
-                    cur_page_number: gr.update(value=new_page_index, label=f"{translate('Page', language)} {new_page_index}/{univset.curset.num_pages}"),
+                    cur_page_number: gr.update(value=new_page_index, label=f"{translate('Page', language)} {new_page_index}/{univset.get_curset().num_pages}"),
                 }
 
             def show_database(dataset: UISubset = None, new_page_index=1):
@@ -860,7 +862,7 @@ def create_ui(
                 Change current dataset to another dataset `newset` and show its page
                 """
                 if newset is None:
-                    newset = univset.curset
+                    newset = univset.get_curset()
                 change_current_subset(newset, sorting_methods=sorting_methods, reverse=reverse)
                 if ui_main_tab.tab is tagging_tab:
                     res = update_showcase_from_dataset(newset, new_page_index)
@@ -877,7 +879,7 @@ def create_ui(
 
                 # If no categories are selected, show the full dataset
                 if not categories:
-                    catset = univset.fullset
+                    catset = univset.get_fullset()
                 # If the backbone is SQLite3Dataset, use SQL query to select the subset to improve efficiency
                 elif isinstance(rootset := univset.root, SQLite3Dataset):
                     if 'category' in rootset.header:
@@ -932,7 +934,7 @@ def create_ui(
             # )
 
             reload_sort_btn.click(
-                fn=lambda *args: load_subset_from_dataset(univset.curset, *args),
+                fn=lambda *args: load_subset_from_dataset(univset.get_curset(), *args),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -940,7 +942,7 @@ def create_ui(
             )
 
             tagging_tab.select(
-                fn=change_activating_tab(ui_main_tab, tagging_tab, lambda *args: load_subset_from_dataset(univset.curset, *args)),
+                fn=change_activating_tab(ui_main_tab, tagging_tab, lambda *args: load_subset_from_dataset(univset.get_curset(), *args)),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -948,7 +950,7 @@ def create_ui(
             )
 
             database_tab.select(
-                fn=change_activating_tab(ui_main_tab, database_tab, lambda *args: load_subset_from_dataset(univset.curset, *args)),
+                fn=change_activating_tab(ui_main_tab, database_tab, lambda *args: load_subset_from_dataset(univset.get_curset(), *args)),
                 inputs=dataset_change_inputs,
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -956,7 +958,7 @@ def create_ui(
             )
 
             cur_page_number.submit(
-                fn=lambda page_index: load_subset_from_dataset(univset.curset, page_index),
+                fn=lambda page_index: load_subset_from_dataset(univset.get_curset(), page_index),
                 inputs=[cur_page_number],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -964,7 +966,7 @@ def create_ui(
             )
 
             load_pre_page_btn.click(
-                fn=lambda page_index: load_subset_from_dataset(univset.curset, page_index - 1),
+                fn=lambda page_index: load_subset_from_dataset(univset.get_curset(), page_index - 1),
                 inputs=[cur_page_number],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -972,7 +974,7 @@ def create_ui(
             )
 
             load_next_page_btn.click(
-                fn=lambda page_index: load_subset_from_dataset(univset.curset, page_index + 1),
+                fn=lambda page_index: load_subset_from_dataset(univset.get_curset(), page_index + 1),
                 inputs=[cur_page_number],  # no need to sort
                 outputs=dataset_change_listeners,
                 show_progress=True,
@@ -1205,7 +1207,7 @@ def create_ui(
                     res_dict = {}
                     if do_batch:
                         logger.print(f"batch processing: {formatted_func_name}")
-                        editset = univset.curset
+                        editset = univset.get_curset()
                         if is_func_support_batch:
                             batch_size, args = args[0], args[1:]  # first arg is batch size
                             values = list(editset.values())
@@ -1612,7 +1614,7 @@ def create_ui(
                 caption = img_md.get('caption', None)
                 if caption is None:
                     return None
-                return {'caption': Caption(caption).deoverlapped().text}
+                return {'caption': Caption(caption).deimplicated().text}
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deoverlap_caption),
@@ -1627,7 +1629,7 @@ def create_ui(
                     return None
                 if language != 'en':
                     feature_type = translate(feature_type, 'en')
-                return {'caption': Caption(caption).decharacterized(feature_type=feature_type, freq_thres=freq_thres).text}
+                return {'caption': Caption(caption).defeatured(feature_type=feature_type, freq_thres=freq_thres).text}
 
             decharacterize_caption_btn.click(
                 fn=data_edition_handler(decharacterize_caption),
@@ -1697,7 +1699,7 @@ def create_ui(
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
                     model_path = repo2path(model_repo_or_path)
-                    waifu_scorer = WaifuScorer(model_path=model_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
+                    waifu_scorer = WaifuScorer.from_pretrained(model_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
                     waifu_scorer.model_name = model_repo_or_path
 
                 if not isinstance(batch, list):
@@ -1839,7 +1841,7 @@ def create_ui(
                     # filter out extra kwargs
                     funcparams = list(inspect.signature(func).parameters.keys())
                     extra_kwargs = {k: v for k, v in extra_kwargs.items() if k in funcparams}
-                    queryset = univset.curset if do_subset else univset.fullset
+                    queryset = univset.get_curset() if do_subset else univset.get_fullset()
                     if queryset is None or len(queryset) == 0:
                         return {log_box: f"empty query range"}
 
@@ -1910,6 +1912,23 @@ def create_ui(
             query_attr_selector.focus(
                 fn=lambda: gr.update(choices=univset.header),
                 outputs=[query_attr_selector],
+                concurrency_limit=1,
+            )
+
+            def query_random_one(queryset: UISubset) -> UISubset:
+                r"""
+                Query the dataset by random selection.
+                """
+                if len(queryset) == 0:
+                    return None
+                index = random.randint(0, len(queryset) - 1)
+                img_key = queryset.get_key(index)
+                return UISubset.from_keys([img_key], host=univset)
+
+            random_btn.click(
+                fn=query_handler(query_random_one),
+                inputs=query_base_inputs,
+                outputs=dataset_change_listeners,
                 concurrency_limit=1,
             )
 

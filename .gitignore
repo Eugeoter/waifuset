@@ -167,7 +167,6 @@ draft**
 tempCodeRunnerFile*.py
 main.py
 /models/*
-/waifuset/models/*
 /logs/*
 /database/*
 /images/*
@@ -180,10 +179,5 @@ scripts
 /demos
 *_private*
 *_dev*
-waifuset/json/tag_list.json
-waifuset/json/tag_table.json
 .git.bak
-*gallery_dl*
-*gallery-dl*
-downbooru
-merger
+tools

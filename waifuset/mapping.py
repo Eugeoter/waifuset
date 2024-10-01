@@ -70,7 +70,7 @@ def caption_processor(img_md):
     caption = Caption(caption)
     if (cat := os.path.basename(os.path.dirname(img_md['image_path']))).startswith('by '):
         caption += f"artist:{cat[3:]}"
-    caption.deoverlap()
+    caption.deimplicate()
     caption.parse()
     caption.deduplicate()
     caption.sort()

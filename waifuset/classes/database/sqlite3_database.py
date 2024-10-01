@@ -80,7 +80,16 @@ class SQL3Table(object):
         self.primary_key = get_primary_key(self.cursor, self.name)
 
     @property
-    def info(self):
+    def info(self) -> Dict[str, Dict[str, Any]]:
+        r"""
+        Return a dict containing information of the table, with column names as keys and a dict containing column information as values.
+
+        The dict contains the following keys:
+        - `type`: the type of the column
+        - `notnull`: whether the column is not null
+        - `default`: the default value of the column
+        - `primary_key`: whether the column is the primary key
+        """
         self.cursor.execute(f"PRAGMA table_info({self.name})")
         infos = self.cursor.fetchall()
         infos = {info[1]: {'type': SQL32PY.get(info[2], None), 'notnull': bool(info[3]), 'default': info[4], 'primary_key': bool(info[5])} for info in infos}
@@ -88,6 +97,9 @@ class SQL3Table(object):
 
     @property
     def col2type(self):
+        r"""
+        Return a dict containing column names as keys and their python types as values.
+        """
         return {col: info['type'] for col, info in self.info.items()}
 
     def add_columns(self, col2type: Dict[str, type]):

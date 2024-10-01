@@ -83,11 +83,6 @@ class T2IDataset(config_utils.FromConfigMixin, AspectRatioBucketMixin):
                 cache_dir=self.hf_cache_dir,
                 token=self.hf_token,
                 max_retries=self.max_retries,
-                fp_key='image_path',
-                primary_key='image_key',
-                tbname=None,
-                recur=True,
-                exts=IMAGE_EXTS,
                 read_only=True,
                 verbose=True,
             )

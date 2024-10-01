@@ -40,6 +40,195 @@ class Caption(Data):
     def text(self):
         return self.sep.join(self.tags)
 
+    def deduplicate(self):
+        self.tags = deduplicate(self.tags)
+        self._empty_cache()
+
+    def deduplicated(self):
+        caption = self.copy()
+        caption.deduplicate()
+        return caption
+
+    @overload
+    def format(self, fmt: Callable[[str], str]): ...
+
+    @overload
+    def format(self, fmt: Literal['danbooru']): ...
+
+    def format(self, fmt):
+        if isinstance(fmt, str):
+            fmt = {
+                'danbooru': tagging.fmt2danbooru,
+            }[fmt]
+        self.tags = [fmt(tag) for tag in self.tags]
+        self._empty_cache()
+
+    def formatted(self, fmt):
+        caption = self.copy()
+        caption.format(fmt)
+        return caption
+
+    def parse(self):
+        r"""
+        According to the danbooru wiki, extract artist, characters, and styles tags.
+        """
+        d = {}
+        for i, tag in list(enumerate(self.tags)):
+            if tagtype := tagging.get_tagtype_from_ref(tag):
+                self.tags[i] = tagging.comment(tag, tagtype=tagtype)
+                d.setdefault(tagtype, []).append(tag)
+            elif tagtype := tagging.get_tagtype_from_tag(tag):
+                d.setdefault(tagtype, []).append(tag)
+        for tagtype in tagging.TAG_TYPES:
+            setattr(self, tagtype, d.get(tagtype, []))
+
+    def parsed(self):
+        caption = self.copy()
+        caption.parse()
+        return caption
+
+    @property
+    def metadata(self):
+        return {tagtype: getattr(self, tagtype) for tagtype in tagging.TAG_TYPES}
+
+    def defeature(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
+        r"""
+        According to the feature table which is extracted from danbooru wiki, remove feature tags of every characters.
+        """
+        if not self.character:
+            return
+        if feature_type == 'physics':
+            tagging.init_ch2physics(freq_thres=freq_thres)
+            feature_table = tagging.CH2PHYSICS
+        elif feature_type == 'clothes':
+            tagging.init_ch2clothes(freq_thres=freq_thres)
+            feature_table = tagging.CH2CLOTHES
+        else:
+            raise ValueError(f"Invalid feature type: {feature_type}, should be 'physics' or 'clothes'.")
+        all_features = set()
+        for character in self.character:
+            features = feature_table.get(character, None)
+            # logging.debug(f"features of {character}: {features}")
+            if features:
+                all_features |= features
+        self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
+
+    def defeatured(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
+        caption = self.copy()
+        caption.defeature(feature_type, freq_thres)
+        return caption
+
+    def sort(self, key=None, reverse=False):
+        r"""
+        Sort tags by priority. If key is `None`, use default priority.
+        """
+        key = key or tagging.tag2priority
+        self.tags.sort(key=key, reverse=reverse)
+
+    def sorted(self, key=None, reverse=False):
+        caption = self.copy()
+        caption.sort(key=key, reverse=reverse)
+        return caption
+
+    def deimplicate(self):
+        r"""
+        Remove semantically overlapped tags, keeping the most specific ones.
+        """
+        tag_implications = tagging.get_tag_implications()
+        dan_tags = [tagging.fmt2danbooru(tag) for tag in self.tags]
+        children = set()
+        for tag in dan_tags:
+            if child_tags := tag_implications.get(tag, None):
+                children |= set(child_tags)
+        self.tags = [tag for tag, dan_tag in zip(self.tags, dan_tags) if dan_tag not in children]
+
+    def deimplicated(self):
+        caption = self.copy()
+        caption.deimplicate()
+        return caption
+
+    def alias(self):
+        r"""
+        Replace tags with their newest aliases.
+        """
+        tag_aliases = tagging.get_tag_aliases()
+        self.tags = [(tagging.fmt2train(tag_alias) if ' ' in tag else tag_alias) if (tag_alias := tag_aliases.get(tagging.fmt2danbooru(tag), None)) else tag for tag in self.tags]
+
+    def aliased(self):
+        caption = self.copy()
+        caption.alias()
+        return caption
+
+    def __iadd__(self, other):
+        self.tags += Caption(other, sep=self.sep).tags
+        self._empty_cache()
+        return self
+
+    def __add__(self, other):
+        caption = self.copy()
+        caption += other
+        return caption
+
+    def __radd__(self, other):
+        return Caption(other, sep=self.sep) + self
+
+    def __isub__(self, other):
+        self.tags = [tag for tag in self.tags if tag not in Caption(other, sep=self.sep)]
+        self._empty_cache()
+        return self
+
+    def __sub__(self, other):
+        caption = self.copy()
+        caption -= other
+        return caption
+
+    def __rsub__(self, other):
+        return Caption(other, sep=self.sep) - self
+
+    def __iand__(self, other):
+        self.tags = [tag for tag in self.tags if tag in Caption(other, sep=self.sep)]
+        self._empty_cache()
+        return self
+
+    def __and__(self, other):
+        caption = self.copy()
+        caption &= other
+        return caption
+
+    def __rand__(self, other):
+        return Caption(other, sep=self.sep) & self
+
+    def __ior__(self, other):
+        self.tags = (self + other).deduplicated().tags
+        self._empty_cache()
+        return self
+
+    def __or__(self, other):
+        return (self + other).deduplicated()
+
+    def __ror__(self, other):
+        return Caption(other, sep=self.sep) | self
+
+    def __reversed__(self):
+        return reversed(self.tags)
+
+    def __eq__(self, other):
+        if isinstance(other, Caption):
+            return self.tags == other.tags
+        elif isinstance(other, (str, list)):
+            return self.tags == Caption(other, sep=self.sep).tags
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self.caption)
+
+    def copy(self):
+        return Caption(self.tags, sep=self.sep)
+
     def __str__(self):
         return self.text
 
@@ -179,192 +368,6 @@ class Caption(Data):
         for attr in list(self.__dict__.keys()):
             if attr.startswith('cache_') and (not cached_attrs or attr in cached_attrs):
                 delattr(self, attr)
-
-    def deduplicate(self):
-        self.tags = deduplicate(self.tags)
-        self._empty_cache()
-
-    def deduplicated(self):
-        caption = self.copy()
-        caption.deduplicate()
-        return caption
-
-    @overload
-    def format(self, fmt: Callable[[str], str]): ...
-
-    @overload
-    def format(self, fmt: Literal['danbooru']): ...
-
-    def format(self, fmt):
-        if isinstance(fmt, str):
-            fmt = {
-                'danbooru': tagging.fmt2danbooru,
-            }[fmt]
-        self.tags = [fmt(tag) for tag in self.tags]
-        self._empty_cache()
-
-    def formatted(self, fmt):
-        caption = self.copy()
-        caption.format(fmt)
-        return caption
-
-    def parse(self):
-        r"""
-        According to the danbooru wiki, extract artist, characters, and styles tags.
-        """
-        d = {}
-        for i, tag in list(enumerate(self.tags)):
-            if tagtype := tagging.get_tagtype_from_ref(tag):
-                self.tags[i] = tagging.comment(tag, tagtype=tagtype)
-                d.setdefault(tagtype, []).append(tag)
-            elif tagtype := tagging.get_tagtype_from_tag(tag):
-                d.setdefault(tagtype, []).append(tag)
-        for tagtype in tagging.TAG_TYPES:
-            setattr(self, tagtype, d.get(tagtype, []))
-
-    def parsed(self):
-        caption = self.copy()
-        caption.parse()
-        return caption
-
-    @property
-    def metadata(self):
-        return {tagtype: getattr(self, tagtype) for tagtype in tagging.TAG_TYPES}
-
-    def decharacterize(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
-        r"""
-        According to the feature table which is extracted from danbooru wiki, remove feature tags of every characters.
-        """
-        if not self.character:
-            return
-        if feature_type == 'physics':
-            tagging.init_ch2physics(freq_thres=freq_thres)
-            feature_table = tagging.CH2PHYSICS
-        elif feature_type == 'clothes':
-            tagging.init_ch2clothes(freq_thres=freq_thres)
-            feature_table = tagging.CH2CLOTHES
-        else:
-            raise ValueError(f"Invalid feature type: {feature_type}, should be 'physics' or 'clothes'.")
-        all_features = set()
-        for character in self.character:
-            features = feature_table.get(character, None)
-            # logging.debug(f"features of {character}: {features}")
-            if features:
-                all_features |= features
-        self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
-
-    def decharacterized(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
-        caption = self.copy()
-        caption.decharacterize(feature_type, freq_thres)
-        return caption
-
-    def sort(self, key=None, reverse=False):
-        r"""
-        Sort tags by priority. If key is `None`, use default priority.
-        """
-        key = key or tagging.tag2priority
-        self.tags.sort(key=key, reverse=reverse)
-
-    def sorted(self, key=None, reverse=False):
-        caption = self.copy()
-        caption.sort(key=key, reverse=reverse)
-        return caption
-
-    def deoverlap(self):
-        r"""
-        Remove semantically overlapped tags, keeping the most specific ones.
-        """
-        tagging.init_overlap_table()
-        dan2tag = {tagging.fmt2danbooru(tag): tag for tag in self.tags}
-        tag2dan = {v: k for k, v in dan2tag.items()}
-        ovlp_table = tagging.OVERLAP_TABLE
-        tags_to_remove = set()
-        tagset = set(self.tags)
-        for tag in tagset:
-            if tag not in tag2dan:
-                continue
-            dantag = tag2dan[tag]
-            if dantag in ovlp_table and tag not in tags_to_remove:
-                parents, children = ovlp_table[dantag]
-                parents = {dan2tag[parent] for parent in parents if parent in dan2tag}
-                children = {dan2tag[child] for child in children if child in dan2tag}
-                tags_to_remove |= tagset & children
-        self.tags = [tag for tag in self.tags if tag not in tags_to_remove]  # deoverlap won't change properties
-
-    def deoverlapped(self):
-        caption = self.copy()
-        caption.deoverlap()
-        return caption
-
-    def __iadd__(self, other):
-        self.tags += Caption(other, sep=self.sep).tags
-        self._empty_cache()
-        return self
-
-    def __add__(self, other):
-        caption = self.copy()
-        caption += other
-        return caption
-
-    def __radd__(self, other):
-        return Caption(other, sep=self.sep) + self
-
-    def __isub__(self, other):
-        self.tags = [tag for tag in self.tags if tag not in Caption(other, sep=self.sep)]
-        self._empty_cache()
-        return self
-
-    def __sub__(self, other):
-        caption = self.copy()
-        caption -= other
-        return caption
-
-    def __rsub__(self, other):
-        return Caption(other, sep=self.sep) - self
-
-    def __iand__(self, other):
-        self.tags = [tag for tag in self.tags if tag in Caption(other, sep=self.sep)]
-        self._empty_cache()
-        return self
-
-    def __and__(self, other):
-        caption = self.copy()
-        caption &= other
-        return caption
-
-    def __rand__(self, other):
-        return Caption(other, sep=self.sep) & self
-
-    def __ior__(self, other):
-        self.tags = (self + other).deduplicated().tags
-        self._empty_cache()
-        return self
-
-    def __or__(self, other):
-        return (self + other).deduplicated()
-
-    def __ror__(self, other):
-        return Caption(other, sep=self.sep) | self
-
-    def __reversed__(self):
-        return reversed(self.tags)
-
-    def __eq__(self, other):
-        if isinstance(other, Caption):
-            return self.tags == other.tags
-        elif isinstance(other, (str, list)):
-            return self.tags == Caption(other, sep=self.sep).tags
-        else:
-            return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return hash(self.caption)
-
-    def copy(self):
-        return Caption(self.tags, sep=self.sep)
 
 
 def deduplicate(tags):

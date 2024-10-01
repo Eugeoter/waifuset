@@ -1,7 +1,7 @@
 import requests
 import os
 from pathlib import Path
-from typing import Dict, List, Any, Literal, Union, Tuple, Iterable
+from typing import Dict, List, Any, Literal, Union, Tuple, Iterable, Callable
 from .auto_dataset import AutoDataset
 from .dict_dataset import DictDataset
 from .sqlite3_dataset import SQLite3Dataset
@@ -13,13 +13,14 @@ from ... import mapping, logging
 logger = logging.get_logger("dataset")
 
 DEFAULT_KWARGS = {
-    'verbose': False,
+    'dataset_type': None,
+    'verbose': True,
     'column_mapping': None,
     'remove_columns': None,
     'mapping': None,
     'priority': 0,
 
-    'tbname': None,
+    'tbname': 'metadata',
     'primary_key': 'image_key',
     'fp_key': 'image_path',
     'exts': IMAGE_EXTS,
@@ -29,19 +30,21 @@ DEFAULT_KWARGS = {
     'token': None,
     'split': 'train',
     'max_retries': None,
+
+    'annotations': ['instances', 'captions'],
 }
 
 
 class FastDataset(AutoDataset):
-    def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', local_only: bool = False, **default_kwargs) -> Dataset:
+    def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', **default_kwargs) -> Dataset:
         source = parse_source_input(source)
         if merge_mode == 'no' and len(source) > 1:
             from .chain_dataset import ChainDataset
-            return ChainDataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, local_only=local_only, **default_kwargs)
+            return ChainDataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, **default_kwargs)
         else:
-            return load_fast_dataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, local_only=local_only, **default_kwargs)
+            return load_fast_dataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, **default_kwargs)
 
-    def __init__(self, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', local_only: bool = False, **default_kwargs) -> Dataset:
+    def __init__(self, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', **default_kwargs) -> Dataset:
         r"""
         Initialize the dataset from a specified source.
 
@@ -77,7 +80,6 @@ class FastDataset(AutoDataset):
 def load_fast_dataset(
     *source: List[Union[str, Dict[str, Any], Dataset]],
     merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union',
-    local_only: bool = False,
     dataset_cls: type = None,
     **default_kwargs,
 ) -> Union[Dataset, List[Dataset]]:
@@ -96,9 +98,9 @@ def load_fast_dataset(
             - exts: The extensions of the images. Default is common image extensions ('jpg', 'jpeg', 'png', 'webp', 'jfif'). Applicable only for local datasets.
             - recur: Specifies whether to recursively search for images in the directory. Default is True. Applicable only for local datasets.
             - tbname: The table name of the SQLite3 dataset. Default is None, which means the dataset is assumed to be in a single table format. Applicable only for SQLite3 datasets.
+            - dataset_type: Literal['local', 'huggingface', 'coco']: The type of the dataset. Default is None.
         - Dataset: An instance of the Dataset class.
     @param merge_mode: The mode to merge multiple datasets. Default is 'union'.
-    @param local_only: Whether to load local datasets only. Default is False.
     @param dataset_cls: An optional class to use for the dataset. If not provided, a default dataset class will be used.
     @param **default_kwargs: Additional keyword arguments to pass to the dataset constructor.
 
@@ -121,9 +123,24 @@ def load_fast_dataset(
         else:
             src = dict(src)
             name_or_path = src.pop('name_or_path')
-            primary_key = src.pop('primary_key', 'image_key')
-            if local_only or os.path.exists(name_or_path):
-                dataset = load_local_dataset(
+            dataset_type = src.pop('dataset_type', default_kwargs.get('dataset_type', None))
+            # logger.debug(f"dataset type: {dataset_type}", disable=not verbose_local)
+            primary_key = src.pop('primary_key', default_kwargs.get('primary_key'))
+            if dataset_type == 'coco':
+                dataset = load_coco_dataset(
+                    name_or_path,
+                    primary_key=primary_key,
+                    split=src.pop('split', default_kwargs.get('split')),
+                    annotations=src.pop('annotations', default_kwargs.get('annotations')),
+                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
+                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
+                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
+                    verbose=src.pop('verbose', verbose),
+                    **src,
+                )
+            elif dataset_type == 'local' or os.path.exists(name_or_path) or os.path.splitext(name_or_path)[1] in ['.csv', '.json', '.sqlite3', '.db']:
+                dataset = load_single_dataset(
                     name_or_path,
                     dataset_cls=dataset_cls,
                     primary_key=primary_key,
@@ -133,7 +150,7 @@ def load_fast_dataset(
                     fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
                     recur=src.pop('recur', default_kwargs.get('recur')),
                     exts=src.pop('exts', default_kwargs.get('exts')),
-                    tbname=src.pop('tbname', default_kwargs.get('tbname')),
+                    tbname=src.pop('tbname', default_kwargs.get('tbname') if not os.path.exists(name_or_path) else None),
                     read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
                     verbose=src.pop('verbose', verbose),
                     **src,
@@ -173,7 +190,7 @@ def load_fast_dataset(
     return dataset
 
 
-def load_local_dataset(
+def load_single_dataset(
     name_or_path: str,
     primary_key: str = 'image_key',
     column_mapping: Dict[str, str] = None,
@@ -278,6 +295,92 @@ def load_huggingface_dataset(
         for index, img_key in enumerate(hfset[primary_key]):
             dic[img_key] = HuggingFaceData(hfset, index=index, **{primary_key: img_key})
     return dataset_cls.from_dict(dic, verbose=verbose)
+
+
+def load_coco_dataset(
+    name_or_path: str,
+    split: Literal['train', 'val', 'test'] = 'train',
+    annotations: List[Literal['instances', 'captions', 'person_keypoints']] = ['instances', 'captions'],
+    primary_key: str = 'image_key',
+    column_mapping: Dict[str, str] = None,
+    remove_columns: List[str] = None,
+    fp_key: str = 'image_path',
+    read_attrs: bool = False,
+    verbose: bool = False,
+    dataset_cls: type = None,
+    **kwargs: Dict[str, Any],
+) -> Dataset:
+    r"""
+    Load the COCO dataset and convert it into a `Dataset` object.
+
+    @param name_or_path: The root directory of the COCO dataset.
+    @param split: The dataset split to load ('train', 'val', or 'test'). Default is 'train'.
+    @param primary_key: The primary key of the dataset. Default is 'image_key'.
+    @param column_mapping: A dictionary mapping original column names to new names.
+    @param remove_columns: A list of column names to remove from the dataset.
+    @param fp_key: The key for the file path in the dataset. Default is 'image_path'.
+    @param exts: The extensions of the images. Default is common image extensions.
+    @param read_attrs: Whether to read additional image attributes. Default is False.
+    @param verbose: Whether to print verbose output. Default is False.
+    @param dataset_cls: An optional class to use for the dataset. If not provided, `DictDataset` will be used.
+    @param **kwargs: Additional keyword arguments.
+
+    @returns: An instance of the `Dataset` class containing the COCO dataset.
+    """
+    import os
+    from pycocotools.coco import COCO
+
+    if dataset_cls is None:
+        from .dict_dataset import DictDataset
+        dataset_cls = DictDataset
+
+    data_dir = os.path.join(name_or_path, f"{split}")
+    cocos = {}
+
+    for ann in annotations:
+        ann_file = os.path.join(name_or_path, f"annotations/{ann}_{split}.json")
+        cocos[ann] = COCO(ann_file)
+    img_ids = cocos['instances'].getImgIds()
+    cat_ids = cocos['instances'].getCatIds()
+
+    data_dict = {}
+
+    for img_id in logger.tqdm(img_ids, desc='loading COCO dataset', disable=not verbose):
+        img_info = cocos['instances'].loadImgs(img_id)[0]
+        image_path = os.path.join(data_dir, img_info['file_name'])
+
+        # annotations_infos = {}
+        # for ann in annotations:
+        #     ann_ids = cocos[ann].getAnnIds(imgIds=img_id, catIds=cat_ids)
+        #     anns = cocos[ann].loadAnns(ann_ids)
+        #     annotations_infos[ann] = anns
+
+        img_key = str(img_id)
+
+        data = {
+            primary_key: img_key,
+            fp_key: image_path,
+            'img_id': img_id,
+            'cat_ids': cat_ids,
+            'cocos': cocos,
+        }
+        data.update(img_info)  # Include additional image info
+
+        data_dict[img_key] = data
+
+    dataset = dataset_cls.from_dict(data_dict, verbose=verbose)
+
+    if column_mapping:
+        dataset = dataset.rename_columns(column_mapping, tqdm_disable=not verbose)
+    if remove_columns:
+        dataset = dataset.remove_columns(remove_columns, tqdm_disable=not verbose)
+    if primary_key not in dataset.header:
+        dataset = patch_key(dataset, primary_key)
+
+    if read_attrs:
+        dataset.apply_map(mapping.attr_reader, condition=lambda img_md: img_md.get('caption') is None, tqdm_disable=not verbose)
+
+    return dataset
 
 
 def parse_source_input(source: Union[List, Tuple, Dict, str, Path, None]) -> List[Dict[str, Any]]:
