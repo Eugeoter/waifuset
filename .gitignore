@@ -181,3 +181,5 @@ scripts
 *_dev*
 .git.bak
 tools
+/waifuset/wiki/general_tags.txt
+/waifuset/wiki/gallery-dl_config.json
