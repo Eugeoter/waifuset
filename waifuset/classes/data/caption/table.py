@@ -110,7 +110,7 @@ def dataset_to_count_table(dataset):
 
 def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, least_sample_size=50, character_features_only=False):
     if character_features_only:
-        tagging.init_character_features()
+        tagging.get_character_physics_feature_regex()
     feature_table = {}
     for char_tag, counter in tqdm(count_table.items(), desc='make feature table', disable=True):
         total = counter[char_tag]
@@ -126,7 +126,7 @@ def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, lea
 
 def freq_table_to_feature_table(freq_table, freq_thres=0.3, character_features_only=False):
     if character_features_only:
-        tagging.init_character_features()
+        tagging.get_character_physics_feature_regex()
     feature_table = {}
     for char_tag, counter in tqdm(freq_table.items(), desc='make feature table', disable=True):
         freqs = {tag: freq for tag, freq in counter.items() if freq >= freq_thres}
@@ -186,6 +186,9 @@ class FeatureTable:
     def __getitem__(self, character):
         char_tag = tagging.fmt2danbooru(character)
         return self.table[char_tag]
+
+    def __contains__(self, character):
+        return tagging.fmt2danbooru(character) in self.table
 
     def get(self, character, default=None):
         r"""

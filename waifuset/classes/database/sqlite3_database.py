@@ -335,7 +335,10 @@ class SQLite3Database(object):
         self.cursor = self.conn.cursor()
 
     def __del__(self):
-        self.conn.close()
+        try:
+            self.conn.close()
+        except:
+            pass
 
     def commit(self):
         self.conn.commit()
@@ -346,7 +349,7 @@ class SQLite3Database(object):
         if not isinstance(col2type, dict):
             raise TypeError(f"col2type must be a dict, not {type(col2type)}")
         for col, dtype in col2type.items():
-            if not isinstance(dtype, type):
+            if dtype is not None and not isinstance(dtype, type):
                 raise TypeError(f"column type must be a type, not {type(dtype)}")
 
         if exists_ok and table_name in self.get_all_tablenames():

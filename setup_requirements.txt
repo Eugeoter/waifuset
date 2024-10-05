@@ -13,4 +13,3 @@ opencv-contrib-python
 # pytorch-lightning # required by Waifu Scorer
 # torchvision
 # git+https://github.com/openai/CLIP.git # required by Waifu Scorer
-# googletrans # required by translator of UI

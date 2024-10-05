@@ -1,5 +1,7 @@
 import requests
 import os
+import math
+import contextlib
 from pathlib import Path
 from typing import Dict, List, Any, Literal, Union, Tuple, Iterable, Callable
 from .auto_dataset import AutoDataset
@@ -114,70 +116,71 @@ def load_fast_dataset(
         return (dataset_cls or DictDataset).from_dict({})
     datasets = []
     for i, src in enumerate(source):
-        if isinstance(src, Dataset):
-            dataset = src
-            if not hasattr(dataset, 'priority'):
-                dataset.priority = i
-            verbose_local = default_kwargs.get('verbose', False)
+        with logger.timer(f"load dataset {i + 1}/{len(source)}") if verbose else contextlib.nullcontext():
+            if isinstance(src, Dataset):
+                dataset = src
+                if not hasattr(dataset, 'priority'):
+                    dataset.priority = i
+                verbose_local = default_kwargs.get('verbose', False)
 
-        else:
-            src = dict(src)
-            name_or_path = src.pop('name_or_path')
-            dataset_type = src.pop('dataset_type', default_kwargs.get('dataset_type', None))
-            # logger.debug(f"dataset type: {dataset_type}", disable=not verbose_local)
-            primary_key = src.pop('primary_key', default_kwargs.get('primary_key'))
-            if dataset_type == 'coco':
-                dataset = load_coco_dataset(
-                    name_or_path,
-                    primary_key=primary_key,
-                    split=src.pop('split', default_kwargs.get('split')),
-                    annotations=src.pop('annotations', default_kwargs.get('annotations')),
-                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
-                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
-                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
-                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
-                    verbose=src.pop('verbose', verbose),
-                    **src,
-                )
-            elif dataset_type == 'local' or os.path.exists(name_or_path) or os.path.splitext(name_or_path)[1] in ['.csv', '.json', '.sqlite3', '.db']:
-                dataset = load_single_dataset(
-                    name_or_path,
-                    dataset_cls=dataset_cls,
-                    primary_key=primary_key,
-                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
-                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
-
-                    fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
-                    recur=src.pop('recur', default_kwargs.get('recur')),
-                    exts=src.pop('exts', default_kwargs.get('exts')),
-                    tbname=src.pop('tbname', default_kwargs.get('tbname') if not os.path.exists(name_or_path) else None),
-                    read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
-                    verbose=src.pop('verbose', verbose),
-                    **src,
-                )
             else:
-                dataset = load_huggingface_dataset(
-                    name_or_path=name_or_path,
-                    dataset_cls=dataset_cls,
-                    primary_key=primary_key,
-                    column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
-                    remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
+                src = dict(src)
+                name_or_path = src.pop('name_or_path')
+                dataset_type = src.pop('dataset_type', default_kwargs.get('dataset_type', None))
+                # logger.debug(f"dataset type: {dataset_type}", disable=not verbose_local)
+                primary_key = src.pop('primary_key', default_kwargs.get('primary_key'))
+                if dataset_type == 'coco':
+                    dataset = load_coco_dataset(
+                        name_or_path,
+                        primary_key=primary_key,
+                        split=src.pop('split', default_kwargs.get('split')),
+                        annotations=src.pop('annotations', default_kwargs.get('annotations')),
+                        column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                        remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
+                        fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
+                        read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
+                        verbose=src.pop('verbose', verbose),
+                        **src,
+                    )
+                elif dataset_type == 'local' or os.path.exists(name_or_path) or os.path.splitext(name_or_path)[1] in ['.csv', '.json', '.sqlite3', '.db']:
+                    dataset = load_single_dataset(
+                        name_or_path,
+                        dataset_cls=dataset_cls,
+                        primary_key=primary_key,
+                        column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                        remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
 
-                    cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir')),
-                    token=src.pop('token', default_kwargs.get('token')),
-                    split=src.pop('split', default_kwargs.get('split')),
-                    max_retries=src.pop('max_retries', default_kwargs.get('max_retries')),
-                    verbose=src.pop('verbose', verbose),
-                    **src,
-                )
-            if (mapping := src.pop('mapping', None)) is not None:
-                dataset = mapping(dataset)
-            dataset.priority = src.pop('priority', i)
-            verbose_local = src.pop('verbose', False)
+                        fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
+                        recur=src.pop('recur', default_kwargs.get('recur')),
+                        exts=src.pop('exts', default_kwargs.get('exts')),
+                        tbname=src.pop('tbname', default_kwargs.get('tbname') if not os.path.exists(name_or_path) else None),
+                        read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
+                        verbose=src.pop('verbose', verbose),
+                        **src,
+                    )
+                else:
+                    dataset = load_huggingface_dataset(
+                        name_or_path=name_or_path,
+                        dataset_cls=dataset_cls,
+                        primary_key=primary_key,
+                        column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
+                        remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
 
-        datasets.append(dataset)
-        logger.info(f"[{i}/{len(source)}] {dataset.name}: ", disable=not verbose_local)
-        logger.info(dataset, no_prefix=True, disable=not verbose_local)
+                        cache_dir=src.pop('cache_dir', default_kwargs.get('cache_dir')),
+                        token=src.pop('token', default_kwargs.get('token')),
+                        split=src.pop('split', default_kwargs.get('split')),
+                        max_retries=src.pop('max_retries', default_kwargs.get('max_retries')),
+                        verbose=src.pop('verbose', verbose),
+                        **src,
+                    )
+                if (mapping := src.pop('mapping', None)) is not None:
+                    dataset = mapping(dataset)
+                dataset.priority = src.pop('priority', i)
+                verbose_local = src.pop('verbose', False)
+
+            datasets.append(dataset)
+            logger.info(f"[{i}/{len(source)}] {dataset.name}:", disable=not verbose_local)
+            logger.info(dataset, no_prefix=True, disable=not verbose_local)
 
     if merge_mode != 'no':
         datasets.sort(key=lambda x: x.priority, reverse=True)
@@ -406,9 +409,85 @@ def patch_key(dataset, primary_key) -> Dataset:
     return dataset
 
 
+# def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'intersection', 'update'] = 'union', verbose=True) -> Dataset:
+#     r"""
+#     Accumulate multiple datasets into a single dataset.
+
+#     The overlapping order is determined by the order of the input datasets. The former dataset has a higher priority.
+#     """
+#     if not isinstance(datasets, Iterable) or isinstance(datasets, str):
+#         raise TypeError(f"datasets must be an iterable of Dataset, not {type(datasets)}")
+#     for i, ds in enumerate(datasets):
+#         if not isinstance(ds, Dataset):
+#             raise TypeError(f"datasets[{i}] must be an instance of Dataset, not {type(ds)}")
+
+#     # If datasets is empty, return an empty DictDataset
+#     if not datasets:
+#         return DictDataset.from_dict({})
+#     # If there is only one dataset, return itself
+#     elif len(datasets) == 1:
+#         return datasets[0]
+#     # If types of some datasets are inconsistent, use DictDataset by default
+#     elif not all(ds.__class__ == datasets[0].__class__ for ds in datasets):
+#         logger.warning(f"because some types of datasets are inconsistent when accumulating, use {DictDataset.__name__} by default")
+#         dataset_cls = DictDataset
+#     # Otherwise, use the type of all these datasets
+#     else:
+#         dataset_cls = datasets[0].__class__
+
+#     # Merge the configurations of all datasets
+#     pivot_config = {}
+#     for ds in datasets:
+#         pivot_config.update(ds.config)
+#     pivot_config.pop('name', 'FastDataset')
+#     pivot_config['verbose'] = verbose
+
+#     pivotset = dataset_cls.from_dataset(datasets[0], **pivot_config)
+#     if 'header' in pivotset.__dict__:
+#         del pivotset.__dict__['header']
+#     if mode == 'union':
+#         img_keys = set()
+#         for ds in datasets:
+#             img_keys.update(ds.keys())
+#             if any(img_key is None for img_key in img_keys):
+#                 logger.error(f"Dataset with None image key: {ds}")
+#     elif mode == 'intersection':
+#         img_keys = set(datasets[0].keys())
+#         for ds in datasets[1:]:
+#             img_keys.intersection_update(ds.keys())
+#             if any(img_key is None for img_key in img_keys):
+#                 logger.error(f"Dataset with None image key: {ds}")
+#     elif mode == 'update':
+#         pass
+#     else:
+#         raise ValueError(f"Invalid merge mode: {mode}")
+
+#     for i, ds in logger.tqdm(enumerate(datasets[1:]), desc='accumulate datasets', position=1, disable=not verbose):
+#         if mode == 'update':
+#             pivotset.update(ds)
+#         else:  # mode in ['union', 'intersection']
+#             for img_key in logger.tqdm(img_keys, desc=f'accumulate {i + 1}/{len(datasets[1:])}-th dataset', position=2, disable=not verbose):
+#                 if (new_img_md := ds.get(img_key)) is not None:
+#                     # High level data prioritize low level data when they conflict
+#                     if (old_img_md := pivotset.get(img_key)) is not None:
+#                         old_img_md.update(new_img_md)
+#                         if issubclass(new_img_md.__class__, old_img_md.__class__):
+#                             new_img_md.update(old_img_md)
+#                             pivotset[img_key] = new_img_md
+#                     else:
+#                         pivotset[img_key] = new_img_md
+
+#     if mode == 'intersection':
+#         for img_key in logger.tqdm(list(pivotset.keys()), desc='remove data', position=2, disable=not verbose):
+#             if img_key not in img_keys:
+#                 del pivotset[img_key]
+
+#     return pivotset
+
+
 def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'intersection', 'update'] = 'union', verbose=True) -> Dataset:
     r"""
-    Accumulate multiple datasets into a single dataset. 
+    Accumulate multiple datasets into a single dataset.
 
     The overlapping order is determined by the order of the input datasets. The former dataset has a higher priority.
     """
@@ -432,51 +511,89 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
     else:
         dataset_cls = datasets[0].__class__
 
-    # Merge the configurations of all datasets
-    pivot_config = {}
     for ds in datasets:
-        pivot_config.update(ds.config)
-    pivot_config.pop('name', 'FastDataset')
-    pivot_config['verbose'] = verbose
+        if not hasattr(ds, 'priority'):
+            ds.priority = 0
 
-    pivotset = dataset_cls.from_dataset(datasets[0], **pivot_config)
-    if 'header' in pivotset.__dict__:
-        del pivotset.__dict__['header']
-    if mode == 'union':
-        img_keys = set()
-        for ds in datasets:
-            img_keys.update(ds.keys())
-            if any(img_key is None for img_key in img_keys):
-                logger.error(f"Dataset with None image key: {ds}")
-    elif mode == 'intersection':
-        img_keys = set(datasets[0].keys())
-        for ds in datasets[1:]:
-            img_keys.intersection_update(ds.keys())
-            if any(img_key is None for img_key in img_keys):
-                logger.error(f"Dataset with None image key: {ds}")
-    elif mode == 'update':
-        pass
-    else:
-        raise ValueError(f"Invalid merge mode: {mode}")
-
-    for i, ds in logger.tqdm(enumerate(datasets[1:]), desc='accumulate datasets', position=1, disable=not verbose):
-        if mode == 'update':
-            pivotset.update(ds)
-        else:  # mode in ['union', 'intersection']
-            for img_key in logger.tqdm(img_keys, desc=f'accumulate {i + 1}/{len(datasets[1:])}-th dataset', position=2, disable=not verbose):
-                if (new_img_md := ds.get(img_key)) is not None:
-                    # High level data prioritize low level data when they conflict
-                    if (old_img_md := pivotset.get(img_key)) is not None:
-                        old_img_md.update(new_img_md)
-                        if issubclass(new_img_md.__class__, old_img_md.__class__):
-                            new_img_md.update(old_img_md)
-                            pivotset[img_key] = new_img_md
-                    else:
-                        pivotset[img_key] = new_img_md
+    logger.info(f"accumulating datasets:", disable=not verbose)
+    logger.info(f"  total number of datasets: {len(datasets)}", disable=not verbose, no_prefix=True)
+    logger.info(f"  merge mode: {mode}", disable=not verbose, no_prefix=True)
 
     if mode == 'intersection':
-        for img_key in logger.tqdm(list(pivotset.keys()), desc='remove data', position=2, disable=not verbose):
-            if img_key not in img_keys:
-                del pivotset[img_key]
+        # Find the dataset with the smallest size as the pivotset
+        pivot_index = 0
+        pivotset = datasets[pivot_index]
+        for i, ds in enumerate(datasets):
+            if len(ds) < len(pivotset):
+                pivotset = ds
+                pivot_index = i
+        pivot_priority = pivotset.priority
+        pivotset = dataset_cls.from_dataset(pivotset)
+        pivotset.priority = pivot_priority
+        datasets.pop(pivot_index)
+
+        # Accumulate the datasets
+        for ds in logger.tqdm(datasets, desc='intersection datasets', position=0, disable=not verbose, leave=False):
+            for img_key in logger.tqdm(pivotset.keys(), desc='intersection data', position=1, disable=not verbose, leave=False):
+                if img_key not in ds:
+                    del pivotset[img_key]
+                else:
+                    old_img_md = pivotset[img_key]
+                    new_img_md = ds[img_key]
+                    if issubclass(new_img_md.__class__, old_img_md.__class__):  # if new is a same or sub class of old
+                        if pivotset.priority <= ds.priority:  # if new has higher priority
+                            old_img_md.update(new_img_md)  # overwrite old with new
+                            pivotset[img_key] = new_img_md.__class__(old_img_md) if old_img_md.__class__ != new_img_md.__class__ else old_img_md
+                        else:  # if old has higher priority
+                            new_img_md.update(old_img_md)  # overwrite new with old
+                            pivotset[img_key] = new_img_md  # keep new class
+                    else:  # if old is a sub class of new
+                        if pivotset.priority > ds.priority:  # if old has higher priority
+                            new_img_md.update(old_img_md)  # overwrite new with old
+                            pivotset[img_key] = old_img_md.__class__(new_img_md)  # init old class with new data
+                        else:  # if new has higher priority
+                            old_img_md.update(new_img_md)  # overwrite old with new
+                            pivotset[img_key] = old_img_md  # keep old class
+
+    elif mode == 'union':
+        pivot_index = 0
+        pivotset = datasets[pivot_index]
+        for i, ds in enumerate(datasets):
+            if len(ds) > len(pivotset):
+                pivotset = ds
+                pivot_index = i
+        pivot_priority = pivotset.priority
+        pivotset = dataset_cls.from_dataset(pivotset)
+        pivotset.priority = pivot_priority
+        datasets.pop(pivot_index)
+
+        for ds in logger.tqdm(datasets, desc='union datasets', position=0, disable=not verbose, leave=False):
+            for img_key in logger.tqdm(ds.keys(), desc='union data', position=1, disable=not verbose, leave=False):
+                if img_key not in pivotset:
+                    pivotset[img_key] = ds[img_key]
+                else:
+                    old_img_md = pivotset[img_key]
+                    new_img_md = ds[img_key]
+                    if issubclass(new_img_md.__class__, old_img_md.__class__):  # if new is a same or sub class of old
+                        if pivotset.priority <= ds.priority:  # if new has higher priority
+                            old_img_md.update(new_img_md)  # overwrite old with new
+                            pivotset[img_key] = new_img_md.__class__(old_img_md) if old_img_md.__class__ != new_img_md.__class__ else old_img_md  # init new class with old data
+                        else:  # if old has higher priority
+                            new_img_md.update(old_img_md)  # overwrite new with old
+                            pivotset[img_key] = new_img_md  # keep new class
+                    else:  # if old is a sub class of new
+                        if pivotset.priority > ds.priority:  # if old has higher priority
+                            new_img_md.update(old_img_md)  # overwrite new with old
+                            pivotset[img_key] = old_img_md.__class__(new_img_md)  # init old class with new data
+                        else:  # if new has higher priority
+                            old_img_md.update(new_img_md)  # overwrite old with new
+                            pivotset[img_key] = old_img_md  # keep old class
+
+    elif mode == 'update':
+        pivotset = dataset_cls.from_dataset(datasets[0])
+        pivotset.priority = datasets[0].priority
+
+        for ds in logger.tqdm(datasets[1:], desc='update datasets', position=0, disable=not verbose, leave=False):
+            pivotset.update(ds, tqdm_desc='update data', tqdm_position=1, tqdm_disable=not verbose, tqdm_leave=False)
 
     return pivotset

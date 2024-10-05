@@ -98,8 +98,8 @@ class ConsoleLogger:
         kwargs["disable"] = kwargs.get('disable', self.get_disable())
         return tqdm(*args, **kwargs)
 
-    def timer(self, name=None, level: Literal['debug', 'info', 'warning', 'error', 'critical'] = 'info'):
-        return timer(name, level, logger=self)
+    def timer(self, name=None, level: Literal['debug', 'info', 'warning', 'error', 'critical'] = 'info', **kwargs):
+        return timer(name, level, logger=self, **kwargs)
 
     def info(self, *msg: str, **kwargs):
         self.print(*msg, level='info', **kwargs)
@@ -191,6 +191,19 @@ def track_tqdm(pbar, n: int = 1):
             return res
         return inner
     return wrapper
+
+
+def time_test(func, *args, n: int = 1, **kwargs):
+    r"""
+    Time the execution of a function.
+    """
+    import time
+    start_time = time.time()
+    for _ in range(n):
+        func(*args, **kwargs)
+    end_time = time.time()
+    return end_time - start_time
+
 
 # ANSI color tools
 

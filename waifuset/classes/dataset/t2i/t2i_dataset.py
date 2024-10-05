@@ -27,7 +27,7 @@ class T2IDataset(config_utils.FromConfigMixin, AspectRatioBucketMixin):
 
     image_key_getter: Callable[[dict], str] = lambda img_md, *args, **kwargs: img_md.get('image_key')
     image_getter: Callable[[dict], Image.Image] = lambda self, img_md, *args, **kwargs: img_md.get('image')
-    caption_getter: Callable[[dict], str] = lambda self, img_md, *args, **kwargs: img_md.get('caption') or ''
+    caption_getter: Callable[[dict], str] = lambda self, img_md, *args, **kwargs: img_md.get('tags') or img_md.get('caption') or ''
 
     allow_crop: bool = True
 

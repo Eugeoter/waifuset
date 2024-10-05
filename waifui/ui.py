@@ -19,7 +19,7 @@ from waifuset import Caption
 from waifuset.utils import image_utils, class_utils
 from waifuset.classes.dataset.dataset_mixin import ToDiskMixin
 from waifuset.classes.data import data_utils
-from waifuset.components.waifu_tagger.const import WD_REPOS
+from waifuset.components.waifu_tagger.utils import WD_REPOS
 from waifuset.components.waifu_scorer.const import WS_REPOS
 from .emoji import Emoji
 from .ui_utils import *
@@ -36,6 +36,7 @@ class UIManager(class_utils.FromConfigMixin):
     ui_page_size: int = 40
     cpu_max_workers: int = 1
     enable_category: bool = True
+    hf_cache_dir: Optional[str] = None
     verbose: bool = False
 
     logger: logging.ConsoleLogger
@@ -87,10 +88,11 @@ class UIManager(class_utils.FromConfigMixin):
                 self.ui = create_ui(
                     univset=self.dataset,
                     buffer=UIBuffer(),
+                    enable_category=self.enable_category,
                     cpu_max_workers=self.cpu_max_workers,
                     language=self.ui_language,
                     render='full',
-                    enable_category=self.enable_category,
+                    hf_cache_dir=self.hf_cache_dir,
                 )
 
     def launch(self):
@@ -106,10 +108,11 @@ class UIManager(class_utils.FromConfigMixin):
 def create_ui(
     univset: UIDataset,
     buffer: UIBuffer,
-    cpu_max_workers=1,
-    language='en',
-    render='full',
-    enable_category=True,
+    language: Literal['en', 'cn']='cn',
+    enable_category: bool=True,
+    cpu_max_workers: int=1,
+    render: Literal['full', 'partial']='full',
+    hf_cache_dir: Optional[str] = None,
 ):
     # ========================================= UI ========================================= #
     assert isinstance(univset, UIDataset), f"expected `univset` to be an instance of `UIDataset`, but got {type(univset)}"
@@ -126,7 +129,7 @@ def create_ui(
     waifu_tagger = None
     waifu_scorer = None
     # logger.debug(f"initializing custom tags")
-    tagging.init_custom_tags()
+    tagging.get_custom_tags()
 
     def convert_dataset_to_statistic_dataframe(dataset: UISubset):
         num_images = len(dataset)
@@ -1640,7 +1643,7 @@ def create_ui(
 
             # ========================================= WD ========================================= #
 
-            def wd_tagging(batch: List[DataDict], model_repo_or_path, general_threshold, character_threshold, overwrite_mode) -> List[ResultDict]:
+            def wd_tagging(batch: List[DataDict], pretrained_model_name_or_path, general_threshold, character_threshold, overwrite_mode) -> List[ResultDict]:
                 nonlocal waifu_tagger
                 if language != 'en':  # translate overwrite_mode
                     overwrite_mode = translate(overwrite_mode, 'en')
@@ -1655,15 +1658,14 @@ def create_ui(
                     if len(batch) == 0:
                         return []
 
-                if waifu_tagger is None or (waifu_tagger and waifu_tagger.model_name != model_repo_or_path):
+                if waifu_tagger is None or (waifu_tagger and waifu_tagger.model_name != pretrained_model_name_or_path):
                     try:
-                        from waifuset.components.waifu_tagger.predict import WaifuTagger, repo2path
+                        from waifuset.components.waifu_tagger.waifu_tagger import WaifuTagger
                     except ModuleNotFoundError as e:
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
-                    model_path, label_path = repo2path(model_repo_or_path)
-                    waifu_tagger = WaifuTagger(model_path=model_path, label_path=label_path, verbose=True)
-                    waifu_tagger.model_name = model_repo_or_path
+                    waifu_tagger = WaifuTagger.from_pretrained(pretrained_model_name_or_path, cache_dir=hf_cache_dir)
+                    waifu_tagger.model_name = pretrained_model_name_or_path
 
                 batch_images = [Image.open(img_md['image_path']) for img_md in batch]
                 batch_pred_tags = waifu_tagger(batch_images, general_threshold=general_threshold, character_threshold=character_threshold)
@@ -1686,21 +1688,20 @@ def create_ui(
             )
 
             # ========================================= WS ========================================= #
-            def ws_scoring(batch: List[DataDict], model_repo_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
+            def ws_scoring(batch: List[DataDict], pretrained_model_name_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
                 if language != 'en':
                     overwrite_mode = translate(overwrite_mode, 'en')
 
                 nonlocal waifu_scorer
-                if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != model_repo_or_path):
+                if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != pretrained_model_name_or_path):
                     try:
                         import torch
-                        from waifuset.components.waifu_scorer.predict import WaifuScorer, repo2path
+                        from waifuset.components.waifu_scorer.waifu_scorer import WaifuScorer
                     except ModuleNotFoundError as e:
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
-                    model_path = repo2path(model_repo_or_path)
-                    waifu_scorer = WaifuScorer.from_pretrained(model_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
-                    waifu_scorer.model_name = model_repo_or_path
+                    waifu_scorer = WaifuScorer.from_pretrained(pretrained_model_name_or_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
+                    waifu_scorer.model_name = pretrained_model_name_or_path
 
                 if not isinstance(batch, list):
                     batch = [batch]

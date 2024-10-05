@@ -1,5 +1,5 @@
 import re
-from typing import Callable, Literal, List, Union, overload
+from typing import Callable, Literal, List, Dict, Union, overload
 from ..data import Data
 from .... import tagging, logging
 
@@ -74,8 +74,8 @@ class Caption(Data):
         """
         d = {}
         for i, tag in list(enumerate(self.tags)):
-            if tagtype := tagging.get_tagtype_from_ref(tag):
-                self.tags[i] = tagging.comment(tag, tagtype=tagtype)
+            if tagtype := tagging.get_tagtype_from_wiki(tag):
+                self.tags[i] = tagging.comment_tag(tag, tagtype=tagtype)
                 d.setdefault(tagtype, []).append(tag)
             elif tagtype := tagging.get_tagtype_from_tag(tag):
                 d.setdefault(tagtype, []).append(tag)
@@ -91,38 +91,27 @@ class Caption(Data):
     def metadata(self):
         return {tagtype: getattr(self, tagtype) for tagtype in tagging.TAG_TYPES}
 
-    def defeature(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
+    def defeature(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
         r"""
         According to the feature table which is extracted from danbooru wiki, remove feature tags of every characters.
         """
         if not self.character:
             return
-        if feature_type == 'physics':
-            tagging.init_ch2physics(freq_thres=freq_thres)
-            feature_table = tagging.CH2PHYSICS
-        elif feature_type == 'clothes':
-            tagging.init_ch2clothes(freq_thres=freq_thres)
-            feature_table = tagging.CH2CLOTHES
-        else:
-            raise ValueError(f"Invalid feature type: {feature_type}, should be 'physics' or 'clothes'.")
         all_features = set()
         for character in self.character:
-            features = feature_table.get(character, None)
-            # logging.debug(f"features of {character}: {features}")
-            if features:
-                all_features |= features
+            all_features |= set(tagging.get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
         self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
 
-    def defeatured(self, feature_type: Literal['physics', 'clothes'] = 'physics', freq_thres: float = 0.2):
+    def defeatured(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
         caption = self.copy()
-        caption.defeature(feature_type, freq_thres)
+        caption.defeature(feature_type_to_frequency_threshold=feature_type_to_frequency_threshold)
         return caption
 
     def sort(self, key=None, reverse=False):
         r"""
         Sort tags by priority. If key is `None`, use default priority.
         """
-        key = key or tagging.tag2priority
+        key = key or tagging.get_tag_priority
         self.tags.sort(key=key, reverse=reverse)
 
     def sorted(self, key=None, reverse=False):
@@ -244,16 +233,16 @@ class Caption(Data):
     def __contains__(self, tag):
         return any(tagging.match(t, tag) for t in self.tags)
 
-    @overload
+    @ overload
     def __getitem__(self, index: int): ...
 
-    @overload
+    @ overload
     def __getitem__(self, slice: slice): ...
 
-    @overload
+    @ overload
     def __getitem__(self, tag: str): ...
 
-    @overload
+    @ overload
     def __getitem__(self, pattern: re.Pattern): ...
 
     def __getitem__(self, index):
@@ -268,16 +257,16 @@ class Caption(Data):
         else:
             raise TypeError(f"unsupported operand type(s) for []: 'Caption' and '{type(index).__name__}'")
 
-    @overload
+    @ overload
     def __setitem__(self, index: int, value: Union[str, 'Caption']): ...
 
-    @overload
+    @ overload
     def __setitem__(self, slice: slice, value: Union[List[str], str, 'Caption']): ...
 
-    @overload
+    @ overload
     def __setitem__(self, tag: str, value: Union[str, 'Caption']): ...
 
-    @overload
+    @ overload
     def __setitem__(self, pattern: re.Pattern, value: str): ...
 
     def __setitem__(self, index, value):
@@ -314,16 +303,16 @@ class Caption(Data):
             for i, tag in enumerate(self.tags):
                 self.tags[i] = index.sub(value, tag)
 
-    @overload
+    @ overload
     def __delitem__(self, index: int): ...
 
-    @overload
+    @ overload
     def __delitem__(self, slice: slice): ...
 
-    @overload
+    @ overload
     def __delitem__(self, tag: str): ...
 
-    @overload
+    @ overload
     def __delitem__(self, pattern: re.Pattern): ...
 
     def __delitem__(self, index):
@@ -356,7 +345,7 @@ class Caption(Data):
     def __setattr__(self, name, value):
         if name in tagging.TAG_TYPES:
             cache_name = self._get_cache_name(name)
-            type_tags = deduplicate([tagging.fmt2danbooru(tagging.uncomment(tag)) for tag in value])
+            type_tags = deduplicate([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in value])
             setattr(self, cache_name, type_tags)
         else:
             super().__setattr__(name, value)
@@ -379,4 +368,4 @@ def deduplicate(tags):
 
 
 def get_typetags(tags, tagtype=None):
-    return deduplicate([tagging.fmt2danbooru(tagging.uncomment(tag)) for tag in tags if not tagtype or tagging.tag2type(tag) == tagtype])
+    return deduplicate([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in tags if not tagtype or tagging.get_tagtype(tag) == tagtype])
