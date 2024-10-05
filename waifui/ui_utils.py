@@ -38,7 +38,7 @@ COL2TYPE_EXTRA = {
 
 COL2TYPE_CAPTION = {
     'caption': str,
-    **{tagtype: str for tagtype in tagging.TAG_TYPES}
+    **{tagtype: str for tagtype in tagging.ALL_TAG_TYPES}
 }
 
 COL2TYPE = {

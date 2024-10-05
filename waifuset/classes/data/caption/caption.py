@@ -79,7 +79,7 @@ class Caption(Data):
                 d.setdefault(tagtype, []).append(tag)
             elif tagtype := tagging.get_tagtype_from_tag(tag):
                 d.setdefault(tagtype, []).append(tag)
-        for tagtype in tagging.TAG_TYPES:
+        for tagtype in tagging.ALL_TAG_TYPES:
             setattr(self, tagtype, d.get(tagtype, []))
 
     def parsed(self):
@@ -89,7 +89,7 @@ class Caption(Data):
 
     @property
     def metadata(self):
-        return {tagtype: getattr(self, tagtype) for tagtype in tagging.TAG_TYPES}
+        return {tagtype: getattr(self, tagtype) for tagtype in tagging.ALL_TAG_TYPES}
 
     def defeature(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
         r"""
@@ -99,7 +99,7 @@ class Caption(Data):
             return
         all_features = set()
         for character in self.character:
-            all_features |= set(tagging.get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
+            all_features |= set(tagging.get_ch2features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
         self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
 
     def defeatured(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
@@ -332,7 +332,7 @@ class Caption(Data):
         return len(self.tags)
 
     def __getattr__(self, name):
-        if name in tagging.TAG_TYPES:
+        if name in tagging.ALL_TAG_TYPES:
             cache_name = self._get_cache_name(name)
             if cache_name in self.__dict__:
                 return getattr(self, cache_name)
@@ -343,7 +343,7 @@ class Caption(Data):
             return super().__getattribute__(name)
 
     def __setattr__(self, name, value):
-        if name in tagging.TAG_TYPES:
+        if name in tagging.ALL_TAG_TYPES:
             cache_name = self._get_cache_name(name)
             type_tags = deduplicate([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in value])
             setattr(self, cache_name, type_tags)

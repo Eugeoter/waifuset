@@ -119,7 +119,7 @@ def count_table_to_feature_table(count_table, freq_thres=0.3, count_thres=1, lea
         freqs = {tag: count / total for tag, count in counter.items() if count >= count_thres}
         freqs = {tag: freq for tag, freq in freqs.items() if freq >= freq_thres}
         if character_features_only:
-            freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(tagging.fmt2danbooru(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
+            freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(tagging.fmt2danbooru(tag)) for regex in tagging.CHARACTER_PHYSICS_FEATURE_REGEX)}
         feature_table[char_tag] = set(freqs.keys())
     return feature_table
 
@@ -131,7 +131,7 @@ def freq_table_to_feature_table(freq_table, freq_thres=0.3, character_features_o
     for char_tag, counter in tqdm(freq_table.items(), desc='make feature table', disable=True):
         freqs = {tag: freq for tag, freq in counter.items() if freq >= freq_thres}
         if character_features_only:
-            freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(tagging.fmt2danbooru(tag)) for regex in tagging.REGEX_CHARACTER_FEATURES)}
+            freqs = {tag: freq for tag, freq in freqs.items() if any(regex.match(tagging.fmt2danbooru(tag)) for regex in tagging.CHARACTER_PHYSICS_FEATURE_REGEX)}
         feature_table[char_tag] = set(freqs.keys())
     return feature_table
 

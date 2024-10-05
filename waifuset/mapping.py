@@ -12,13 +12,13 @@ def old2new(img_md):
     category = Path(img_path).parent.name
     source = Path(img_path).parent.parent.name
 
-    pattern1 = re.compile(rf"(?P<tagtypeA>(?:{'|'.join(tagging.TAG_TYPES)})+):(?P<tagtypeB>(?:{'|'.join(tagging.TAG_TYPES)})+):(?P<tagname>.+)")  # replace `artist:artist:` to `artist:`
+    pattern1 = re.compile(rf"(?P<tagtypeA>(?:{'|'.join(tagging.ALL_TAG_TYPES)})+):(?P<tagtypeB>(?:{'|'.join(tagging.ALL_TAG_TYPES)})+):(?P<tagname>.+)")  # replace `artist:artist:` to `artist:`
     pattern2 = re.compile(r"((?:quality:\s?)?.*) quality")  # remove postfix `quality`
     pattern3 = re.compile(r"rating:\s?(general|sensitive|questionable|explicit)")  # replace `rating` to `safety`
 
     caption = Caption(img_md['caption'])
     if safe_level := img_md.get('safe_level'):
-        caption += f"safety: {tagging.SAFE_LEVEL2TAG[safe_level]}"
+        caption += f"safety: {tagging.SAFE_LEVEL_TO_SAFETY_TAG[safe_level]}"
     caption[pattern1] = r"\g<tagtypeA>:\g<tagname>"
     caption[pattern2] = r"\1"
     caption[pattern3] = r'safety: \1'

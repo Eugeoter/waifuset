@@ -9,7 +9,7 @@ opencv-python
 absl-py
 ml-collections
 pyperclip
-# huggingface-hub # required by downloading models
+huggingface-hub
 # onnxruntime-gpu # required by Waifu Tagger
 # onnxruntime # required by Waifu Tagger (cpu model only)
 # torch # required by Waifu Scorer and Waifu Tagger

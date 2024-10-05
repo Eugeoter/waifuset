@@ -108,10 +108,10 @@ class UIManager(class_utils.FromConfigMixin):
 def create_ui(
     univset: UIDataset,
     buffer: UIBuffer,
-    language: Literal['en', 'cn']='cn',
-    enable_category: bool=True,
-    cpu_max_workers: int=1,
-    render: Literal['full', 'partial']='full',
+    language: Literal['en', 'cn'] = 'cn',
+    enable_category: bool = True,
+    cpu_max_workers: int = 1,
+    render: Literal['full', 'partial'] = 'full',
     hf_cache_dir: Optional[str] = None,
 ):
     # ========================================= UI ========================================= #
@@ -1000,7 +1000,7 @@ def create_ui(
 
             cur_img_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, description, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
             BASE_MD_KEYS = ('image_key', 'image_path', 'caption', 'description')
-            CAPTION_MD_KEYS = tagging.TAG_TYPES
+            CAPTION_MD_KEYS = tagging.ALL_TAG_TYPES
 
             def get_other_md_keys(img_md=None):
                 return [key for key in (img_md.keys() if img_md is not None else univset.header) if key not in (*BASE_MD_KEYS, *CAPTION_MD_KEYS)]
