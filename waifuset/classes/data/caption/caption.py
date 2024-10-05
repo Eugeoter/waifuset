@@ -1,7 +1,7 @@
 import re
 from typing import Callable, Literal, List, Dict, Union, overload
 from ..data import Data
-from .... import tagging, logging
+from .... import tagging
 
 
 class Caption(Data):
@@ -99,7 +99,7 @@ class Caption(Data):
             return
         all_features = set()
         for character in self.character:
-            all_features |= set(tagging.get_ch2features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
+            all_features |= set(tagging.get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
         self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
 
     def defeatured(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):

@@ -20,7 +20,7 @@ from waifuset.utils import image_utils, class_utils
 from waifuset.classes.dataset.dataset_mixin import ToDiskMixin
 from waifuset.classes.data import data_utils
 from waifuset.components.waifu_tagger.utils import WD_REPOS
-from waifuset.components.waifu_scorer.const import WS_REPOS
+from waifuset.components.waifu_scorer.utils import WS_REPOS
 from .emoji import Emoji
 from .ui_utils import *
 from .ui_dataset import UIDataset, UISubset
@@ -366,7 +366,7 @@ def create_ui(
                                     container=False,
                                     scale=1,
                                 )
-                            with gr.Tab(label=translate('Tagging', language)):
+                            with gr.Tab(label=translate('Tag Processing', language)):
                                 with gr.Tab(label=translate('Custom Tagging', language)):
                                     with gr.Tab(translate("Add/Remove", language)) as add_remove_tab:
                                         def custom_add_rem_tagging_row():
@@ -554,7 +554,7 @@ def create_ui(
                                                 scale=1,
                                             )
 
-                            with gr.Tab(label=translate('Toolbox', language)):
+                            with gr.Tab(label=translate('Tools', language)):
 
                                 with gr.Tab(label=translate('Tagger', language)):
                                     with gr.Row(variant='compact'):
@@ -649,7 +649,7 @@ def create_ui(
                                             min_width=128,
                                         )
 
-                            with gr.Tab(label=translate('Labeling', language)):
+                            with gr.Tab(label=translate('Manual Labeling', language)):
                                 with gr.Tab(label=translate('Quality Labeling', language)):
                                     with gr.Row(variant='compact'):
                                         quality_label_btns = [
@@ -1696,7 +1696,7 @@ def create_ui(
                 if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != pretrained_model_name_or_path):
                     try:
                         import torch
-                        from waifuset.components.waifu_scorer.waifu_scorer import WaifuScorer
+                        from waifuset import WaifuScorer
                     except ModuleNotFoundError as e:
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")

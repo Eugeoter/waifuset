@@ -1,8 +1,7 @@
 import torch.nn as nn
-import pytorch_lightning as pl
 
 
-class MLP(pl.LightningModule):
+class MLP(nn.Module):
     def __init__(self, input_size, xcol='emb', ycol='avg_rating', batch_norm=True):
         super().__init__()
         self.input_size = input_size

@@ -483,7 +483,7 @@ def get_ch2feature2ratio(character: str, feature_types: List[Literal['physics', 
     return features
 
 
-def get_ch2features(character: str, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD) -> List[str]:
+def get_character_features(character: str, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD) -> List[str]:
     character = uncomment_tag(character)
     character = fmt2danbooru(character)
     features = []

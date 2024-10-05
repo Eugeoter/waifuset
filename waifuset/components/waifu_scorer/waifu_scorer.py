@@ -4,25 +4,11 @@ import numpy as np
 from PIL import Image
 from pathlib import Path
 from typing import List, Union, Dict, Any, Optional
-from .model.mlp import MLP
-from .model.utils import WS_REPOS
+from .mlp import MLP
 from ...utils import image_utils
 from ... import logging, const
 
 logger = logging.get_logger("waifu_scorer")
-
-
-def repo2path(model_repo_and_path: str, use_safetensors=True):
-    ext = ".safetensors" if use_safetensors else ".pth"
-    if os.path.isfile(model_repo_and_path):
-        model_path = model_repo_and_path
-    elif os.path.isdir(model_repo_and_path):
-        model_path = os.path.join(model_repo_and_path, "model" + ext)
-    elif model_repo_and_path in WS_REPOS:
-        model_path = model_repo_and_path + '/' + 'model' + ext
-    else:
-        raise ValueError(f"Invalid model_repo_and_path: {model_repo_and_path}")
-    return model_path
 
 
 class WaifuScorer(object):
@@ -48,9 +34,10 @@ class WaifuScorer(object):
         pretrained_model_name_or_path: str,
         use_safetensors=True,
         cache_dir: str = None,
+        emb_cache_dir: str = None,
         device='cuda' if torch.cuda.is_available() else 'cpu',
         dtype=None,
-        **kwargs,
+        verbose=True,
     ):
         r"""
         Load WaifuScorer from a pretrained model name or path.
@@ -63,18 +50,18 @@ class WaifuScorer(object):
             raise ImportError("safetensors is not installed, please install it by `pip install safetensors`")
 
         if pretrained_model_name_or_path is None:  # auto
-            pretrained_model_name_or_path = WS_REPOS[0]
-            logger.warning(f"model path not set, switch to default: `{pretrained_model_name_or_path}`")
+            raise ValueError("pretrained_model_name_or_path should not be None")
         if not os.path.isfile(pretrained_model_name_or_path):
             from huggingface_hub import hf_hub_download
-            logger.info(f"downloading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
+            logger.info(f"downloading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
             pretrained_model_name_or_path = hf_hub_download(
                 pretrained_model_name_or_path,
                 filename="model.safetensors" if use_safetensors else "model.pth",
                 cache_dir=cache_dir
             )
 
-        logger.info(f"loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
+        logger.info(f"loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
+        logger.info(f"  device: {str(device)}", disable=not verbose)
         mlp = load_model(pretrained_model_name_or_path, input_size=768, device=device, dtype=dtype)
         mlp.to(device, dtype=dtype)
         mlp.eval()
@@ -82,7 +69,13 @@ class WaifuScorer(object):
         with logging.timer("load components", logger=logger):
             clip_model, clip_preprocessor = load_clip_models("ViT-L/14", device=device)
 
-        return cls(mlp, clip_model=clip_model, clip_preprocessor=clip_preprocessor, device=device, **kwargs)
+        return cls(
+            mlp=mlp,
+            clip_model=clip_model,
+            clip_preprocessor=clip_preprocessor,
+            emb_cache_dir=emb_cache_dir,
+            verbose=verbose
+        )
 
     @torch.no_grad()
     def __call__(self, inputs: List[Union[Image.Image, torch.Tensor, const.StrPath]], cache_paths: Optional[List[const.StrPath]] = None) -> List[float]:
@@ -107,11 +100,11 @@ class WaifuScorer(object):
 
     @property
     def device(self):
-        return self.mlp_model.device
+        return next(self.mlp_model.parameters()).device
 
     @property
     def dtype(self):
-        return self.mlp_model.dtype
+        return next(self.mlp_model.parameters()).dtype
 
     # def open_image(self, img_path: Union[str, Path]) -> Image.Image:
     #     try:

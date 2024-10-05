@@ -191,5 +191,7 @@
     "tagging": "标签",
     "toolbox": "工具箱",
     "labeling": "标注",
-    "quality labeling": "质量标注"
+    "quality labeling": "质量标注",
+    "tag processing": "标签处理",
+    "manual labeling": "人工标注"
 }
