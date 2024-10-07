@@ -8,7 +8,7 @@ from .dataset_mixin import ConfigMixin
 from ... import logging
 
 
-def get_header(dic):
+def get_headers(dic):
     columns = OrderedDict()
     for row in dic.values():
         for h in row.keys():
@@ -18,7 +18,7 @@ def get_header(dic):
 
 
 def get_column2type(dic, header=None):
-    header = header or get_header(dic)
+    header = header or get_headers(dic)
     col2type = {}
     for v in dic.values():
         for i in range(len(header)):
@@ -116,7 +116,7 @@ class Dataset(ConfigMixin):
         pass
 
     @property
-    def header(self) -> List[str]:
+    def headers(self) -> List[str]:
         r"""
         Return the header of the dataset.
         """
@@ -129,17 +129,17 @@ class Dataset(ConfigMixin):
         r"""
         Return the column names of the dataset. Alias of `header`.
         """
-        return self.header
+        return self.headers
 
     def update_header(self, header=None):
-        self._header = header or get_header(self.dict())
+        self._header = header or get_headers(self.dict())
 
     @functools.cached_property
     def types(self) -> Dict[str, type]:
         r"""
         Get the mapping from column name to its data type.
         """
-        return get_column2type(self.dict(), self.header)
+        return get_column2type(self.dict(), self.headers)
 
     @classmethod
     def from_dataset(cls, dataset: 'Dataset', **kwargs):
@@ -164,7 +164,7 @@ class Dataset(ConfigMixin):
         if not d:
             return pd.DataFrame()
         data = d.values()
-        return pd.DataFrame(data, columns=self.header)
+        return pd.DataFrame(data, columns=self.headers)
 
     def __str__(self):
         r"""
@@ -173,7 +173,7 @@ class Dataset(ConfigMixin):
         df_str = str(self.df())
         width = max(len(line) for line in df_str.split('\n'))
         title = logging.magenta(self.name.center(width))
-        info = logging.yellow(f"size: {len(self)}x{len(self.header)}".center(width))
+        info = logging.yellow(f"size: {len(self)}x{len(self.headers)}".center(width))
         return '\n'.join([title, info, df_str])
 
     def __repr__(self):
@@ -293,8 +293,8 @@ class Dataset(ConfigMixin):
         """
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
-        if column not in self.header:
-            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+        if column not in self.headers:
+            raise ValueError(f"key `{column}` not found in the header: {self.headers}")
 
         for k, kv in self.kitems(column, **kwargs):
             yield kv
@@ -305,8 +305,8 @@ class Dataset(ConfigMixin):
         """
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
-        if column not in self.header:
-            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+        if column not in self.headers:
+            raise ValueError(f"key `{column}` not found in the header: {self.headers}")
 
         for k, v in self.items():
             try:
@@ -325,11 +325,11 @@ class Dataset(ConfigMixin):
         for col in columns:
             if not isinstance(col, str):
                 raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
-            if col not in tarset.header:
-                raise ValueError(f"column `{col}` not found in the header of the target dataset: {tarset.header}")
+            if col not in tarset.headers:
+                raise ValueError(f"column `{col}` not found in the header of the target dataset: {tarset.headers}")
 
         for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
-            self.set(k, {col: v[col] for col in columns if col in self.header})
+            self.set(k, {col: v[col] for col in columns if col in self.headers})
 
     def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs) -> None:
         r"""
@@ -389,8 +389,8 @@ class Dataset(ConfigMixin):
         for col in columns:
             if not isinstance(col, str):
                 raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
-            if not exist_ok and col in self.header:
-                raise ValueError(f"column `{col}` already exists in the header: {self.header}")
+            if not exist_ok and col in self.headers:
+                raise ValueError(f"column `{col}` already exists in the header: {self.headers}")
 
         tqdm_kwargs = dict(desc='add columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
@@ -398,7 +398,7 @@ class Dataset(ConfigMixin):
         for k, v in self.logger.tqdm(self.items(), **tqdm_kwargs):
             for col in columns:
                 v.setdefault(col, None)
-        self.update_header(self.header + [col for col in columns if col not in self.header])
+        self.update_header(self.headers + [col for col in columns if col not in self.headers])
         return self
 
     def remove_columns(self, columns: List[str], **kwargs) -> 'Dataset':
@@ -412,8 +412,8 @@ class Dataset(ConfigMixin):
         for col in columns:
             if not isinstance(col, str):
                 raise ValueError(f"all columns must be strings, but got {col} whose type is {type(col)}")
-            if col not in self.header:
-                raise ValueError(f"column `{col}` not found in the header: {self.header}")
+            if col not in self.headers:
+                raise ValueError(f"column `{col}` not found in the header: {self.headers}")
 
         tqdm_kwargs = dict(desc='remove columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
@@ -421,7 +421,7 @@ class Dataset(ConfigMixin):
         for k, v in self.logger.tqdm(self.items(), **tqdm_kwargs):
             for col in columns:
                 v.pop(col, None)
-        self.update_header([col for col in self.header if col not in columns])
+        self.update_header([col for col in self.headers if col not in columns])
         return self
 
     def rename_columns(self, column_mapping: Dict[str, str], **kwargs) -> 'Dataset':
@@ -435,19 +435,19 @@ class Dataset(ConfigMixin):
         for key, row in column_mapping.items():
             if not isinstance(key, str) or not isinstance(row, str):
                 raise ValueError(f"all keys and values in column_mapping must be strings, but got {key} and {row} whose types are {type(key)} and {type(row)}")
-            if key not in self.header:
-                raise ValueError(f"column `{key}` not found in the header: {self.header}")
-            if row in self.header:
-                raise ValueError(f"column `{row}` already exists in the header: {self.header}")
+            if key not in self.headers:
+                raise ValueError(f"column `{key}` not found in the header: {self.headers}")
+            if row in self.headers:
+                raise ValueError(f"column `{row}` already exists in the header: {self.headers}")
 
         tqdm_kwargs = dict(desc='rename columns')
         tqdm_kwargs.update({k[5:]: v for k, v in kwargs.items() if k.startswith('tqdm_')})
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith('tqdm_')}
-        column_mapping = {k: v for k, v in column_mapping.items() if k in self.header and k != v}
+        column_mapping = {k: v for k, v in column_mapping.items() if k in self.headers and k != v}
         for key, row in self.logger.tqdm(self.items(), **tqdm_kwargs):
             for old_col, new_col in column_mapping.items():
                 row[new_col] = row.pop(old_col)
-        self.update_header([column_mapping.get(col, col) for col in self.header])
+        self.update_header([column_mapping.get(col, col) for col in self.headers])
         return self
 
     def copy(self) -> 'Dataset':

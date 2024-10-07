@@ -67,7 +67,7 @@ class UIManager(class_utils.FromConfigMixin):
             with self.logger.timer('load dataset', level='debug'):
                 dataset = FastDataset(self.dataset_source, verbose=self.verbose, **self.get_default_kwargs())
             with self.logger.timer('patch dataset', level='debug'):
-                if any(col not in dataset.header for col in ('image_key', 'category')):
+                if any(col not in dataset.headers for col in ('image_key', 'category')):
                     self.logger.print('patching image path base info')
                     dataset.add_columns(['image_path', 'image_key', 'category', 'source', 'caption', 'description'])
                     dataset.apply_map(patch_image_path_base_info)
@@ -77,7 +77,7 @@ class UIManager(class_utils.FromConfigMixin):
                 page_size=self.ui_page_size
             )
         # self.logger.print(dataset, no_prefix=True)
-        self.logger.print(f"dataset size: {len(dataset)}x{len(dataset.header)}")
+        self.logger.print(f"dataset size: {len(dataset)}x{len(dataset.headers)}")
         return dataset
 
     def setup(self):
@@ -180,7 +180,7 @@ def create_ui(
                             with gr.Tab(translate("Attribute", language)) as query_tag_tab:
                                 with gr.Row(variant='compact'):
                                     query_attr_selector = gr.Dropdown(
-                                        choices=univset.header,
+                                        choices=univset.headers,
                                         value=None,
                                         multiselect=False,
                                         allow_custom_value=False,
@@ -509,6 +509,9 @@ def create_ui(
                                                 value=translate(['txt', 'danbooru'], language),
                                                 scale=1,
                                             )
+                                    with gr.Tab(translate('Alias', language)):
+                                        with gr.Row(variant='compact'):
+                                            alias_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
                                     with gr.Tab(translate('Parse', language)):
                                         with gr.Row(variant='compact'):
                                             parse_caption_attrs_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
@@ -523,7 +526,7 @@ def create_ui(
                                             deoverlap_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
                                     with gr.Tab(translate('Defeature', language)):
                                         with gr.Row(variant='compact'):
-                                            decharacterize_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
+                                            defeature_caption_btn = EmojiButton(Emoji.black_right_pointing_triangle, min_width=40, variant='primary')
                                         with gr.Row(variant='compact'):
                                             dechar_feature_type = gr.Radio(
                                                 label=translate('Feature Type', language),
@@ -885,7 +888,7 @@ def create_ui(
                     catset = univset.get_fullset()
                 # If the backbone is SQLite3Dataset, use SQL query to select the subset to improve efficiency
                 elif isinstance(rootset := univset.root, SQLite3Dataset):
-                    if 'category' in rootset.header:
+                    if 'category' in rootset.headers:
                         catset = rootset.select_in('category', categories) if len(categories) > 1 else rootset.select_is('category', categories[0])
                     else:
                         catset = rootset.select_like('image_path', f"%{categories[0]}%")
@@ -1003,7 +1006,7 @@ def create_ui(
             CAPTION_MD_KEYS = tagging.ALL_TAG_TYPES
 
             def get_other_md_keys(img_md=None):
-                return [key for key in (img_md.keys() if img_md is not None else univset.header) if key not in (*BASE_MD_KEYS, *CAPTION_MD_KEYS)]
+                return [key for key in (img_md.keys() if img_md is not None else univset.headers) if key not in (*BASE_MD_KEYS, *CAPTION_MD_KEYS)]
 
             def get_caption(img_key):
                 if img_key is None or img_key == '':
@@ -1267,10 +1270,10 @@ def create_ui(
                             is_updated_at_least_one = True
 
                     if is_updated_at_least_one:
-                        orig_header = univset.header
+                        orig_header = univset.headers
                         # univset.update_header()
-                        if univset.header != orig_header:
-                            logger.info(f"add new columns: {', '.join(set(univset.header) - set(orig_header))}")
+                        if univset.headers != orig_header:
+                            logger.info(f"add new columns: {', '.join(set(univset.headers) - set(orig_header))}")
                         ret = track_img_key(selected_img_key)
                         if do_batch:  # batch processing
                             ret.update({log_box: f"{formatted_func_name}: update {len(res_dict)} over {len(editset)}"})
@@ -1613,30 +1616,45 @@ def create_ui(
                 concurrency_limit=1,
             )
 
-            def deoverlap_caption(img_md):
+            def deimplicate_caption(img_md):
                 caption = img_md.get('caption', None)
                 if caption is None:
                     return None
                 return {'caption': Caption(caption).deimplicated().text}
 
             deoverlap_caption_btn.click(
-                fn=data_edition_handler(deoverlap_caption),
+                fn=data_edition_handler(deimplicate_caption),
                 inputs=[cur_img_key, general_edit_opts],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
             )
 
-            def decharacterize_caption(img_md, feature_type, freq_thres):
+            def defeature_caption(img_md, feature_type, freq_thres):
                 caption = img_md.get('caption', None)
                 if caption is None:
                     return None
                 if language != 'en':
                     feature_type = translate(feature_type, 'en')
-                return {'caption': Caption(caption).defeatured(feature_type=feature_type, freq_thres=freq_thres).text}
+                return {'caption': Caption(caption).defeatured(feature_type_to_frequency_threshold={feature_type: freq_thres}).text}
 
-            decharacterize_caption_btn.click(
-                fn=data_edition_handler(decharacterize_caption),
+            defeature_caption_btn.click(
+                fn=data_edition_handler(defeature_caption),
                 inputs=[cur_img_key, general_edit_opts, dechar_feature_type, dechar_freq_thres],
+                outputs=cur_img_key_change_listeners,
+                concurrency_limit=1,
+            )
+
+            def alias_caption(img_md):
+                caption = img_md.get('caption', None)
+                if caption is None:
+                    return None
+                caption = Caption(caption)
+                caption.alias()
+                return {'caption': caption.text}
+
+            alias_caption_btn.click(
+                fn=data_edition_handler(alias_caption),
+                inputs=[cur_img_key, general_edit_opts],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
             )
@@ -1911,7 +1929,7 @@ def create_ui(
             )
 
             query_attr_selector.focus(
-                fn=lambda: gr.update(choices=univset.header),
+                fn=lambda: gr.update(choices=univset.headers),
                 outputs=[query_attr_selector],
                 concurrency_limit=1,
             )

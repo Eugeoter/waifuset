@@ -35,7 +35,7 @@ class AspectRatioBucketMixin(object):
             return self.get_resolution()
         elif (bucket_size := img_md.get('bucket_size')):
             return bucket_size
-        elif image_size is not None or (image_size := img_md.get('image_size')) is not None:
+        elif image_size is not None or (image_size := img_md.get('image_size')) is not None or (image_size := image_utils.get_image_size(img_md.get('image_path'))) is not None:
             image_size = image_utils.convert_size_if_needed(image_size)
             bucket_size = get_bucket_size(
                 image_size,

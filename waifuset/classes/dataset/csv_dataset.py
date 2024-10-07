@@ -47,6 +47,6 @@ class CSVDataset(DictDataset, DiskIOMixin):
         else:
             data = self.data
         with open(fp, 'w', encoding=encoding) as f:
-            writer = csv.DictWriter(f, fieldnames=self.header)
+            writer = csv.DictWriter(f, fieldnames=self.headers)
             writer.writeheader()
             writer.writerows(data.values())

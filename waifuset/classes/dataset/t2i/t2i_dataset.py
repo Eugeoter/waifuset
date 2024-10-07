@@ -7,11 +7,10 @@ from pathlib import Path
 from PIL import Image
 from typing import List, Callable, Dict, Any, Union, Literal
 
-from .arb_mixin import AspectRatioBucketMixin
+from .arb import AspectRatioBucketMixin
 from ..dict_dataset import DictDataset
 from ..fast_dataset import FastDataset
 from ....utils import config_utils, image_utils
-from ....const import IMAGE_EXTS
 from .... import logging
 
 
@@ -44,6 +43,9 @@ class T2IDataset(config_utils.FromConfigMixin, AspectRatioBucketMixin):
         self.logger.print(f"setup dataset: {time.time() - tic_setup:.2f}s")
         for key, value in timer.items():
             self.logger.print(f"    {key}: {value:.2f}s", no_prefix=True)
+
+        self.buckets = self.make_buckets()
+        self.batches = self.make_batches()
 
     def get_t2i_sample(self, batch: List[str], samples: Dict[str, Any]) -> Dict:
         sample = dict(

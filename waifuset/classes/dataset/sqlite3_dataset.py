@@ -26,15 +26,16 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         self.register_to_config(fp=self.fp, read_only=read_only)
         if tbname is None:
             if len(all_table_names := self.get_all_tablenames()) == 1:
-                self.logger.warning(f"since table name is not provided when initializing {self.__class__.__name__}, using \'{all_table_names[0]}\' by default.")
                 tbname = all_table_names[0]
                 self.set_table(tbname)
+                primary_key = self.table.primary_key
+                self.logger.warning(f"Since table name is not provided when initializing {self.__class__.__name__}, using \'{all_table_names[0]}\' by default. Primary key is set to \'{primary_key}\'")
             else:
-                self.logger.warning(f"table is set to None since no table name is provided when initializing {self.__class__.__name__}, available table names: {all_table_names}")
+                self.logger.warning(f"Table is set to None since no table name is provided when initializing {self.__class__.__name__}, available table names: {all_table_names}")
                 self.table: SQL3Table = None
         else:
             if tbname not in self.get_all_tablenames() and primary_key is not None:
-                self.logger.warning(f"table name {tbname} not found when initializing {self.__class__.__name__}, creating new table with primary key {primary_key} and {len(col2type)} columns.")
+                self.logger.warning(f"Table name {tbname} not found when initializing {self.__class__.__name__}, creating new table with primary key {primary_key} and {len(col2type)} columns.")
                 self.create_table(tbname, primary_key=primary_key, col2type=col2type)
             self.set_table(tbname)
 
@@ -113,10 +114,10 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         r"""
         Postprocess the row fetched from the database to a dictionary, with column names as keys.
         """
-        return get_row_dict(row, self.table.header) if enable else row
+        return get_row_dict(row, self.table.headers) if enable else row
 
-    def items(self, postprocess=True, sort_by_column=None) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
-        self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {self.sort_by_column}" if sort_by_column else ""))
+    def items(self, postprocess=True, sort_by_column=None, reverse=False) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+        self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""))
         for row in self.cursor.fetchall():
             val = self.postprocessor(row, enable=postprocess)
             key = val[self.table.primary_key] if postprocess else row[0]
@@ -139,15 +140,15 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def kvalues(self, column: str, distinct=False, where: str = None, sort_by_column: str = None, reverse=False, **kwargs) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
-        if column not in self.header:
-            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+        if column not in self.headers:
+            raise ValueError(f"key `{column}` not found in the header: {self.headers}")
         if where is not None and not isinstance(where, str):
             raise ValueError(f"where must be a string, not {type(where)}")
         if sort_by_column is not None:
             if not isinstance(sort_by_column, str):
                 raise ValueError(f"sort_by_column must be a string, not {type(sort_by_column)}")
-            if sort_by_column not in self.header:
-                raise ValueError(f"sort_by_column `{sort_by_column}` not found in the header: {self.header}")
+            if sort_by_column not in self.headers:
+                raise ValueError(f"sort_by_column `{sort_by_column}` not found in the header: {self.headers}")
 
         order_clause = f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""
         where_clause = f" WHERE {where}" if where is not None else ""
@@ -158,15 +159,15 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
     def kitems(self, column: str, where: str = None, sort_by_column: str = None, reverse=False, **kwargs) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
         if not isinstance(column, str):
             raise ValueError(f"column must be a string, not {type(column)}")
-        if column not in self.header:
-            raise ValueError(f"key `{column}` not found in the header: {self.header}")
+        if column not in self.headers:
+            raise ValueError(f"key `{column}` not found in the header: {self.headers}")
         if where is not None and not isinstance(where, str):
             raise ValueError(f"where must be a string, not {type(where)}")
         if sort_by_column is not None:
             if not isinstance(sort_by_column, str):
                 raise ValueError(f"sort_by_column must be a string, not {type(sort_by_column)}")
-            if sort_by_column not in self.header:
-                raise ValueError(f"sort_by_column `{sort_by_column}` not found in the header: {self.header}")
+            if sort_by_column not in self.headers:
+                raise ValueError(f"sort_by_column `{sort_by_column}` not found in the header: {self.headers}")
 
         order_clause = f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""
         where_clause = f" WHERE {where}" if where is not None else ""
@@ -185,7 +186,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         Update the dataset with another dataset or a dictionary.
         """
         if executemany and isinstance(other, SQLite3Dataset):
-            column_names = other.table.header
+            column_names = other.table.headers
             columns = ', '.join(column_names)
             placeholders = ', '.join(['?' for _ in column_names])
             self.cursor.executemany(f"INSERT OR REPLACE INTO {self.table.name} ({columns}) VALUES ({placeholders})", other.table)
@@ -265,8 +266,8 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         self.commit_transaction()
 
     @property
-    def header(self) -> List[str]:
-        return self.table.header
+    def headers(self) -> List[str]:
+        return self.table.headers
 
     @property
     def types(self) -> Dict[str, str]:
@@ -274,6 +275,10 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         Return a dictionary mapping column names to their python types.
         """
         return {col: info['type'] for col, info in self.info.items()}
+
+    @property
+    def primary_key(self) -> str:
+        return self.table.primary_key
 
     def df(self):
         return self.table.df()

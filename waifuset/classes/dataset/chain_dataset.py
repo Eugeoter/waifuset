@@ -8,10 +8,10 @@ logger = logging.get_logger("dataset")
 
 
 class ChainDataset(Dataset):
-    def __init__(self, *source, dataset_cls=None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'no', local_only=False, **default_kwargs) -> Dataset:
+    def __init__(self, *source, dataset_cls=None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'no', **default_kwargs) -> Dataset:
         super().__init__(**default_kwargs)
         self.merge_mode = merge_mode
-        self.datasets = load_fast_dataset(*source, dataset_cls=dataset_cls, merge_mode=self.merge_mode, local_only=local_only, **default_kwargs)
+        self.datasets = load_fast_dataset(*source, dataset_cls=dataset_cls, merge_mode=self.merge_mode, **default_kwargs)
         if not isinstance(self.datasets, list):
             self.datasets = [self.datasets]
         if len(self.datasets) > 1:

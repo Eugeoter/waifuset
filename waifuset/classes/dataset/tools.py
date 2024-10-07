@@ -152,7 +152,7 @@ def load_local_dataset(
         localset = localset.rename_columns(column_mapping, tqdm_disable=True)
     if remove_columns:
         localset = localset.remove_columns(remove_columns, tqdm_disable=True)
-    if primary_key not in localset.header:
+    if primary_key not in localset.headers:
         def patch_key(dataset, primary_key) -> Dataset:
             for key, value in dataset.items():
                 value[primary_key] = key

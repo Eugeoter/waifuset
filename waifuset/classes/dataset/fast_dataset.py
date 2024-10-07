@@ -38,9 +38,9 @@ DEFAULT_KWARGS = {
 
 
 class FastDataset(AutoDataset):
-    def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update', 'no'] = 'union', **default_kwargs) -> Dataset:
+    def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', **default_kwargs) -> Dataset:
         source = parse_source_input(source)
-        if merge_mode == 'no' and len(source) > 1:
+        if merge_mode == 'chain':
             from .chain_dataset import ChainDataset
             return ChainDataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, **default_kwargs)
         else:
@@ -109,7 +109,7 @@ def load_fast_dataset(
     @returns: An instance of the Dataset class.
     """
     default_kwargs = {**DEFAULT_KWARGS, **default_kwargs}
-    verbose = default_kwargs.get('verbose', False)
+    verbose = default_kwargs.get('verbose', True)
     source = parse_source_input(source)
     if not source:
         from .dict_dataset import DictDataset
@@ -182,14 +182,14 @@ def load_fast_dataset(
             logger.info(f"[{i}/{len(source)}] {dataset.name}:", disable=not verbose_local)
             logger.info(dataset, no_prefix=True, disable=not verbose_local)
 
-    if merge_mode != 'no':
+    if merge_mode != 'chain':
         datasets.sort(key=lambda x: x.priority, reverse=True)
         dataset = accumulate_datasets(datasets, mode=merge_mode, verbose=verbose)
         if (mapping := default_kwargs.get('mapping', None)) is not None:
             dataset = mapping(dataset)
+        dataset.register_to_config(**{k: v for k, v in default_kwargs.items() if k not in dataset.config})
     else:
         dataset = datasets
-    dataset.register_to_config(**{k: v for k, v in default_kwargs.items() if k not in dataset.config})
     return dataset
 
 
@@ -222,7 +222,9 @@ def load_single_dataset(
         localset = localset.rename_columns(column_mapping, tqdm_disable=True)
     if remove_columns:
         localset = localset.remove_columns(remove_columns, tqdm_disable=True)
-    if primary_key not in localset.header:
+    if hasattr(localset, 'primary_key'):
+        primary_key = localset.primary_key
+    if primary_key not in localset.headers:
         localset = patch_key(localset, primary_key)
     if read_attrs:
         if isinstance(localset, SQLite3Dataset):
@@ -377,7 +379,7 @@ def load_coco_dataset(
         dataset = dataset.rename_columns(column_mapping, tqdm_disable=not verbose)
     if remove_columns:
         dataset = dataset.remove_columns(remove_columns, tqdm_disable=not verbose)
-    if primary_key not in dataset.header:
+    if primary_key not in dataset.headers:
         dataset = patch_key(dataset, primary_key)
 
     if read_attrs:
@@ -402,7 +404,7 @@ def parse_source_input(source: Union[List, Tuple, Dict, str, Path, None]) -> Lis
 
 
 def patch_key(dataset, primary_key) -> Dataset:
-    for key, value in dataset.items():
+    for key, value in dataset.logger.tqdm(dataset.items(), desc='patch primary_key'):
         value[primary_key] = key
     if 'header' in dataset.__dict__ and primary_key not in dataset.header:
         dataset.header.append(primary_key)
@@ -524,17 +526,17 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
         pivot_index = 0
         pivotset = datasets[pivot_index]
         for i, ds in enumerate(datasets):
-            if len(ds) < len(pivotset):
+            if len(ds) < len(pivotset) or (len(ds) == len(pivotset) and (ds.priority < pivotset.priority or len(ds.headers) < len(pivotset.headers))):
                 pivotset = ds
                 pivot_index = i
         pivot_priority = pivotset.priority
-        pivotset = dataset_cls.from_dataset(pivotset)
+        pivotset = dataset_cls.from_dataset(pivotset) if pivotset.__class__ != dataset_cls else pivotset
         pivotset.priority = pivot_priority
         datasets.pop(pivot_index)
 
         # Accumulate the datasets
-        for ds in logger.tqdm(datasets, desc='intersection datasets', position=0, disable=not verbose, leave=False):
-            for img_key in logger.tqdm(pivotset.keys(), desc='intersection data', position=1, disable=not verbose, leave=False):
+        for ds in logger.tqdm(datasets, desc='intersection datasets', position=0, disable=not verbose, leave=False, total=len(datasets)):
+            for img_key in logger.tqdm(pivotset.keys(), desc='intersection data', position=1, disable=not verbose, leave=False, total=len(pivotset)):
                 if img_key not in ds:
                     del pivotset[img_key]
                 else:
@@ -559,16 +561,16 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
         pivot_index = 0
         pivotset = datasets[pivot_index]
         for i, ds in enumerate(datasets):
-            if len(ds) > len(pivotset):
+            if len(ds) > len(pivotset) or (len(ds) == len(pivotset) and (ds.priority > pivotset.priority or len(ds.headers) > len(pivotset.headers))):
                 pivotset = ds
                 pivot_index = i
         pivot_priority = pivotset.priority
-        pivotset = dataset_cls.from_dataset(pivotset)
+        pivotset = dataset_cls.from_dataset(pivotset) if pivotset.__class__ != dataset_cls else pivotset
         pivotset.priority = pivot_priority
         datasets.pop(pivot_index)
 
-        for ds in logger.tqdm(datasets, desc='union datasets', position=0, disable=not verbose, leave=False):
-            for img_key in logger.tqdm(ds.keys(), desc='union data', position=1, disable=not verbose, leave=False):
+        for ds in logger.tqdm(datasets, desc='union datasets', position=0, disable=not verbose, leave=False, total=len(datasets)):
+            for img_key in logger.tqdm(ds.keys(), desc='union data', position=1, disable=not verbose, leave=False, total=len(ds)):
                 if img_key not in pivotset:
                     pivotset[img_key] = ds[img_key]
                 else:
@@ -596,4 +598,5 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
         for ds in logger.tqdm(datasets[1:], desc='update datasets', position=0, disable=not verbose, leave=False):
             pivotset.update(ds, tqdm_desc='update data', tqdm_position=1, tqdm_disable=not verbose, tqdm_leave=False)
 
+    logger.info(f"accumulation done.", disable=not verbose)
     return pivotset

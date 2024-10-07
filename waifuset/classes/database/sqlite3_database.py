@@ -76,7 +76,7 @@ class SQL3Table(object):
         elif name not in (tbnames := self.database.get_all_tablenames()):
             self.database.create_table(name, {})
         self.name = name
-        self.header = get_header(self.cursor, self.name)
+        self.headers = get_header(self.cursor, self.name)
         self.primary_key = get_primary_key(self.cursor, self.name)
 
     @property
@@ -104,18 +104,18 @@ class SQL3Table(object):
 
     def add_columns(self, col2type: Dict[str, type]):
         for col, coltype in col2type.items():
-            if col not in self.header:
+            if col not in self.headers:
                 self.cursor.execute(f"ALTER TABLE {self.name} ADD COLUMN {col} {PY2SQL3.get(coltype, 'TEXT')};")
-        self.header = get_header(self.cursor, self.name)
+        self.headers = get_header(self.cursor, self.name)
 
     def add_primary_key(self, name):
-        if name not in self.header:
+        if name not in self.headers:
             self.cursor.execute(f"ALTER TABLE {self.name} ADD COLUMN {name} INTEGER PRIMARY KEY;")
-            self.header = get_header(self.cursor, self.name)
+            self.headers = get_header(self.cursor, self.name)
             self.primary_key = name
 
     def remove_columns(self, columns):
-        columns = [col for col in columns if col in self.header]
+        columns = [col for col in columns if col in self.headers]
         self.database.begin_transaction()
 
         new_table_name = f"{self.name}_tmp"
@@ -128,11 +128,11 @@ class SQL3Table(object):
         self.cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {self.name};")
         self.database.commit_transaction()
 
-        self.header = get_header(self.cursor, self.name)
+        self.headers = get_header(self.cursor, self.name)
         self.primary_key = get_primary_key(self.cursor, self.name)
 
     def rename_columns(self, column_mapping):
-        column_mapping = {old: new for old, new in column_mapping.items() if old in self.header}
+        column_mapping = {old: new for old, new in column_mapping.items() if old in self.headers}
 
         if not column_mapping:
             return
@@ -150,15 +150,15 @@ class SQL3Table(object):
 
         self.database.create_table(new_table_name, new_col2type, primary_key=self.primary_key)
 
-        old_columns_str = ', '.join(self.header)
-        new_columns_str = ', '.join([column_mapping.get(col, col) for col in self.header])
+        old_columns_str = ', '.join(self.headers)
+        new_columns_str = ', '.join([column_mapping.get(col, col) for col in self.headers])
 
         self.cursor.execute(f"INSERT INTO {new_table_name} ({new_columns_str}) SELECT {old_columns_str} FROM {self.name};")
         self.cursor.execute(f"DROP TABLE {self.name};")
         self.cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {self.name};")
         self.database.commit_transaction()
 
-        self.header = get_header(self.cursor, self.name)
+        self.headers = get_header(self.cursor, self.name)
         self.primary_key = get_primary_key(self.cursor, self.name)
 
     def select(self, column, statement, distinct=False, **kwargs):
@@ -210,7 +210,7 @@ class SQL3Table(object):
         except sqlite3.OperationalError as e:
             if 'no column' in str(e) in str(e):
                 for key, value in col2data.items():
-                    if key not in self.header:
+                    if key not in self.headers:
                         self.add_columns({key: type(value)})
                 self.cursor.execute(cmd)
             else:
@@ -227,7 +227,7 @@ class SQL3Table(object):
         except sqlite3.OperationalError as e:
             if 'no such column' in str(e):
                 for key, value in col2data.items():
-                    if key not in self.header:
+                    if key not in self.headers:
                         self.add_columns({key: type(value)})
                 self.cursor.execute(cmd)
 
@@ -319,7 +319,7 @@ class SQL3Table(object):
 
     def df(self):
         self.cursor.execute(f"SELECT * FROM {self.name}")
-        return pd.DataFrame([row for row in self.cursor.fetchall()], columns=self.header)
+        return pd.DataFrame([row for row in self.cursor.fetchall()], columns=self.headers)
 
     def __str__(self):
         return str(self.df())
@@ -331,7 +331,10 @@ class SQL3Table(object):
 class SQLite3Database(object):
     def __init__(self, fp: str = None, read_only: bool = False):
         self.fp = fp or ':memory:'
-        self.conn = sqlite3.connect(self.fp, check_same_thread=False, uri=read_only and fp != ':memory:')  # auto-commit
+        read_only = read_only or self.fp == ':memory:'
+        if read_only:
+            fp = f'file:{self.fp}?mode=ro'
+        self.conn = sqlite3.connect(fp, check_same_thread=False, uri=read_only)  # auto-commit
         self.cursor = self.conn.cursor()
 
     def __del__(self):

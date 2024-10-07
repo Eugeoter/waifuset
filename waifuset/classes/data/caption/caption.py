@@ -41,7 +41,7 @@ class Caption(Data):
         return self.sep.join(self.tags)
 
     def deduplicate(self):
-        self.tags = deduplicate(self.tags)
+        self.tags = tagging.deduplicate_tags(self.tags)
         self._empty_cache()
 
     def deduplicated(self):
@@ -97,24 +97,24 @@ class Caption(Data):
         """
         if not self.character:
             return
-        all_features = set()
-        for character in self.character:
-            all_features |= set(tagging.get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
-        self.tags = [tag for tag in self.tags if tagging.fmt2danbooru(tag) not in all_features]  # defeature won't change properties
+        self.tags = tagging.defeature_tags(
+            self.tags,
+            characters=self.character,
+            feature_type_to_frequency_threshold=feature_type_to_frequency_threshold
+        )
 
     def defeatured(self, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = tagging.DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
         caption = self.copy()
         caption.defeature(feature_type_to_frequency_threshold=feature_type_to_frequency_threshold)
         return caption
 
-    def sort(self, key=None, reverse=False):
+    def sort(self, key=tagging.get_tag_priority, reverse=False):
         r"""
         Sort tags by priority. If key is `None`, use default priority.
         """
-        key = key or tagging.get_tag_priority
-        self.tags.sort(key=key, reverse=reverse)
+        self.tags = tagging.sort_tags(self.tags, key=key, reverse=reverse)
 
-    def sorted(self, key=None, reverse=False):
+    def sorted(self, key=tagging.get_tag_priority, reverse=False):
         caption = self.copy()
         caption.sort(key=key, reverse=reverse)
         return caption
@@ -123,13 +123,7 @@ class Caption(Data):
         r"""
         Remove semantically overlapped tags, keeping the most specific ones.
         """
-        tag_implications = tagging.get_tag_implications()
-        dan_tags = [tagging.fmt2danbooru(tag) for tag in self.tags]
-        children = set()
-        for tag in dan_tags:
-            if child_tags := tag_implications.get(tag, None):
-                children |= set(child_tags)
-        self.tags = [tag for tag, dan_tag in zip(self.tags, dan_tags) if dan_tag not in children]
+        self.tags = tagging.deimplicate_tags(self.tags)
 
     def deimplicated(self):
         caption = self.copy()
@@ -140,8 +134,8 @@ class Caption(Data):
         r"""
         Replace tags with their newest aliases.
         """
-        tag_aliases = tagging.get_tag_aliases()
-        self.tags = [(tagging.fmt2train(tag_alias) if ' ' in tag else tag_alias) if (tag_alias := tag_aliases.get(tagging.fmt2danbooru(tag), None)) else tag for tag in self.tags]
+        self.tags = tagging.alias_tags(self.tags)
+        self._empty_cache()
 
     def aliased(self):
         caption = self.copy()
@@ -345,7 +339,7 @@ class Caption(Data):
     def __setattr__(self, name, value):
         if name in tagging.ALL_TAG_TYPES:
             cache_name = self._get_cache_name(name)
-            type_tags = deduplicate([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in value])
+            type_tags = tagging.deduplicate_tags([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in value])
             setattr(self, cache_name, type_tags)
         else:
             super().__setattr__(name, value)
@@ -359,13 +353,5 @@ class Caption(Data):
                 delattr(self, attr)
 
 
-def deduplicate(tags):
-    res = []
-    for tag in tags:
-        if tag not in res:
-            res.append(tag)
-    return res
-
-
 def get_typetags(tags, tagtype=None):
-    return deduplicate([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in tags if not tagtype or tagging.get_tagtype(tag) == tagtype])
+    return tagging.deduplicate_tags([tagging.fmt2danbooru(tagging.uncomment_tag(tag)) for tag in tags if not tagtype or tagging.get_tagtype(tag) == tagtype])

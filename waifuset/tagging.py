@@ -2,7 +2,7 @@ import re
 import json
 import os
 from huggingface_hub import hf_hub_download
-from typing import Literal, List, Union, Dict
+from typing import Literal, List, Union, Dict, Callable
 from . import logging
 
 logger = logging.get_logger('tagging')
@@ -501,6 +501,7 @@ def get_character_features(character: str, feature_type_to_frequency_threshold: 
         features.extend([feature for feature, ratio in ch2sex.get(character, {}).items() if ratio >= threshold])
     return features
 
+
 # ======================================== tag priority functions ========================================
 
 
@@ -673,12 +674,8 @@ def get_tag_priority(tag):
     elif get_custom_tags() and tag in AESTHETIC_TAGS:
         return get_tag_priority_from_tag_category('aesthetic')
     # priority from tag priorities table
-    elif get_tag_priorities():
-        dan_tag = fmt2danbooru(tag)
-        if dan_tag in TAG_PRIORITIES:
-            return TAG_PRIORITIES[dan_tag]
-        else:
-            return LOWEST_TAG_PRIORITY
+    elif get_tag_priorities() and (dan_tag := fmt2danbooru(tag)) in TAG_PRIORITIES:
+        return TAG_PRIORITIES[dan_tag]
     # priority from regex matching
     elif get_tag_priorities_regex():
         for i, regex in enumerate(TAG_PRIORITY_REGEX):
@@ -688,3 +685,49 @@ def get_tag_priority(tag):
     # otherwise, lowest priority
     else:
         return LOWEST_TAG_PRIORITY
+
+# ======================================== inplace advanced tag processing functions ========================================
+
+
+def sort_tags(tags: List[str], key: Callable[[str], int] = get_tag_priority, reverse: bool = False):
+    tags.sort(key=key, reverse=reverse)
+    return tags
+
+
+def deduplicate_tags(tags: List[str]):
+    res = []
+    for tag in tags:
+        if tag not in res:
+            res.append(tag)
+    return res
+
+
+def defeature_tags(tags: List[str], characters: List[str], feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
+    all_features = set()
+    for character in characters:
+        all_features.update(get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
+    tags = [tag for tag in tags if fmt2danbooru(tag) not in all_features]  # defeature won't change properties
+    return tags
+
+
+def deimplicate_tags(tags: List[str]):
+    r"""
+    Remove semantically overlapped tags, keeping the most specific ones.
+    """
+    tag_implications = get_tag_implications()
+    dan_tags = [fmt2danbooru(tag) for tag in tags]
+    children = set()
+    for tag in dan_tags:
+        if child_tags := tag_implications.get(tag, None):
+            children.update(child_tags)
+    tags = [tag for tag, dan_tag in zip(tags, dan_tags) if dan_tag not in children]
+    return tags
+
+
+def alias_tags(tags: List[str]):
+    r"""
+    Rename tags to their newest (2024-09-30) aliases.
+    """
+    tag_aliases = get_tag_aliases()
+    tags = [(fmt2train(tag_alias) if ' ' in tag else tag_alias) if (tag_alias := tag_aliases.get(fmt2danbooru(tag), None)) else tag for tag in tags]
+    return tags

@@ -72,8 +72,8 @@ class UIDataset(UISubset):
         return self.fullset
 
     @property
-    def header(self):
-        return self.root.header
+    def headers(self):
+        return self.root.headers
 
     @property
     def column_names(self):
@@ -128,7 +128,7 @@ def get_categories(dataset: Dataset):
     logging.debug(f"Searching categories for {len(dataset)} images...")
 
     # find image keys without category
-    if 'category' in dataset.header:
+    if 'category' in dataset.headers:
         cats = set(cat for cat in dataset.kvalues('category', distinct=True) if cat)  # get all categories
         # select images without category
         if rootset.__class__.__name__ == 'SQLite3Dataset':

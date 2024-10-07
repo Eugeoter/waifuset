@@ -8,9 +8,9 @@ packages = find_packages(
 
 setup(
     name='waifuset',
-    version='0.2.8',
+    version='0.2.84',
     packages=packages,
-    include_package_data=True,
+    include_package_data=False,
     description='tools for text-to-image dataset',
     long_description='',
     author='euge',
