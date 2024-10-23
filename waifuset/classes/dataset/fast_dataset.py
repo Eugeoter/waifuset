@@ -116,7 +116,7 @@ def load_fast_dataset(
         return (dataset_cls or DictDataset).from_dict({})
     datasets = []
     for i, src in enumerate(source):
-        with logger.timer(f"load dataset {i + 1}/{len(source)}") if verbose else contextlib.nullcontext():
+        with logger.timer(f"Load dataset {i + 1}/{len(source)}") if verbose else contextlib.nullcontext():
             if isinstance(src, Dataset):
                 dataset = src
                 if not hasattr(dataset, 'priority'):
@@ -145,7 +145,6 @@ def load_fast_dataset(
                 elif dataset_type == 'local' or os.path.exists(name_or_path) or os.path.splitext(name_or_path)[1] in ['.csv', '.json', '.sqlite3', '.db']:
                     dataset = load_single_dataset(
                         name_or_path,
-                        dataset_cls=dataset_cls,
                         primary_key=primary_key,
                         column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
                         remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
@@ -155,13 +154,13 @@ def load_fast_dataset(
                         exts=src.pop('exts', default_kwargs.get('exts')),
                         tbname=src.pop('tbname', default_kwargs.get('tbname') if not os.path.exists(name_or_path) else None),
                         read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
+                        dataset_cls=None,
                         verbose=src.pop('verbose', verbose),
                         **src,
                     )
                 else:
                     dataset = load_huggingface_dataset(
                         name_or_path=name_or_path,
-                        dataset_cls=dataset_cls,
                         primary_key=primary_key,
                         column_mapping=src.pop('column_mapping', default_kwargs.get('column_mapping')),
                         remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
@@ -170,6 +169,7 @@ def load_fast_dataset(
                         token=src.pop('token', default_kwargs.get('token')),
                         split=src.pop('split', default_kwargs.get('split')),
                         max_retries=src.pop('max_retries', default_kwargs.get('max_retries')),
+                        dataset_cls=None,
                         verbose=src.pop('verbose', verbose),
                         **src,
                     )
@@ -184,7 +184,7 @@ def load_fast_dataset(
 
     if merge_mode != 'chain':
         datasets.sort(key=lambda x: x.priority, reverse=True)
-        dataset = accumulate_datasets(datasets, mode=merge_mode, verbose=verbose)
+        dataset = accumulate_datasets(datasets, dataset_cls=dataset_cls, mode=merge_mode, verbose=verbose)
         if (mapping := default_kwargs.get('mapping', None)) is not None:
             dataset = mapping(dataset)
         dataset.register_to_config(**{k: v for k, v in default_kwargs.items() if k not in dataset.config})
@@ -207,6 +207,7 @@ def load_single_dataset(
     dataset_cls: type = None,
     **kwargs: Dict[str, Any],
 ):
+    logger.info(f"Creating dataset object from '{logging.yellow(name_or_path)}'...", disable=not verbose)
     localset = AutoDataset(
         name_or_path,
         dataset_cls=dataset_cls,
@@ -219,14 +220,18 @@ def load_single_dataset(
         **kwargs,
     )
     if column_mapping:
+        logger.info(f"Renaming columns: {', '.join(f'{logging.blue(k)} -> {logging.yellow(v)}' for k, v in column_mapping.items())}...", disable=not verbose)
         localset = localset.rename_columns(column_mapping, tqdm_disable=True)
     if remove_columns:
+        logger.info(f"Removing columns: {', '.join(logging.yellow(remove_columns))}...", disable=not verbose)
         localset = localset.remove_columns(remove_columns, tqdm_disable=True)
     if hasattr(localset, 'primary_key'):
         primary_key = localset.primary_key
     if primary_key not in localset.headers:
+        logger.warning(f"Primary key '{logging.yellow(primary_key)}' not found in the dataset. Patching the primary key...")
         localset = patch_key(localset, primary_key)
     if read_attrs:
+        logger.info(f"Reading additional attributes...", disable=not verbose)
         if isinstance(localset, SQLite3Dataset):
             readset = localset.subset('caption', 'is NULL')
             readset.with_map(mapping.attr_reader, tqdm_disable=not verbose)
@@ -274,7 +279,7 @@ def load_huggingface_dataset(
             )
             break
         except (huggingface_hub.utils._errors.HfHubHTTPError, ConnectionError, requests.exceptions.HTTPError, requests.exceptions.ReadTimeout):
-            logger.print(logging.yellow(f"Connection error when downloading dataset `{name_or_path}` from HuggingFace. Retrying..."))
+            logger.info(logging.yellow(f"Connection error when downloading dataset `{name_or_path}` from HuggingFace. Retrying..."))
             if max_retries is not None and retries >= max_retries:
                 raise
             retries += 1
@@ -487,7 +492,7 @@ def patch_key(dataset, primary_key) -> Dataset:
 #     return pivotset
 
 
-def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'intersection', 'update'] = 'union', verbose=True) -> Dataset:
+def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'intersection', 'update'] = 'union', dataset_cls=None, verbose=True) -> Dataset:
     r"""
     Accumulate multiple datasets into a single dataset.
 
@@ -505,6 +510,8 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
     # If there is only one dataset, return itself
     elif len(datasets) == 1:
         return datasets[0]
+    elif dataset_cls is not None:
+        pass
     # If types of some datasets are inconsistent, use DictDataset by default
     elif not all(ds.__class__ == datasets[0].__class__ for ds in datasets):
         logger.warning(f"because some types of datasets are inconsistent when accumulating, use {DictDataset.__name__} by default")
@@ -517,9 +524,9 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
         if not hasattr(ds, 'priority'):
             ds.priority = 0
 
-    logger.info(f"accumulating datasets:", disable=not verbose)
-    logger.info(f"  total number of datasets: {len(datasets)}", disable=not verbose, no_prefix=True)
-    logger.info(f"  merge mode: {mode}", disable=not verbose, no_prefix=True)
+    logger.info(f"Accumulating datasets:", disable=not verbose)
+    logger.info(f"  Total number of datasets: {len(datasets)}", disable=not verbose, no_prefix=True)
+    logger.info(f"  Merge mode: {mode}", disable=not verbose, no_prefix=True)
 
     if mode == 'intersection':
         # Find the dataset with the smallest size as the pivotset
@@ -536,7 +543,7 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
 
         # Accumulate the datasets
         for ds in logger.tqdm(datasets, desc='intersection datasets', position=0, disable=not verbose, leave=False, total=len(datasets)):
-            for img_key in logger.tqdm(pivotset.keys(), desc='intersection data', position=1, disable=not verbose, leave=False, total=len(pivotset)):
+            for img_key in logger.tqdm(list(pivotset.keys()), desc='intersection data', position=1, disable=not verbose, leave=False, total=len(pivotset)):
                 if img_key not in ds:
                     del pivotset[img_key]
                 else:
@@ -598,5 +605,5 @@ def accumulate_datasets(datasets: List[Dataset], mode: Literal['union', 'interse
         for ds in logger.tqdm(datasets[1:], desc='update datasets', position=0, disable=not verbose, leave=False):
             pivotset.update(ds, tqdm_desc='update data', tqdm_position=1, tqdm_disable=not verbose, tqdm_leave=False)
 
-    logger.info(f"accumulation done.", disable=not verbose)
+    logger.info(f"Accumulation done.", disable=not verbose)
     return pivotset

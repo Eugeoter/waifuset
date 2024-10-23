@@ -48,11 +48,11 @@ def parse_danbooru_metadata(metadata):
     date = metadata['created_at'].split('T')[0]
     original_size = f"{metadata['image_width']}x{metadata['image_height']}"
     return {
-        'caption': tags,
-        'artist': artist_tags,
-        'character': character_tags,
-        'copyright': copyright_tags,
-        'meta': meta_tags,
+        'tags': tags,
+        'tags_artist': artist_tags,
+        'tags_character': character_tags,
+        'tags_copyright': copyright_tags,
+        'tags_meta': meta_tags,
         'safety': safety_tag,
         'original_size': original_size,
         'date': date,
@@ -60,7 +60,7 @@ def parse_danbooru_metadata(metadata):
 
 
 def convert_danbooru_metadata(metadata):
-    metadata['caption'] = ', '.join([tagging.fmt2train(tag) for tag in metadata['caption'].split(' ')])
-    for attr in ('artist', 'character', 'copyright', 'meta'):
+    metadata['tags'] = ', '.join([tagging.fmt2train(tag) for tag in metadata['tags'].split(' ')])
+    for attr in ('tags_artist', 'tags_character', 'tags_copyright', 'tags_meta'):
         metadata[attr] = ', '.join([tagging.fmt2danbooru(tag) for tag in metadata[attr].split(' ')])
     return metadata

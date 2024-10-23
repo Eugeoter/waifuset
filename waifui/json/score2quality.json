@@ -1,0 +1,20 @@
+{
+    "ws4": {
+        "amazing": 0.87,
+        "best": 0.8,
+        "high": 0.65,
+        "normal": 0.35,
+        "low": 0.2,
+        "worst": 0.1,
+        "horrible": 0
+    },
+    "as2": {
+        "amazing": 0.87,
+        "best": 0.8,
+        "high": 0.65,
+        "normal": 0.35,
+        "low": 0.2,
+        "worst": 0.1,
+        "horrible": 0
+    }
+}

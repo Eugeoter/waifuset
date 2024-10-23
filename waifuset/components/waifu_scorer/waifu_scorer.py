@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 from pathlib import Path
 from typing import List, Union, Dict, Any, Optional
-from .mlp import MLP
+from .mlp import MLP4
 from ...utils import image_utils
 from ... import logging, const
 
@@ -53,20 +53,20 @@ class WaifuScorer(object):
             raise ValueError("pretrained_model_name_or_path should not be None")
         if not os.path.isfile(pretrained_model_name_or_path):
             from huggingface_hub import hf_hub_download
-            logger.info(f"downloading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
+            logger.info(f"Downloading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
             pretrained_model_name_or_path = hf_hub_download(
                 pretrained_model_name_or_path,
                 filename="model.safetensors" if use_safetensors else "model.pth",
                 cache_dir=cache_dir
             )
 
-        logger.info(f"loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
-        logger.info(f"  device: {str(device)}", disable=not verbose)
+        logger.info(f"Loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`", disable=not verbose)
+        logger.info(f"  - Device: {str(device)}", disable=not verbose)
         mlp = load_model(pretrained_model_name_or_path, input_size=768, device=device, dtype=dtype)
         mlp.to(device, dtype=dtype)
         mlp.eval()
 
-        with logging.timer("load components", logger=logger):
+        with logging.timer("Load components", logger=logger):
             clip_model, clip_preprocessor = load_clip_models("ViT-L/14", device=device)
 
         return cls(
@@ -79,6 +79,14 @@ class WaifuScorer(object):
 
     @torch.no_grad()
     def __call__(self, inputs: List[Union[Image.Image, torch.Tensor, const.StrPath]], cache_paths: Optional[List[const.StrPath]] = None) -> List[float]:
+        r"""
+        Score a batch of images.
+
+        @param inputs: List[Union[Image.Image, torch.Tensor, str]], a list of images or image paths. If the input is a path, will automatically cache the image embeddings if emb_cache_dir is set.
+        @param cache_paths: Optional[List[str]], optional, a list of cache paths for the input images. If set, will cache the image embeddings from the cache paths instead of encoding the images.
+
+        @return scores: List[float], a list of scores for the input images. Range from 0 to 1. Higher score means better quality.
+        """
         return self.predict(inputs, cache_paths)
 
     @torch.no_grad()
@@ -195,7 +203,7 @@ def load_clip_models(name: str = "ViT-L/14", device='cuda'):
 
 
 def load_model(model_path: str = None, input_size=768, device: str = 'cuda', dtype=None):
-    model = MLP(input_size=input_size)
+    model = MLP4(input_size=input_size)
     if model_path:
         if model_path.endswith(".safetensors"):
             from safetensors.torch import load_file

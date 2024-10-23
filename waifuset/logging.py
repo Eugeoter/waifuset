@@ -125,6 +125,9 @@ class ConsoleLogger:
         )
         return new_instance
 
+    def __reduce__(self):
+        return (self.__class__, (self.name,))
+
 
 def get_logger(name, prefix_msg=None, prefix_color=None, disable: bool = False) -> ConsoleLogger:
     r"""

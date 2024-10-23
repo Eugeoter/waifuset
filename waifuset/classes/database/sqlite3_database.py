@@ -161,7 +161,7 @@ class SQL3Table(object):
         self.headers = get_header(self.cursor, self.name)
         self.primary_key = get_primary_key(self.cursor, self.name)
 
-    def select(self, column, statement, distinct=False, **kwargs):
+    def select(self, column, statement, distinct=False):
         self.cursor.execute(f"SELECT {'DISTINCT' if distinct else ''}* FROM {self.name} WHERE {column} {statement}")
         return self.cursor.fetchall()
 
@@ -172,33 +172,33 @@ class SQL3Table(object):
         self.cursor.execute(f"SELECT {'DISTINCT' if distinct else ''}* FROM {self.name} WHERE {funcname}({arg_str}) = 1")
         return self.cursor.fetchall()
 
-    def select_like(self, column, value, **kwargs):
-        return self.select(column, f"LIKE {get_sql_value_str(value)}", **kwargs)
+    def select_like(self, column, value):
+        return self.select(column, f"LIKE {get_sql_value_str(value)}")
 
-    def select_glob(self, column, value, **kwargs):
-        return self.select(column, f"GLOB {get_sql_value_str(value)}", **kwargs)
+    def select_glob(self, column, value):
+        return self.select(column, f"GLOB {get_sql_value_str(value)}")
 
-    def select_between(self, column, lower, upper, **kwargs):
-        return self.select(column, f"BETWEEN {get_sql_value_str(lower)} AND {get_sql_value_str(upper)}", **kwargs)
+    def select_between(self, column, lower, upper):
+        return self.select(column, f"BETWEEN {get_sql_value_str(lower)} AND {get_sql_value_str(upper)}")
 
-    def select_in(self, column, values, **kwargs):
+    def select_in(self, column, values):
         if None in values:  # handle None
             values = [v for v in values if v is not None]
-            return self.select(column, f"IN {get_sql_value_str(values)} OR {column} IS NULL", **kwargs)
-        return self.select(column, f"IN {get_sql_value_str(values)}", **kwargs)
+            return self.select(column, f"IN {get_sql_value_str(values)} OR {column} IS NULL")
+        return self.select(column, f"IN {get_sql_value_str(values)}")
 
-    def select_not_in(self, column, values, **kwargs):
+    def select_not_in(self, column, values):
         if None in values:  # handle None
             values = [v for v in values if v is not None]
-            return self.select(column, f"NOT IN {get_sql_value_str(values)} AND {column} IS NOT NULL", **kwargs)
+            return self.select(column, f"NOT IN {get_sql_value_str(values)} AND {column} IS NOT NULL")
         else:
-            return self.select(column, f"NOT IN {get_sql_value_str(values)}", **kwargs)
+            return self.select(column, f"NOT IN {get_sql_value_str(values)}")
 
-    def select_is(self, column, value, **kwargs):
-        return self.select(column, f"IS {get_sql_value_str(value)}", **kwargs)
+    def select_is(self, column, value):
+        return self.select(column, f"IS {get_sql_value_str(value)}")
 
-    def select_is_not(self, column, value, **kwargs):
-        return self.select(column, f"IS NOT {get_sql_value_str(value)}", **kwargs)
+    def select_is_not(self, column, value):
+        return self.select(column, f"IS NOT {get_sql_value_str(value)}")
 
     def insert(self, col2data: Dict[str, Any]):
         self.cursor.execute(f"INSERT INTO {self.name} {get_sql_value_str(['$' + key + '$' for key in col2data.keys()])} VALUES {get_sql_value_str(col2data.values())}")
@@ -331,10 +331,14 @@ class SQL3Table(object):
 class SQLite3Database(object):
     def __init__(self, fp: str = None, read_only: bool = False):
         self.fp = fp or ':memory:'
-        read_only = read_only or self.fp == ':memory:'
+        read_only = read_only and self.fp == ':memory:'
         if read_only:
-            fp = f'file:{self.fp}?mode=ro'
-        self.conn = sqlite3.connect(fp, check_same_thread=False, uri=read_only)  # auto-commit
+            self.fp = f'file:{self.fp}?mode=ro'
+        try:
+            self.conn = sqlite3.connect(self.fp, check_same_thread=False, uri=read_only)  # auto-commit
+        except sqlite3.OperationalError:
+            logging.error(f"Unable to open database file {self.fp}.")
+            raise
         self.cursor = self.conn.cursor()
 
     def __del__(self):
@@ -345,6 +349,9 @@ class SQLite3Database(object):
 
     def commit(self):
         self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
 
     def create_table(self, table_name: str, col2type: Dict[str, type] = {}, exists_ok: str = False, primary_key: str = None):
         if not isinstance(table_name, str):

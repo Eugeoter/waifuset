@@ -18,7 +18,7 @@ def old2new(img_md):
 
     caption = Caption(img_md['caption'])
     if safe_level := img_md.get('safe_level'):
-        caption += f"safety: {tagging.SAFE_LEVEL_TO_SAFETY_TAG[safe_level]}"
+        caption += f"safety: {tagging.RATING_TO_SAFETY[safe_level]}"
     caption[pattern1] = r"\g<tagtypeA>:\g<tagname>"
     caption[pattern2] = r"\1"
     caption[pattern3] = r'safety: \1'
@@ -35,7 +35,6 @@ def old2new(img_md):
         'original_size': f"{img_md['original_size'][0]}x{img_md['original_size'][1]}" if img_md.get('original_size') else None,
         'aesthetic_score': img_md['aesthetic_score'],
         'perceptual_hash': img_md['perceptual_hash'],
-        'safe_rating': img_md.get('safe_rating'),
         **{
             k: caption.sep.join(v) if v else None for k, v in caption.metadata.items()
         },
@@ -70,8 +69,9 @@ def caption_processor(img_md):
     caption = Caption(caption)
     if (cat := os.path.basename(os.path.dirname(img_md['image_path']))).startswith('by '):
         caption += f"artist:{cat[3:]}"
-    caption.deimplicate()
     caption.parse()
+    caption.alias()
+    caption.deimplicate()
     caption.deduplicate()
     caption.sort()
     metadata = {k: ', '.join(v) for k, v in caption.metadata.items() if v}

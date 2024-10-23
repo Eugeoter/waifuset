@@ -27,6 +27,7 @@ if LAZY_IMPORT:
         'components.waifu_tagger.waifu_tagger': ['WaifuTagger'],
         'components.waifu_scorer.waifu_scorer': ['WaifuScorer'],
         'components.waifu_upscaler.waifu_upscaler': ['WaifuUpscaler'],
+        'components.aesthetic_shadow.aesthetic_shadow': ['AestheticShadow'],
     }
     sys.modules[__name__] = _LazyModule(__name__, globals()['__file__'], import_structure=_import_structure, module_spec=__spec__)
 
@@ -54,3 +55,4 @@ else:
     from .components.waifu_tagger.waifu_tagger import WaifuTagger
     from .components.waifu_scorer.waifu_scorer import WaifuScorer
     from .components.waifu_upscaler.waifu_upscaler import WaifuUpscaler
+    from .components.aesthetic_shadow.aesthetic_shadow import AestheticShadow

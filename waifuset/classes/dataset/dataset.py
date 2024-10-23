@@ -151,6 +151,7 @@ class Dataset(ConfigMixin):
         # if dataset.__class__ == cls:
         #     return dataset
         kwargs = {**dataset.config, **kwargs}
+        kwargs.setdefault('_headers', dataset.headers)
         return cls.from_dict(dataset.dict(), **kwargs)
 
     def dict(self) -> Dict[str, Dict[str, Any]]:
@@ -328,8 +329,15 @@ class Dataset(ConfigMixin):
             if col not in tarset.headers:
                 raise ValueError(f"column `{col}` not found in the header of the target dataset: {tarset.headers}")
 
-        for k, v in self.logger.tqdm(tarset.items(), desc='redirect'):
-            self.set(k, {col: v[col] for col in columns if col in self.headers})
+        if len(self) <= len(tarset):
+            for k, v in self.logger.tqdm(self.items(), desc='redirect'):
+                if k in tarset:
+                    tar_v = tarset[k]
+                    self.set(k, {col: tar_v[col] for col in columns if col in tarset.headers})
+        else:
+            for k, tar_v in tarset.items():
+                if k in self:
+                    self.set(k, {col: tar_v[col] for col in columns if col in tarset.headers})
 
     def apply_map(self, func: Callable[[Dict], Dict], *args, condition: Callable[[Dict], bool] = None, **kwargs) -> None:
         r"""

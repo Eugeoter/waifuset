@@ -16,6 +16,7 @@ def search_file(filename, search_path):
 
 
 WIKI_REPO_ID = 'Eugeoter/waifuset-wiki'
+WIKI_DIR = None
 WIKI_CACHE_DIR = None
 
 WIKI_FILES = {
@@ -37,6 +38,16 @@ WIKI_FILES = {
     'meta_tags': {
         'default': {
             'filename': 'meta_tags.txt',
+        },
+    },
+    'helpful_meta_tags': {
+        'default': {
+            'filename': 'helpful_meta_tags.txt',
+        },
+    },
+    'helpless_meta_tags': {
+        'default': {
+            'filename': 'helpless_meta_tags.txt',
         },
     },
     'custom_tags': {
@@ -75,6 +86,10 @@ WIKI_FILES = {
         },
     },
 }
+
+SEP_TAGTYPE = '*'
+SEP_TAG = ', '
+SEP_WORD = '_'
 
 ALL_TAG_TYPES = ('artist', 'character', 'style', 'quality', 'aesthetic', 'copyright', 'meta', 'safety', 'year', 'period')
 
@@ -128,8 +143,10 @@ ARTIST_TAGS = None
 CHARACTER_TAGS = None
 COPYRIGHT_TAGS = None
 META_TAGS = None
+HELPFUL_META_TAGS = None
+HELPLESS_META_TAGS = None
 
-SAFE_LEVEL_TO_SAFETY_TAG = {
+RATING_TO_SAFETY = {
     'g': 'general',
     's': 'sensitive',
     'q': 'questionable',
@@ -153,23 +170,41 @@ def set_wiki_cache_dir(cache_dir):
     WIKI_CACHE_DIR = cache_dir
 
 
+def set_wiki_dir(wiki_dir):
+    global WIKI_DIR
+    WIKI_DIR = wiki_dir
+
 # ======================================== tag transforms ========================================
 
 
 def fmt2unescape(tag):
-    return re.sub(r'(\\+)([\(\)])', r'\2', tag)
+    if '\\' in tag:
+        tag = re.sub(r'(\\)([\(\)])', r'\2', tag)
+    return tag
 
 
 def fmt2escape(tag):
     return re.sub(r'(?<!\\)(\()(.*)(?<!\\)(\))', r'\\\1\2\\\3', tag)  # negative lookbehind
 
 
+REGEX_BAD_COLON = re.compile(r'(\w+:)([^_])')
+
+
 def fmt2danbooru(tag):
     tag = tag.lower().replace(' ', '_').strip('_')
-    tag = re.sub(r'(_+)', '_', tag)
+    if '__' in tag:
+        tag = re.sub(r'(_+)', '_', tag)
     tag = tag.replace(':_', ':')
     tag = fmt2unescape(tag)
     return tag
+
+
+# def fmt_colon(tag):
+#     if '__' in tag:
+#         tag = re.sub(r'(_+)', '_', tag)
+#     if ':' in tag:
+#         tag = re.sub(r'(\w+:)([^_])', r'\1_\2', tag)
+#     return tag
 
 
 def fmt2train(tag):
@@ -178,26 +213,25 @@ def fmt2train(tag):
     return tag
 
 
-def fmt2prompt(tag):
-    tag = tag.replace('_', ' ').strip()
-    tag = fmt2escape(tag)
-    tag = tag.replace(': ', ':')
+def fmt2std(tag):
+    tag = fmt2danbooru(tag)
+    tag = tag.replace('_', ' ')
     return tag
 
 
 def fmt2awa(tag):
-    tag = fmt2prompt(tag)
-    if (tagtype := get_tagtype_from_tag(tag)):
-        prefix, tag = tag.split(":", 1)
-        if prefix == 'artist':
+    tag = fmt2std(tag)
+    if (tagtype := get_tagtype_from_comment(tag)):
+        tag = uncomment_tag(tag, tagtype)
+        if tagtype == 'artist':
             return f"by {tag}"
-        elif prefix == 'character':
+        elif tagtype == 'character':
             return f"1 {tag}"
-        elif prefix == 'style':
+        elif tagtype == 'style':
             return f"{tag} style"
-        elif prefix == 'quality':
+        elif tagtype == 'quality':
             return f"{tag} quality" if not tag.endswith(' quality') else tag
-        elif prefix == 'safety':
+        elif tagtype in ('aesthetic', 'copyright', 'safety', 'year', 'period'):
             return tag
     return tag
 
@@ -210,17 +244,17 @@ def match(pattern, tag):
 
 
 def uncomment_tag(tag: str, tagtype=None):
-    tagtype = tagtype or get_tagtype_from_tag(tag)
+    tagtype = tagtype or get_tagtype_from_comment(tag)
     return tag[len(tagtype) + 1:] if tagtype else tag
 
 
 def comment_tag(tag: str, tagtype=None):
-    return f'{tagtype}:{tag}' if tagtype else tag
+    return f'{tagtype}{SEP_TAGTYPE}{tag}' if tagtype else tag
 
 # ======================================== tagtype ========================================
 
 
-def get_tags_from_tagtype(tagtype: Literal['artist', 'character', 'style', 'aesthetic', 'copyright', 'quality', 'meta', 'safety', 'year', 'period']) -> Union[set, None]:
+def get_tags_from_tagtype(tagtype: Literal['artist', 'character', 'style', 'aesthetic', 'copyright', 'quality', 'meta', 'safety', 'year', 'period', 'helpful_meta', 'helpless_meta']) -> Union[set, None]:
     r"""
     Get specific tagset.
     """
@@ -238,15 +272,17 @@ def get_tags_from_tagtype(tagtype: Literal['artist', 'character', 'style', 'aest
         return get_quality_tags()
     elif tagtype == 'meta':
         return get_meta_tags()
+    elif tagtype == 'helpful_meta':
+        return get_helpful_meta_tags()
+    elif tagtype == 'helpless_meta':
+        return get_helpless_meta_tags()
     else:
         raise ValueError(f'invalid tagtype: {tagtype}')
 
 
-def get_tagtype_from_tag(tag: str):
-    if ':' in tag:
-        for tagtype in ALL_TAG_TYPES:
-            if tag.startswith(tagtype + ':'):
-                return tagtype
+def get_tagtype_from_comment(tag: str):
+    if SEP_TAGTYPE in tag:
+        return tag.split(SEP_TAGTYPE, 1)[0]
     return None
 
 
@@ -256,20 +292,20 @@ def get_tagtype_from_wiki(tag: str):
         return 'artist'
     elif dan_tag in get_character_tags():
         return 'character'
-    elif dan_tag in get_style_tags():
-        return 'style'
+    # elif dan_tag in get_style_tags():
+    #     return 'style'
     elif dan_tag in get_copyright_tags():
         return 'copyright'
     elif dan_tag in get_meta_tags():
         return 'meta'
-    elif dan_tag in get_quality_tags():
-        return 'quality'
+    # elif dan_tag in get_quality_tags():
+    #     return 'quality'
     else:
         return None
 
 
 def get_tagtype(tag: str):
-    return get_tagtype_from_tag(tag) or get_tagtype_from_wiki(tag)
+    return get_tagtype_from_comment(tag) or get_tagtype_from_wiki(tag)
 
 # ======================================== tagset functions ========================================
 
@@ -279,7 +315,11 @@ def get_artist_tags(wiki_name_or_path=None):
     if ARTIST_TAGS is not None:
         return ARTIST_TAGS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['artist_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['artist_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['artist_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             ARTIST_TAGS = set(f.read().splitlines())
     except Exception as e:
@@ -294,7 +334,11 @@ def get_character_tags(wiki_name_or_path=None):
     if CHARACTER_TAGS is not None:
         return CHARACTER_TAGS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['character_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['character_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['character_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             CHARACTER_TAGS = set(f.read().splitlines())
     except Exception as e:
@@ -309,7 +353,11 @@ def get_copyright_tags(wiki_name_or_path=None):
     if COPYRIGHT_TAGS is not None:
         return COPYRIGHT_TAGS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['copyright_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['copyright_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['copyright_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             COPYRIGHT_TAGS = set(f.read().splitlines())
     except Exception as e:
@@ -324,7 +372,11 @@ def get_meta_tags(wiki_name_or_path=None):
     if META_TAGS is not None:
         return META_TAGS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['meta_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['meta_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['meta_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             META_TAGS = set(f.read().splitlines())
     except Exception as e:
@@ -332,6 +384,44 @@ def get_meta_tags(wiki_name_or_path=None):
         logger.error(f'failed to read meta tags: {e}')
         return None
     return META_TAGS
+
+
+def get_helpful_meta_tags(wiki_name_or_path=None):
+    global HELPFUL_META_TAGS
+    if HELPFUL_META_TAGS is not None:
+        return HELPFUL_META_TAGS
+    try:
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['helpful_meta_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['helpful_meta_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
+            HELPFUL_META_TAGS = set(f.read().splitlines())
+    except Exception as e:
+        HELPFUL_META_TAGS = None
+        logger.error(f'failed to read meta tags: {e}')
+        return None
+    return HELPFUL_META_TAGS
+
+
+def get_helpless_meta_tags(wiki_name_or_path=None):
+    global HELPLESS_META_TAGS
+    if HELPLESS_META_TAGS is not None:
+        return HELPLESS_META_TAGS
+    try:
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['helpless_meta_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['helpless_meta_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
+            HELPLESS_META_TAGS = set(f.read().splitlines())
+    except Exception as e:
+        HELPLESS_META_TAGS = None
+        logger.error(f'failed to read meta tags: {e}')
+        return None
+    return HELPLESS_META_TAGS
 
 # ======================================== custom tag functions ========================================
 
@@ -341,7 +431,11 @@ def get_custom_tags(wiki_name_or_path=None):
     if CUSTOM_TAGS is not None:
         return CUSTOM_TAGS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['custom_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['custom_tags']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['custom_tags']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             custom_tag_table = json.load(f)
         custom_tag_table = {k: set(v) for k, v in custom_tag_table.items()}
@@ -374,46 +468,67 @@ def get_quality_tags():
 
 
 def get_tag_implications(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from tags to their implications.
+    """
     global TAG_IMPLICATIONS
     if TAG_IMPLICATIONS is not None:
         return TAG_IMPLICATIONS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_implications']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['tag_implications']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_implications']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             TAG_IMPLICATIONS = json.load(f)
     except Exception as e:
         TAG_IMPLICATIONS = None
-        logging.error(f'failed to read implication table: {e}')
+        logging.error(f'Failed to read implication table: {e}')
         return None
     return TAG_IMPLICATIONS
 
 
 def get_tag_aliases(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from tags' old name to new name.
+    """
     global TAG_ALIASES
     if TAG_ALIASES is not None:
         return TAG_ALIASES
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_aliases']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['tag_aliases']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_aliases']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             TAG_ALIASES = json.load(f)
     except Exception as e:
         TAG_ALIASES = None
-        logging.error(f'failed to read alias table: {e}')
+        logging.error(f'Failed to read alias table: {e}')
         return None
     return TAG_ALIASES
 
 
 def get_tag_priorities(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from tags to their sorting priorities.
+    """
     global TAG_PRIORITIES
     if TAG_PRIORITIES is not None:
         return TAG_PRIORITIES
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_priorities']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['tag_priorities']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['tag_priorities']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             TAG_PRIORITIES = json.load(f)
     except Exception as e:
         TAG_PRIORITIES = None
-        logging.info(f'failed to read tag priorities: {e}')
+        logging.info(f'Failed to read tag priorities: {e}')
         return None
     return TAG_PRIORITIES
 
@@ -421,69 +536,75 @@ def get_tag_priorities(wiki_name_or_path=None):
 
 
 def get_ch2physics(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from characters to physics features in Danbooru style.
+    """
     global CH2PHYSICS
     if CH2PHYSICS is not None:
         return CH2PHYSICS
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2physics']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['ch2physics']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2physics']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             CH2PHYSICS = json.load(f)
     except Exception as e:
         CH2PHYSICS = None
-        logging.error(f'failed to read ch2physics: {e}')
+        logging.error(f'Failed to read ch2physics: {e}')
         return None
     return CH2PHYSICS
 
 
 def get_ch2clothes(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from characters to clothes features in Danbooru style.
+    """
     global CH2CLOTHES
     if CH2CLOTHES is not None:
         return CH2CLOTHES
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2clothes']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['ch2clothes']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2clothes']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             CH2CLOTHES = json.load(f)
     except Exception as e:
         CH2CLOTHES = None
-        logging.error(f'failed to read ch2clothes: {e}')
+        logging.error(f'Failed to read ch2clothes: {e}')
         return None
     return CH2CLOTHES
 
 
 def get_ch2sex(wiki_name_or_path=None):
+    r"""
+    Get a dictionary mapping from characters to sex features in Danbooru style.
+    """
     global CH2SEX
     if CH2SEX is not None:
         return CH2SEX
     try:
-        wiki_name_or_path = wiki_name_or_path or hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2sex']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
+        if wiki_name_or_path is None:
+            if WIKI_DIR is not None and os.path.exists(wiki_name_or_path := os.path.join(WIKI_DIR, WIKI_FILES['ch2sex']['default']['filename'])):
+                pass
+            else:
+                wiki_name_or_path = hf_hub_download(WIKI_REPO_ID, filename=WIKI_FILES['ch2sex']['default']['filename'], repo_type='dataset', cache_dir=WIKI_CACHE_DIR)
         with open(wiki_name_or_path, 'r', encoding='utf-8') as f:
             CH2SEX = json.load(f)
     except Exception as e:
         CH2SEX = None
-        logging.error(f'failed to read ch2sex: {e}')
+        logging.error(f'Failed to read ch2sex: {e}')
         return None
     return CH2SEX
 
 
-def get_ch2feature2ratio(character: str, feature_types: List[Literal['physics', 'clothes', 'sex']] = ['physics', 'clothes', 'sex']) -> Dict[str, float]:
-    if isinstance(feature_types, str):
-        feature_types = [feature_types]
-    character = uncomment_tag(character)
-    character = fmt2danbooru(character)
-    features = {}
-    if 'physics' in feature_types:
-        ch2physics = get_ch2physics()
-        features.update(ch2physics.get(character, {}))
-    if 'clothes' in feature_types:
-        ch2clothes = get_ch2clothes()
-        features.update(ch2clothes.get(character, {}))
-    if 'sex' in feature_types:
-        ch2sex = get_ch2sex()
-        features.update(ch2sex.get(character, {}))
-    return features
-
-
 def get_character_features(character: str, feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD) -> List[str]:
+    r"""
+    Get the features of the given character.
+    """
     character = uncomment_tag(character)
     character = fmt2danbooru(character)
     features = []
@@ -501,6 +622,26 @@ def get_character_features(character: str, feature_type_to_frequency_threshold: 
         features.extend([feature for feature, ratio in ch2sex.get(character, {}).items() if ratio >= threshold])
     return features
 
+
+def get_character_feature2ratio(character: str, feature_types: List[Literal['physics', 'clothes', 'sex']] = ['physics', 'clothes', 'sex']) -> Dict[str, float]:
+    r"""
+    Get a dictionary mapping from the given character's features to their frequency ratios.
+    """
+    if isinstance(feature_types, str):
+        feature_types = [feature_types]
+    character = uncomment_tag(character)
+    character = fmt2danbooru(character)
+    features = {}
+    if 'physics' in feature_types:
+        ch2physics = get_ch2physics()
+        features.update(ch2physics.get(character, {}))
+    if 'clothes' in feature_types:
+        ch2clothes = get_ch2clothes()
+        features.update(ch2clothes.get(character, {}))
+    if 'sex' in feature_types:
+        ch2sex = get_ch2sex()
+        features.update(ch2sex.get(character, {}))
+    return features
 
 # ======================================== tag priority functions ========================================
 
@@ -654,25 +795,25 @@ def get_character_physics_feature_regex():
     return True
 
 
-def get_tag_priority_from_tag_category(tag_category):
+def get_tag_priority_from_tagtype(tagtype: Literal['artist', 'character', 'style', 'aesthetic', 'copyright', 'quality', 'meta', 'safety', 'year', 'period', 'helpful_meta', 'helpless_meta']) -> int:
     if not TAG_PRIORITY_PATTERN:
         get_tag_priorities_regex()
-    return list(TAG_PRIORITY_PATTERN.keys()).index(tag_category) if tag_category in TAG_PRIORITY_PATTERN else LOWEST_TAG_PRIORITY
+    return list(TAG_PRIORITY_PATTERN.keys()).index(tagtype) if tagtype in TAG_PRIORITY_PATTERN else LOWEST_TAG_PRIORITY
 
 
-def get_tag_priority(tag):
+def get_tag_priority(tag: str) -> int:
     r"""
-    Convert a tag to a priority. Lower priority means higher importance.
+    Get the priority of the given tag.
     """
-    # priority from tag type
-    if ':' in tag and any(tag.startswith(tagtype + ':') for tagtype in ALL_TAG_TYPES):
-        return get_tag_priority_from_tag_category(tag.split(':', 1)[0])
+    # priority from comment
+    if (tagtype := get_tagtype_from_comment(tag)):
+        return get_tag_priority_from_tagtype(tagtype)
     # priority from quality
     elif tag.endswith('quality'):
-        return get_tag_priority_from_tag_category('quality')
+        return get_tag_priority_from_tagtype('quality')
     # priority from aesthetic
     elif get_custom_tags() and tag in AESTHETIC_TAGS:
-        return get_tag_priority_from_tag_category('aesthetic')
+        return get_tag_priority_from_tagtype('aesthetic')
     # priority from tag priorities table
     elif get_tag_priorities() and (dan_tag := fmt2danbooru(tag)) in TAG_PRIORITIES:
         return TAG_PRIORITIES[dan_tag]
@@ -690,11 +831,17 @@ def get_tag_priority(tag):
 
 
 def sort_tags(tags: List[str], key: Callable[[str], int] = get_tag_priority, reverse: bool = False):
+    r"""
+    Get the sorted tags.
+    """
     tags.sort(key=key, reverse=reverse)
     return tags
 
 
 def deduplicate_tags(tags: List[str]):
+    r"""
+    Deduplicate tags.
+    """
     res = []
     for tag in tags:
         if tag not in res:
@@ -703,6 +850,9 @@ def deduplicate_tags(tags: List[str]):
 
 
 def defeature_tags(tags: List[str], characters: List[str], feature_type_to_frequency_threshold: Dict[Literal['physics', 'clothes', 'sex'], float] = DEFAULT_FEATURE_TYPE_TO_FREQUENCY_THRESHOLD):
+    r"""
+    Remove character features from tags.
+    """
     all_features = set()
     for character in characters:
         all_features.update(get_character_features(character, feature_type_to_frequency_threshold=feature_type_to_frequency_threshold))
@@ -724,10 +874,29 @@ def deimplicate_tags(tags: List[str]):
     return tags
 
 
-def alias_tags(tags: List[str]):
+def alias_tags(tags: List[str], format: Literal['danbooru', 'train'] = 'danbooru'):
     r"""
     Rename tags to their newest (2024-09-30) aliases.
     """
     tag_aliases = get_tag_aliases()
-    tags = [(fmt2train(tag_alias) if ' ' in tag else tag_alias) if (tag_alias := tag_aliases.get(fmt2danbooru(tag), None)) else tag for tag in tags]
-    return tags
+    res = []
+    for tag in tags:
+        tagtype = get_tagtype_from_comment(tag)
+        tag = uncomment_tag(tag, tagtype)
+        tag = tag_aliases.get(fmt2danbooru(tag), tag)
+        if format == 'train':
+            tag = fmt2train(tag)
+        res.append(comment_tag(tag, tagtype) if tagtype else tag)
+    return res
+
+
+def parse_tags(tags: List[str]):
+    r"""
+    Parse tags into a list of tuples (tag, caption).
+    """
+    res = []
+    for tag in tags:
+        if (tagtype := get_tagtype_from_wiki(tag)):
+            tag = comment_tag(tag, tagtype)
+        res.append(tag)
+    return res

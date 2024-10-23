@@ -3,16 +3,15 @@ tqdm
 numpy
 pillow
 imagehash
-gradio>=4.31.3,<4.41.0
 datasets
 opencv-python
 absl-py
 ml-collections
-pyperclip
 huggingface-hub
+gradio==4.44.1
+pyperclip
 # onnxruntime-gpu # required by Waifu Tagger
 # onnxruntime # required by Waifu Tagger (cpu model only)
 # torch # required by Waifu Scorer and Waifu Tagger
 # torchvision
 # git+https://github.com/openai/CLIP.git # required by Waifu Scorer
-# googletrans # required by translator of UI

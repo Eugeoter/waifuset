@@ -23,7 +23,7 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         primary_key = kwargs.pop('primary_key', None)
         col2type = kwargs.pop('col2type', {})
         SQLite3Database.__init__(self, fp=kwargs.pop('fp', None) or source, read_only=read_only)  # set self.path here
-        self.register_to_config(fp=self.fp, read_only=read_only)
+        self.register_to_config(fp=self.fp)
         if tbname is None:
             if len(all_table_names := self.get_all_tablenames()) == 1:
                 tbname = all_table_names[0]
@@ -116,12 +116,39 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         """
         return get_row_dict(row, self.table.headers) if enable else row
 
+    def _get_batch_size_scheduler(self):
+        return [1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 1000000, 1000000, 2500000, 2500000, 5000000, 10000000, 25000000, 50000000, 100000000]
+
+    # def items(self, postprocess=True, sort_by_column=None, reverse=False) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    #     self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""))
+    #     for row in self.cursor.fetchall():
+    #         val = self.postprocessor(row, enable=postprocess)
+    #         key = val[self.table.primary_key] if postprocess else row[0]
+    #         yield key, val
+
     def items(self, postprocess=True, sort_by_column=None, reverse=False) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
-        self.cursor.execute(f"SELECT * FROM {self.table.name}" + (f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""))
-        for row in self.cursor.fetchall():
-            val = self.postprocessor(row, enable=postprocess)
-            key = val[self.table.primary_key] if postprocess else row[0]
-            yield key, val
+        offset = 0
+        query = f"SELECT * FROM {self.table.name}"
+        if sort_by_column:
+            query += f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}"
+        query += f" LIMIT {{}} OFFSET {{}}"
+
+        loop_count = 0
+        bs_scheduler = self._get_batch_size_scheduler()
+        while True:
+            batch_size = bs_scheduler[min(loop_count, len(bs_scheduler) - 1)]
+            loop_count += 1
+
+            self.cursor.execute(query.format(batch_size, offset))
+            rows = self.cursor.fetchall()
+            if not rows:
+                break
+            for row in rows:
+                val = self.postprocessor(row, enable=postprocess)
+                key = val[self.table.primary_key] if postprocess else row[0]
+                yield key, val
+
+            offset += batch_size
 
     def keys(self, sort_by_column: str = None, reverse=False) -> Generator[str, None, None]:
         order_clause = f" ORDER BY {sort_by_column} {'DESC' if reverse else 'ASC'}" if sort_by_column else ""
@@ -311,7 +338,6 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
 
     def subkeys(self, condition_or_column, statement=None, **kwargs) -> List[str]:
         if isinstance(condition_or_column, str) and statement is not None:
-            kwargs = {'postprocess': False, **kwargs}
             return [row[0] for row in self.table.select(condition_or_column, statement, **kwargs)]
         else:
             kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, **kwargs}
@@ -370,37 +396,38 @@ class SQLite3Dataset(SQLite3Database, DiskIOMixin, Dataset):
         select_rows = [self.postprocessor(row) for row in select_rows]
         select_dict = {row[self.table.primary_key]: row for row in select_rows}
         kwargs = {'tbname': self.table.name, 'primary_key': self.table.primary_key, 'name': self.name + '.subset', 'verbose': self.verbose, **kwargs}
+        logging.debug(f"subset_from_select: {kwargs}")
         return (type or self.__class__).from_dict(select_dict, **kwargs)
 
     def copy(self):
         raise NotImplementedError
 
     def select(self, column, statement, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select(column, statement, **kwargs), type=type)
+        return self.subset_from_select(self.table.select(column, statement), type=type, **kwargs)
 
     def select_func(self, func, *args, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_func(func, *args, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_func(func, *args), type=type, **kwargs)
 
     def select_like(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_like(column, value, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_like(column, value), type=type, **kwargs)
 
     def select_glob(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_glob(column, value, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_glob(column, value), type=type, **kwargs)
 
     def select_between(self, column, lower, upper, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_between(column, lower, upper, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_between(column, lower, upper), type=type, **kwargs)
 
     def select_in(self, column, values, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_in(column, values, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_in(column, values), type=type, **kwargs)
 
     def select_not_in(self, column, values, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_not_in(column, values, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_not_in(column, values), type=type, **kwargs)
 
     def select_is(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_is(column, value, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_is(column, value), type=type, **kwargs)
 
     def select_is_not(self, column, value, type=None, **kwargs) -> 'SQLite3Dataset':
-        return self.subset_from_select(self.table.select_is_not(column, value, **kwargs), type=type)
+        return self.subset_from_select(self.table.select_is_not(column, value), type=type, **kwargs)
 
     def add_columns(self, col2type: Dict[str, Any], **kwargs) -> 'SQLite3Dataset':
         if isinstance(col2type, list):

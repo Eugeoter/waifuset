@@ -193,5 +193,8 @@
     "labeling": "标注",
     "quality labeling": "质量标注",
     "tag processing": "标签处理",
-    "manual labeling": "人工标注"
+    "manual labeling": "人工标注",
+    "score ws4": "WS4评分",
+    "score as2": "AS2评分",
+    "alias": "别名"
 }

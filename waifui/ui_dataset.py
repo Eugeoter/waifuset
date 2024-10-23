@@ -6,6 +6,8 @@ from pathlib import Path
 from waifuset import Dataset, ParasiteDataset, DictDataset
 from waifuset import logging
 
+logger = logging.get_logger('UI')
+
 
 class UISubset(ParasiteDataset):
     page_size: int
@@ -125,7 +127,7 @@ def get_root(dataset: Dataset):
 def get_categories(dataset: Dataset):
     rootset = get_root(dataset)
 
-    logging.debug(f"Searching categories for {len(dataset)} images...")
+    logger.info(f"Getting all the categories from {logging.yellow(len(dataset))} data...")
 
     # find image keys without category
     if 'category' in dataset.headers:

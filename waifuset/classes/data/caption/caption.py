@@ -77,7 +77,7 @@ class Caption(Data):
             if tagtype := tagging.get_tagtype_from_wiki(tag):
                 self.tags[i] = tagging.comment_tag(tag, tagtype=tagtype)
                 d.setdefault(tagtype, []).append(tag)
-            elif tagtype := tagging.get_tagtype_from_tag(tag):
+            elif tagtype := tagging.get_tagtype_from_comment(tag):
                 d.setdefault(tagtype, []).append(tag)
         for tagtype in tagging.ALL_TAG_TYPES:
             setattr(self, tagtype, d.get(tagtype, []))

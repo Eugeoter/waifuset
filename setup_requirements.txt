@@ -3,8 +3,6 @@ tqdm
 numpy
 pillow
 imagehash
-# gradio>=4.31.3,<4.41.0
-# pyperclip
 datasets
 opencv-python
 absl-py
@@ -15,4 +13,3 @@ huggingface-hub
 # torch # required by Waifu Scorer and Waifu Tagger
 # torchvision
 # git+https://github.com/openai/CLIP.git # required by Waifu Scorer
-# googletrans # required by translator of UI

@@ -19,11 +19,14 @@ from waifuset import Caption
 from waifuset.utils import image_utils, class_utils
 from waifuset.classes.dataset.dataset_mixin import ToDiskMixin
 from waifuset.classes.data import data_utils
-from waifuset.components.waifu_tagger.utils import WD_REPOS
-from waifuset.components.waifu_scorer.utils import WS_REPOS
+from waifuset.components.waifu_tagger import WD_REPOS
+from waifuset.components.waifu_scorer import WS_REPOS
+from waifuset.components.aesthetic_shadow import AESTHETIC_SHADOW_REPOS
 from .emoji import Emoji
 from .ui_utils import *
 from .ui_dataset import UIDataset, UISubset
+
+logger = logging.get_logger('UI')
 
 
 class UIManager(class_utils.FromConfigMixin):
@@ -63,46 +66,68 @@ class UIManager(class_utils.FromConfigMixin):
         }
 
     def load_dataset(self):
-        with self.logger.timer('loading UI dataset'):
-            with self.logger.timer('load dataset', level='debug'):
-                dataset = FastDataset(self.dataset_source, verbose=self.verbose, **self.get_default_kwargs())
-            with self.logger.timer('patch dataset', level='debug'):
-                if any(col not in dataset.headers for col in ('image_key', 'category')):
-                    self.logger.print('patching image path base info')
-                    dataset.add_columns(['image_path', 'image_key', 'category', 'source', 'caption', 'description'])
-                    dataset.apply_map(patch_image_path_base_info)
-            dataset = UIDataset.from_dataset(
-                dataset,
-                host=dataset,
-                page_size=self.ui_page_size
-            )
-        # self.logger.print(dataset, no_prefix=True)
-        self.logger.print(f"dataset size: {len(dataset)}x{len(dataset.headers)}")
+        global COLUMN_TAGS, COLUMN_DESCRIPTION
+        tic = time.time()
+        dataset = FastDataset(self.dataset_source, verbose=self.verbose, **self.get_default_kwargs())
+        _time_load_original_dataset = time.time() - tic
+        tic2 = time.time()
+        if any(col not in dataset.headers for col in ('image_key', 'category')):
+            self.logger.info(f"Patching dataset columns \"{logging.yellow('image_key')}\" and \"{logging.yellow('category')}\"")
+            dataset.add_columns(['image_path', 'image_key', 'category', 'source', COLUMN_TAGS, COLUMN_DESCRIPTION])
+            dataset.apply_map(patch_image_path_base_info)
+        _time_patch_columns = time.time() - tic2
+        tic3 = time.time()
+        dataset = UIDataset.from_dataset(
+            dataset,
+            host=dataset,
+            page_size=self.ui_page_size
+        )
+        _time_convert_to_ui_dataset = time.time() - tic3
+        _time_load_dataset = time.time() - tic
+        self.logger.info(f"Loaded dataset in {logging.green(_time_load_dataset, '.2f')}s")
+        self.logger.info(f"  - Load original dataset: {logging.yellow(_time_load_original_dataset, '.2f')}s", no_prefix=True)
+        self.logger.info(f"  - Patch columns: {logging.yellow(_time_patch_columns, '.2f')}s", no_prefix=True)
+        self.logger.info(f"  - Convert to UI dataset: {logging.yellow(_time_convert_to_ui_dataset, '.2f')}s", no_prefix=True)
+
+        # Set COLUMN_TAGS
+        if 'caption' in dataset.headers:
+            COLUMN_TAGS = 'caption'
+        elif 'tags' in dataset.headers:
+            COLUMN_TAGS = 'tags'
+
+        # Set COLUMN_DESCRIPTION
+        if 'description' in dataset.headers:
+            COLUMN_DESCRIPTION = 'description'
+
+        self.logger.info(f"Full dataset size: {logging.yellow(len(dataset))}x{logging.yellow(len(dataset.headers))}")
         return dataset
 
     def setup(self):
-        self.logger.print("setting up UI")
-        with self.logger.timer('setup', level='debug'):
-            self.dataset = self.load_dataset()
-            with self.logger.timer('launch ui'):
-                self.ui = create_ui(
-                    univset=self.dataset,
-                    buffer=UIBuffer(),
-                    enable_category=self.enable_category,
-                    cpu_max_workers=self.cpu_max_workers,
-                    language=self.ui_language,
-                    render='full',
-                    hf_cache_dir=self.hf_cache_dir,
-                )
+        self.logger.info("Setting up UI...")
+        tic = time.time()
+        self.dataset = self.load_dataset()
+        self.ui = create_ui(
+            univset=self.dataset,
+            buffer=UIBuffer(),
+            enable_category=self.enable_category,
+            cpu_max_workers=self.cpu_max_workers,
+            language=self.ui_language,
+            render='full',
+            hf_cache_dir=self.hf_cache_dir,
+        )
+        _time_setup = time.time() - tic
+        self.logger.info(f"UI setup completed in {logging.green(_time_setup, '.2f')}s")
 
     def launch(self):
-        self.logger.print("launching UI")
+        tic = time.time()
         self.ui.queue().launch(
             share=self.share,
             server_port=self.gradio_sever_port,
             server_name=self.gradio_sever_name,
             max_threads=self.gradio_max_threads,
         )
+        _time_running = time.time() - tic
+        self.logger.info(f"UI ran for {logging.green(_time_running, '.2f')}s")
 
 
 def create_ui(
@@ -120,14 +145,23 @@ def create_ui(
     assert language in ('en', 'cn'), f"expected `language` to be one of ('en', 'cn'), but got {language}"
     assert render in ('full', 'demo'), f"expected `render` to be one of ('full', 'demo'), but got {render}"
 
-    logger = logging.get_logger('UI')
+    if enable_category and len(univset) >= 1000000:
+        logger.warning(
+            f"Dataset size is too large ({len(univset)}), "
+            f"please consider disabling the category feature to {logging.red('HUGELY')} improve the performance by setting `enable_category` to False."
+        )
+
     # logger.debug(f"initializing UI state")
     state = UIState(
         page_index=0,
         selected=UIGallerySelectData(),
     )
-    waifu_tagger = None
-    waifu_scorer = None
+    wd3_tagger = None
+    ws4_scorer = None
+    as2_scorer = None
+    scorer2score2quality = get_scorer2score2quality()
+    scorer_types = list(scorer2score2quality.keys())
+    quality_types = list(scorer2score2quality[scorer_types[0]].keys())
     # logger.debug(f"initializing custom tags")
     tagging.get_custom_tags()
 
@@ -561,10 +595,10 @@ def create_ui(
 
                                 with gr.Tab(label=translate('Tagger', language)):
                                     with gr.Row(variant='compact'):
-                                        wd_run_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                        wd3_run_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
 
                                     with gr.Row(variant='compact'):
-                                        wd_model = gr.Dropdown(
+                                        wd3_model = gr.Dropdown(
                                             label=translate('Model', language),
                                             choices=WD_REPOS,
                                             value=WD_REPOS[0],
@@ -574,7 +608,7 @@ def create_ui(
                                         )
 
                                     with gr.Row(variant='compact'):
-                                        wd_batch_size = gr.Number(
+                                        wd3_batch_size = gr.Number(
                                             value=1,
                                             label=translate('Batch Size', language),
                                             min_width=96,
@@ -582,7 +616,7 @@ def create_ui(
                                             scale=0,
                                         )
 
-                                        wd_overwrite_mode = gr.Radio(
+                                        wd3_overwrite_mode = gr.Radio(
                                             label=translate('Overwrite mode', language),
                                             choices=translate(['overwrite', 'ignore', 'append', 'prepend'], language),
                                             value=translate('overwrite', language),
@@ -591,52 +625,85 @@ def create_ui(
                                         )
 
                                     with gr.Row(variant='compact'):
-                                        wd_general_threshold = gr.Slider(
+                                        wd3_general_threshold = gr.Slider(
                                             label=translate('General Threshold', language),
                                             value=0.35,
                                             minimum=0,
                                             maximum=1,
                                             step=0.01,
                                         )
-                                        wd_character_threshold = gr.Slider(
+                                        wd3_character_threshold = gr.Slider(
                                             label=translate('Character Threshold', language),
-                                            value=0.35,
+                                            value=0.5,
                                             minimum=0,
                                             maximum=1,
                                             step=0.01,
                                         )
 
                                 with gr.Tab(label=translate('Scorer', language)):
-                                    with gr.Row(variant='compact'):
-                                        ws_add_score_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
-                                        ws_score2quality_btn = EmojiButton(Emoji.label, min_width=40)
-                                        ws_del_score_btn = EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
+                                    with gr.Tab(label=translate('Waifu Scorer V4', language)):
+                                        with gr.Row(variant='compact'):
+                                            ws4_add_score_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                            ws4_score2quality_btn = EmojiButton(Emoji.label, min_width=40)
+                                            ws4_del_score_btn = EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
 
-                                    with gr.Row(variant='compact'):
-                                        ws_model = gr.Dropdown(
-                                            label=translate('Model', language),
-                                            choices=WS_REPOS,
-                                            value=WS_REPOS[0],
-                                            multiselect=False,
-                                            allow_custom_value=True,
-                                            scale=1,
-                                        )
+                                        with gr.Row(variant='compact'):
+                                            ws_model = gr.Dropdown(
+                                                label=translate('Model', language),
+                                                choices=WS_REPOS,
+                                                value=WS_REPOS[0],
+                                                multiselect=False,
+                                                allow_custom_value=True,
+                                                scale=1,
+                                            )
 
-                                    with gr.Row(variant='compact'):
-                                        ws_batch_size = gr.Number(
-                                            value=1,
-                                            label=translate('Batch Size', language),
-                                            min_width=128,
-                                            precision=0,
-                                            scale=1,
-                                        )
-                                        ws_overwrite_mode = gr.Radio(
-                                            label=translate('Overwrite mode', language),
-                                            choices=translate(['overwrite', 'ignore'], language),
-                                            value=translate('overwrite', language),
-                                            scale=1,
-                                            min_width=128,
-                                        )
+                                        with gr.Row(variant='compact'):
+                                            ws_batch_size = gr.Number(
+                                                value=1,
+                                                label=translate('Batch Size', language),
+                                                min_width=128,
+                                                precision=0,
+                                                scale=1,
+                                            )
+                                            ws_overwrite_mode = gr.Radio(
+                                                label=translate('Overwrite mode', language),
+                                                choices=translate(['overwrite', 'ignore'], language),
+                                                value=translate('overwrite', language),
+                                                scale=1,
+                                                min_width=128,
+                                            )
+
+                                    with gr.Tab(label=translate('Aesthetic Shadow V2', language)):
+                                        with gr.Row(variant='compact'):
+                                            as2_add_score_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                            as2_score2quality_btn = EmojiButton(Emoji.label, min_width=40)
+                                            as2_del_score_btn = EmojiButton(Emoji.no_entry, variant='stop', min_width=40)
+
+                                        with gr.Row(variant='compact'):
+                                            aesthetic_shadow_model = gr.Dropdown(
+                                                label=translate('Model', language),
+                                                choices=AESTHETIC_SHADOW_REPOS,
+                                                value=AESTHETIC_SHADOW_REPOS[0],
+                                                multiselect=False,
+                                                allow_custom_value=True,
+                                                scale=1,
+                                            )
+
+                                        with gr.Row(variant='compact'):
+                                            aesthetic_shadow_batch_size = gr.Number(
+                                                value=1,
+                                                label=translate('Batch Size', language),
+                                                min_width=128,
+                                                precision=0,
+                                                scale=1,
+                                            )
+                                            aesthetic_shadow_overwrite_mode = gr.Radio(
+                                                label=translate('Overwrite mode', language),
+                                                choices=translate(['overwrite', 'ignore'], language),
+                                                value=translate('overwrite', language),
+                                                scale=1,
+                                                min_width=128,
+                                            )
 
                                 with gr.Tab(label=translate('Hasher', language)):
                                     with gr.Row(variant='compact'):
@@ -660,8 +727,8 @@ def create_ui(
                                                 value=translate(quality, language),
                                                 scale=1,
                                                 min_width=96,
-                                                variant='primary' if i == 0 else 'stop' if i == len(get_quality2score()) - 1 else 'secondary',
-                                            ) for i, quality in enumerate(get_quality2score())
+                                                variant='primary' if i == 0 else 'stop' if i == len(quality_types) - 1 else 'secondary',
+                                            ) for i, quality in enumerate(quality_types)
                                         ]
 
                     with gr.Row():
@@ -880,7 +947,7 @@ def create_ui(
                 r"""
                 Change current dataset to a new dataset whose images are all belong to one of the specified categories.
                 """
-                logger.info(f"loading subset from categories: {', '.join([logging.yellow(category) for category in categories])}")
+                logger.info(f"Loading subset from categories: {', '.join([logging.yellow(category) for category in categories])}")
                 tic = time.time()
 
                 # If no categories are selected, show the full dataset
@@ -898,7 +965,7 @@ def create_ui(
                 else:
                     catset = univset.subset(condition=lambda img_md: (img_md.get('category', None) or os.path.basename(os.path.dirname(img_md['image_path']))) in set(categories))
                 subset = load_subset_from_dataset(catset, new_page_index=1, sorting_methods=sorting_methods, reverse=reverse)
-                logger.info(f"loaded {logging.yellow(len(catset))} data from {logging.yellow(len(categories))} categories in {time.time() - tic:.3f}s")
+                logger.info(f"Loaded {logging.yellow(len(catset))} data from {logging.yellow(len(categories))} categories in {time.time() - tic:.3f}s")
                 return subset
 
             dataset_change_inputs = [cur_page_number, sorting_methods_dropdown, sorting_reverse_checkbox]
@@ -1002,7 +1069,7 @@ def create_ui(
             )
 
             cur_img_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, description, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
-            BASE_MD_KEYS = ('image_key', 'image_path', 'caption', 'description')
+            BASE_MD_KEYS = ('image_key', 'image_path', COLUMN_TAGS, COLUMN_DESCRIPTION)
             CAPTION_MD_KEYS = tagging.ALL_TAG_TYPES
 
             def get_other_md_keys(img_md=None):
@@ -1012,7 +1079,7 @@ def create_ui(
                 if img_key is None or img_key == '':
                     return None
                 img_md = univset[img_key]
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 return str(caption) if caption is not None else None
 
             def get_metadata_df(img_key, keys):
@@ -1029,7 +1096,7 @@ def create_ui(
                 if not img_key:
                     return None
                 img_md = univset[img_key]
-                return img_md.get('description', None)
+                return img_md.get(COLUMN_DESCRIPTION, None)
 
             def get_original_size(img_key):
                 if not img_key:
@@ -1209,10 +1276,10 @@ def create_ui(
                             res_batch = func([img_md for img_md in batch], *args, **extra_kwargs, **kwargs)  # list of img_md
                             return {img_md['image_key']: res_md for img_md, res_md in zip(batch, res_batch)}
 
-                    is_func_support_batch = func in (ws_scoring, wd_tagging)
+                    is_func_support_batch = func in (ws4_scoring, wd3_tagging, as2_scoring)
                     res_dict = {}
                     if do_batch:
-                        logger.print(f"batch processing: {formatted_func_name}")
+                        logger.info(f"batch processing: {formatted_func_name}")
                         editset = univset.get_curset()
                         if is_func_support_batch:
                             batch_size, args = args[0], args[1:]  # first arg is batch size
@@ -1260,7 +1327,7 @@ def create_ui(
                     for img_key, res_md in res_dict.items():
                         if res_md:
                             if not is_undo_redo:
-                                if is_write_caption and 'caption' in res_md and res_md['caption'] == univset[img_key]['caption']:
+                                if is_write_caption and COLUMN_TAGS in res_md and res_md[COLUMN_TAGS] == univset[img_key][COLUMN_TAGS]:
                                     continue  # skip if `write_caption` didn't change the caption
                                 if img_key not in buffer:
                                     buffer.do(img_key, univset[img_key])  # push the original data into the bottom of the buffer stack
@@ -1273,7 +1340,7 @@ def create_ui(
                         orig_header = univset.headers
                         # univset.update_header()
                         if univset.headers != orig_header:
-                            logger.info(f"add new columns: {', '.join(set(univset.headers) - set(orig_header))}")
+                            logger.info(f"Add new columns: {', '.join(logging.yellow(list(sorted(set(univset.headers) - set(orig_header)))))}")
                         ret = track_img_key(selected_img_key)
                         if do_batch:  # batch processing
                             ret.update({log_box: f"{formatted_func_name}: update {len(res_dict)} over {len(editset)}"})
@@ -1294,7 +1361,7 @@ def create_ui(
             )
 
             def write_caption(img_md, caption: str):
-                return {'caption': caption}
+                return {COLUMN_TAGS: caption}
 
             caption.blur(
                 fn=data_edition_handler(write_caption),
@@ -1332,12 +1399,12 @@ def create_ui(
                     if fp:
                         os.makedirs(os.path.dirname(fp), exist_ok=True)
                         rootset.dump(fp)
-                        logger.info(f"dump dataset to: {fp}")
+                        logger.info(f"Dump dataset to: {logging.yellow(fp)}")
                     else:
                         fp = rootset.fp
                         rootset.commit()
-                        logger.info(f"commit dataset to: {fp}")
-                    return f"saved: {fp}"
+                        logger.info(f"Commit dataset to: {logging.yellow(fp)}")
+                    return f"Saved to: {fp}"
                 # if rootset is not ToDiskMixin but save path is provided, try to dump the dataset to the save path
                 elif fp:
                     ext = os.path.splitext(fp)[1]
@@ -1346,8 +1413,8 @@ def create_ui(
                         return {log_box: f"unsupported extension: {ext}"}
                     os.makedirs(os.path.dirname(fp), exist_ok=True)
                     FastDataset.dump(rootset, fp)
-                    logger.info(f"dump dataset to: {fp}")
-                    return f"saved: {fp}"
+                    logger.info(f"Dump dataset to: {logging.yellow(fp)}")
+                    return f"Saved to: {fp}"
                 # if rootset is DirectoryDataset, save the dataset as txt caption files
                 elif rootset.__class__.__name__ == "DirectoryDataset":
                     def save_one(img_md):
@@ -1355,14 +1422,14 @@ def create_ui(
                         txt_path = img_path.with_suffix('.txt')
                         txt_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(txt_path, 'w', encoding='utf-8') as f:
-                            f.write(str(img_md['caption']))
+                            f.write(str(img_md[COLUMN_TAGS]))
                     save_one = track_progress(progress, desc=f"[{save_to_disk.__name__}]", total=len(buffer))(save_one)
                     for img_md in buffer.latests().values():
                         save_one(img_md)
-                    logger.info(f"save dataset to txt caption files")
-                    return f"saved"
+                    logger.info(f"Save dataset to txt files")
+                    return f"Succeed to txt files"
                 else:
-                    raise gr.Error(f"failed to save dataset: Dataset type not supported or invalid save path")
+                    raise gr.Error(f"Failed to save dataset: Dataset type not supported or invalid save path")
 
             save_btn.click(
                 fn=save_to_disk,
@@ -1377,7 +1444,7 @@ def create_ui(
                 """
                 max_log_caption_length = 50
                 pyperclip.copy(text)
-                return f"copied: {text if len(text) < max_log_caption_length else text[:max_log_caption_length] + '...'}"
+                return f"Copied text: {text if len(text) < max_log_caption_length else text[:max_log_caption_length] + '...'}"
 
             copy_caption_btn.click(
                 fn=copy_to_clipboard,
@@ -1388,7 +1455,7 @@ def create_ui(
 
             def copy_to_clipboard_as_prompt(text):
                 tags = text.split(', ')
-                tags = [tagging.fmt2awa(tag) for tag in tags]
+                tags = [tagging.fmt2escape(tagging.fmt2std(tagging.uncomment_tag(tag))) for tag in tags]
                 text = ', '.join(tags)
                 return copy_to_clipboard(text)
 
@@ -1422,7 +1489,7 @@ def create_ui(
                 return any(re.search(r'%.*%', tag) for tag in tags)
 
             def add_tags(img_md, tags, do_append):
-                caption = Caption(img_md.get('caption', None))
+                caption = Caption(img_md.get(COLUMN_TAGS, None))
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(img_md, tag) for tag in tags]
@@ -1432,10 +1499,10 @@ def create_ui(
                     caption += tags
                 else:
                     caption = tags + caption
-                return {'caption': caption.text}
+                return {COLUMN_TAGS: caption.text}
 
             def remove_tags(img_md, tags, do_regex):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
                 caption = Caption(caption)
@@ -1452,7 +1519,7 @@ def create_ui(
                     except re.error as e:
                         raise gr.Error(f"invalid regex: {e}")
                 caption -= tags
-                return {'caption': caption.text}
+                return {COLUMN_TAGS: caption.text}
 
             # ========================================= Custom Tagging ========================================= #
 
@@ -1471,7 +1538,7 @@ def create_ui(
                 )
 
             def replace_tag(img_md, old, new, match_tag, do_regex):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return
                 caption = Caption(caption)
@@ -1489,7 +1556,7 @@ def create_ui(
                         caption[old] = new
                     else:
                         caption = Caption(caption.text.replace(old, new))
-                return {'caption': caption.text}
+                return {COLUMN_TAGS: caption.text}
 
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
@@ -1551,12 +1618,12 @@ def create_ui(
             )
 
             def parse_caption_attrs(img_md):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
                 caption = Caption(caption).parsed()
                 attr_dict = {}
-                attr_dict['caption'] = caption.text
+                attr_dict[COLUMN_TAGS] = caption.text
                 attrs = caption.attrs
                 attrs.pop('tags')
                 for attr, value in attrs.items():
@@ -1571,10 +1638,10 @@ def create_ui(
             )
 
             def sort_caption(img_md):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
-                return {'caption': Caption(caption).sorted().text}
+                return {COLUMN_TAGS: Caption(caption).sorted().text}
 
             sort_caption_btn.click(
                 fn=data_edition_handler(sort_caption),
@@ -1584,7 +1651,7 @@ def create_ui(
             )
 
             def formalize_caption(img_md, formats):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
                 if isinstance(formats, str):
@@ -1594,7 +1661,7 @@ def create_ui(
                 caption = Caption(caption)
                 for fmt in formats:
                     caption.format(FORMAT_PRESETS[fmt])
-                return {'caption': caption.text}
+                return {COLUMN_TAGS: caption.text}
 
             formalize_caption_btn.click(
                 fn=data_edition_handler(formalize_caption),
@@ -1604,10 +1671,10 @@ def create_ui(
             )
 
             def deduplicate_caption(img_md):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
-                return {'caption': Caption(caption).deduplicated().text}
+                return {COLUMN_TAGS: Caption(caption).deduplicated().text}
 
             deduplicate_caption_btn.click(
                 fn=data_edition_handler(deduplicate_caption),
@@ -1617,10 +1684,10 @@ def create_ui(
             )
 
             def deimplicate_caption(img_md):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
-                return {'caption': Caption(caption).deimplicated().text}
+                return {COLUMN_TAGS: Caption(caption).deimplicated().text}
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deimplicate_caption),
@@ -1630,12 +1697,12 @@ def create_ui(
             )
 
             def defeature_caption(img_md, feature_type, freq_thres):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
                 if language != 'en':
                     feature_type = translate(feature_type, 'en')
-                return {'caption': Caption(caption).defeatured(feature_type_to_frequency_threshold={feature_type: freq_thres}).text}
+                return {COLUMN_TAGS: Caption(caption).defeatured(feature_type_to_frequency_threshold={feature_type: freq_thres}).text}
 
             defeature_caption_btn.click(
                 fn=data_edition_handler(defeature_caption),
@@ -1645,12 +1712,12 @@ def create_ui(
             )
 
             def alias_caption(img_md):
-                caption = img_md.get('caption', None)
+                caption = img_md.get(COLUMN_TAGS, None)
                 if caption is None:
                     return None
                 caption = Caption(caption)
                 caption.alias()
-                return {'caption': caption.text}
+                return {COLUMN_TAGS: caption.text}
 
             alias_caption_btn.click(
                 fn=data_edition_handler(alias_caption),
@@ -1661,8 +1728,8 @@ def create_ui(
 
             # ========================================= WD ========================================= #
 
-            def wd_tagging(batch: List[DataDict], pretrained_model_name_or_path, general_threshold, character_threshold, overwrite_mode) -> List[ResultDict]:
-                nonlocal waifu_tagger
+            def wd3_tagging(batch: List[DataDict], pretrained_model_name_or_path, general_threshold, character_threshold, overwrite_mode) -> List[ResultDict]:
+                nonlocal wd3_tagger
                 if language != 'en':  # translate overwrite_mode
                     overwrite_mode = translate(overwrite_mode, 'en')
                 if overwrite_mode not in ('ignore', 'overwrite', 'append', 'prepend'):  # check overwrite_mode
@@ -1672,88 +1739,91 @@ def create_ui(
                 if not isinstance(batch, list):
                     batch = [batch]
                 if overwrite_mode == 'ignore':
-                    batch = [img_md for img_md in batch if img_md['caption'] is None]
+                    batch = [img_md for img_md in batch if img_md[COLUMN_TAGS] is None]
                     if len(batch) == 0:
                         return []
 
-                if waifu_tagger is None or (waifu_tagger and waifu_tagger.model_name != pretrained_model_name_or_path):
+                if wd3_tagger is None or (wd3_tagger and wd3_tagger.model_name != pretrained_model_name_or_path):
                     try:
                         from waifuset.components.waifu_tagger.waifu_tagger import WaifuTagger
                     except ModuleNotFoundError as e:
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
-                    waifu_tagger = WaifuTagger.from_pretrained(pretrained_model_name_or_path, cache_dir=hf_cache_dir)
-                    waifu_tagger.model_name = pretrained_model_name_or_path
+                    wd3_tagger = WaifuTagger.from_pretrained(pretrained_model_name_or_path, cache_dir=hf_cache_dir)
+                    wd3_tagger.model_name = pretrained_model_name_or_path
+                else:
+                    logger.info(f"Reuse model: {wd3_tagger.model_name}")
 
                 batch_images = [Image.open(img_md['image_path']) for img_md in batch]
-                batch_pred_tags = waifu_tagger(batch_images, general_threshold=general_threshold, character_threshold=character_threshold)
+                batch_pred_tags = wd3_tagger(batch_images, general_threshold=general_threshold, character_threshold=character_threshold)
                 batch_results = []
                 for img_md, pred_tags in zip(batch, batch_pred_tags):
                     if overwrite_mode == 'overwrite' or overwrite_mode == 'ignore':
                         tags = pred_tags
                     elif overwrite_mode == 'append':
-                        tags = img_md.get('caption', '').split(', ') + pred_tags
+                        tags = img_md.get(COLUMN_TAGS, '').split(', ') + pred_tags
                     else:  # elif overwrite_mode == 'prepend':
-                        tags = pred_tags + img_md.get('caption', []).split(', ')
-                    batch_results.append({'caption': ', '.join(tags)})
-                return batch
+                        tags = pred_tags + img_md.get(COLUMN_TAGS, []).split(', ')
+                    batch_results.append({COLUMN_TAGS: ', '.join(tags)})
+                return batch_results
 
-            wd_run_btn.click(
-                fn=data_edition_handler(wd_tagging),
-                inputs=[cur_img_key, general_edit_opts, wd_batch_size, wd_model, wd_general_threshold, wd_character_threshold, wd_overwrite_mode],
+            wd3_run_btn.click(
+                fn=data_edition_handler(wd3_tagging),
+                inputs=[cur_img_key, general_edit_opts, wd3_batch_size, wd3_model, wd3_general_threshold, wd3_character_threshold, wd3_overwrite_mode],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
             )
 
             # ========================================= WS ========================================= #
-            def ws_scoring(batch: List[DataDict], pretrained_model_name_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
+            def ws4_scoring(batch: List[DataDict], pretrained_model_name_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
                 if language != 'en':
                     overwrite_mode = translate(overwrite_mode, 'en')
 
-                nonlocal waifu_scorer
-                if waifu_scorer is None or (waifu_scorer and waifu_scorer.model_name != pretrained_model_name_or_path):
+                nonlocal ws4_scorer
+                if ws4_scorer is None or (ws4_scorer and ws4_scorer.model_name != pretrained_model_name_or_path):
                     try:
                         import torch
                         from waifuset import WaifuScorer
                     except ModuleNotFoundError as e:
                         missing_package_name = e.name
                         raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
-                    waifu_scorer = WaifuScorer.from_pretrained(pretrained_model_name_or_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
-                    waifu_scorer.model_name = pretrained_model_name_or_path
+                    ws4_scorer = WaifuScorer.from_pretrained(pretrained_model_name_or_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
+                    ws4_scorer.model_name = pretrained_model_name_or_path
 
                 if not isinstance(batch, list):
                     batch = [batch]
-                batch = [img_md for img_md in batch if os.path.isfile(img_md['image_path']) and not (overwrite_mode == 'ignore' and img_md.get('aesthetic_score', None) is not None)]
+                batch = [img_md for img_md in batch if os.path.isfile(img_md['image_path']) and not (overwrite_mode == 'ignore' and img_md.get('score_ws4', None) is not None)]
                 if len(batch) == 0:
                     return []
                 images = [Image.open(img_md['image_path']) for img_md in batch]
-                aesthetic_scores = waifu_scorer(images)
+                aesthetic_scores = ws4_scorer(images)
                 if isinstance(aesthetic_scores, float):  # single output
                     aesthetic_scores = [aesthetic_scores]
-                return [{'aesthetic_score': score} for score in aesthetic_scores]
+                return [{'score_ws4': score} for score in aesthetic_scores]
 
-            ws_add_score_btn.click(
-                fn=data_edition_handler(ws_scoring),
+            ws4_add_score_btn.click(
+                fn=data_edition_handler(ws4_scoring),
                 inputs=[cur_img_key, general_edit_opts, ws_batch_size, ws_model, ws_overwrite_mode],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
                 cancels=cancel_event,
             )
 
-            def set_aesthetic_score(img_md, score):
-                return {'aesthetic_score': score}
+            def set_score_ws4(img_md, score):
+                return {'score_ws4': score}
 
-            ws_del_score_btn.click(
-                fn=data_edition_handler(partial(set_aesthetic_score, score=None)),
+            ws4_del_score_btn.click(
+                fn=data_edition_handler(partial(set_score_ws4, score=None)),
                 inputs=[cur_img_key, general_edit_opts],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
             )
 
             def set_quality(img_md, quality):
+                logging.debug(f"set quality: {quality}")
                 return {'quality': quality}
 
-            for quality, quality_label_btn in zip(get_quality2score().keys(), quality_label_btns):
+            for quality, quality_label_btn in zip(quality_types, quality_label_btns):
                 quality_label_btn.click(
                     fn=data_edition_handler(partial(set_quality, quality=quality)),
                     inputs=[cur_img_key, general_edit_opts],
@@ -1761,17 +1831,75 @@ def create_ui(
                     concurrency_limit=1,
                 )
 
-            def set_score_to_quality(img_md):
-                aesthetic_score = img_md.get('aesthetic_score', None)
-                if aesthetic_score is None:
+            def set_ws4_score_to_quality(img_md):
+                score = img_md.get('score_ws4', None)
+                if score is None:
                     return img_md
-                if not 0 <= aesthetic_score <= 10:
-                    raise gr.Error(f"invalid score: {aesthetic_score}")
-                quality = convert_score2quality(aesthetic_score)
+                quality = convert_score2quality(score, scorer_type='ws4')
                 return set_quality(img_md, quality)
 
-            ws_score2quality_btn.click(
-                fn=data_edition_handler(set_score_to_quality),
+            ws4_score2quality_btn.click(
+                fn=data_edition_handler(set_ws4_score_to_quality),
+                inputs=[cur_img_key, general_edit_opts],
+                outputs=cur_img_key_change_listeners,
+                concurrency_limit=1,
+            )
+
+            # ========================================= Aesthetic Shadow ========================================= #
+
+            def as2_scoring(batch: List[DataDict], pretrained_model_name_or_path: str, overwrite_mode: Literal['ignore', 'overwrite', 'append', 'prepend']) -> List[ResultDict]:
+                if language != 'en':
+                    overwrite_mode = translate(overwrite_mode, 'en')
+
+                nonlocal as2_scorer
+                if as2_scorer is None or (as2_scorer and as2_scorer.model_name != pretrained_model_name_or_path):
+                    try:
+                        import torch
+                        from waifuset import AestheticShadow
+                    except ModuleNotFoundError as e:
+                        missing_package_name = e.name
+                        raise gr.Error(f"Missing package {missing_package_name}. Please read README.md for installation instructions.")
+                    as2_scorer = AestheticShadow.from_pretrained(pretrained_model_name_or_path, device='cuda' if torch.cuda.is_available() else 'cpu', verbose=True)
+                    as2_scorer.model_name = pretrained_model_name_or_path
+
+                if not isinstance(batch, list):
+                    batch = [batch]
+                batch = [img_md for img_md in batch if os.path.isfile(img_md['image_path']) and not (overwrite_mode == 'ignore' and img_md.get('score_ws4', None) is not None)]
+                if len(batch) == 0:
+                    return []
+                images = [Image.open(img_md['image_path']) for img_md in batch]
+                score = as2_scorer(images)
+                if isinstance(score, float):  # single output
+                    score = [score]
+                return [{'score_as2': score} for score in score]
+
+            as2_add_score_btn.click(
+                fn=data_edition_handler(as2_scoring),
+                inputs=[cur_img_key, general_edit_opts, aesthetic_shadow_batch_size, aesthetic_shadow_model, aesthetic_shadow_overwrite_mode],
+                outputs=cur_img_key_change_listeners,
+                concurrency_limit=1,
+                cancels=cancel_event,
+            )
+
+            def set_score_as2(img_md, score):
+                return {'score_as2': score}
+
+            as2_del_score_btn.click(
+                fn=data_edition_handler(partial(set_score_as2, score=None)),
+                inputs=[cur_img_key, general_edit_opts],
+                outputs=cur_img_key_change_listeners,
+                concurrency_limit=1,
+            )
+
+            def set_as2_score_to_quality(img_md):
+                aesthetic_score = img_md.get('score_as2', None)
+                if aesthetic_score is None:
+                    return img_md
+                quality = convert_score2quality(aesthetic_score, scorer_type='as2')
+                return set_quality(img_md, quality)
+
+            as2_score2quality_btn.click(
+                fn=data_edition_handler(set_as2_score_to_quality),
                 inputs=[cur_img_key, general_edit_opts],
                 outputs=cur_img_key_change_listeners,
                 concurrency_limit=1,
@@ -1864,9 +1992,9 @@ def create_ui(
                     if queryset is None or len(queryset) == 0:
                         return {log_box: f"empty query range"}
 
-                    logger.info(f"querying: {funcname}")
-                    logger.info(f"  - options: {', '.join([logging.yellow(opt) for opt in opts])}", no_prefix=True)
-                    logger.info(f"  - query range: {len(queryset)}", no_prefix=True)
+                    logger.info(f"Searching with entry: {logging.yellow(funcname)}")
+                    logger.info(f"  - Options: {', '.join([logging.yellow(opt) for opt in opts])}", no_prefix=True)
+                    logger.info(f"  - Searching size: {logging.yellow(len(queryset))}", no_prefix=True)
                     tic = time.time()
 
                     # query start
@@ -1876,7 +2004,7 @@ def create_ui(
                         return {log_box: f"invalid query result"}
                     if do_complement:
                         resset = UISubset.from_keys([img_key for img_key in queryset.keys() if img_key not in resset], host=univset)
-                    logger.print(f"{funcname} found: {len(resset)}/{len(queryset)} in {time.time() - tic:.2f}s")
+                    logger.info(f"Searched: {logging.yellow(len(resset))}/{len(queryset)} in {time.time() - tic:.2f}s")
                     result = load_subset_from_dataset(resset, sorting_methods=sorting_methods, reverse=reverse)
                     result.update({log_box: f"[{funcname}] found: {len(resset)}/{len(queryset)}"})
                     return result
@@ -1915,7 +2043,7 @@ def create_ui(
                     if do_regex:
                         result_keys = [row[0] for row in rootset.table.select_func(match, '$' + attr + '$', pattern) if row[0] in queryset]
                     else:
-                        result_keys = [row[0] for row in rootset.table.select_is(attr, pattern) if row[0] in queryset]
+                        result_keys = [row[0] for row in rootset.table.select_like(attr, pattern) if row[0] in queryset]
                 # else, use python query
                 else:
                     result_keys = queryset.subkeys(lambda img_md: match(pattern, img_md.get(attr, '')))

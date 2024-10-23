@@ -10,6 +10,9 @@ from waifuset import logging, tagging
 WAIFUI_ROOT = Path(__file__).parent
 JSON_ROOT = WAIFUI_ROOT / 'json'
 
+COLUMN_TAGS = 'tags'
+COLUMN_DESCRIPTION = 'description'
+
 logger = logging.get_logger('UI')
 
 
@@ -20,54 +23,39 @@ def search_file(filename, search_path):
     return None
 
 
-COL2TYPE_BASE = {
-    'image_key': str,
-    'image_path': str,
-    'description': str,
-}
-
-COL2TYPE_EXTRA = {
-    'source': str,
-    'category': str,
-    'original_size': str,
-    'perceptual_hash': str,
-    'aesthetic_score': float,
-    'safe_rating': float,
-    'date': str,
-}
-
-COL2TYPE_CAPTION = {
-    'caption': str,
-    **{tagtype: str for tagtype in tagging.ALL_TAG_TYPES}
-}
-
-COL2TYPE = {
-    **COL2TYPE_BASE,
-    **COL2TYPE_EXTRA,
-    **COL2TYPE_CAPTION,
-}
-
 SORTING_METHODS: Dict[str, Callable] = {}
 
 FORMAT_PRESETS = {
     'train': tagging.fmt2train,
-    'prompt': tagging.fmt2prompt,
+    'prompt': tagging.fmt2std,
     'danbooru': tagging.fmt2danbooru,
     'awa': tagging.fmt2awa,
     'unescape': tagging.fmt2unescape,
     'escape': tagging.fmt2escape,
 }
 
-SCORE2QUALITY_PATH = search_file('quality2score.json', JSON_ROOT)
-QUALITY2SCORE = None
+SCORER2SCORE2QUALITY_FILENAME = 'score2quality.json'
+SCORER2SCORE2QUALITY_PATH = search_file(SCORER2SCORE2QUALITY_FILENAME, JSON_ROOT)
+if SCORER2SCORE2QUALITY_PATH is None:
+    logger.warning(
+        "Cannot find the \"{}\" file from {}. The quality score will not be displayed.".format(
+            SCORER2SCORE2QUALITY_FILENAME,
+            logging.yellow(f"{JSON_ROOT}/.../{SCORER2SCORE2QUALITY_FILENAME}.json")
+        ))
+else:
+    # logger.debug(f'Find score2quality file at: {logging.yellow(SCORE2QUALITY_PATH)}')
+    pass
+SCORER2SCORE2QUALITY = None
 
 TRANSLATION_EN2CN = None
 TRANSLATION_CN2EN = None
-TRANSLATION_TABLE_PATH = search_file('translation_cn.json', JSON_ROOT)
+TRANSLATION_TABLE_FILENAME = 'translation_cn.json'
+TRANSLATION_TABLE_PATH = search_file(TRANSLATION_TABLE_FILENAME, JSON_ROOT)
 if TRANSLATION_TABLE_PATH is None:
-    logger.warning(f'missing translation file under {JSON_ROOT}: translation_cn.json')
+    logger.warning("Cannot find the translation file from {}. The language is set to English".format(logging.yellow(f"{JSON_ROOT}/.../{TRANSLATION_TABLE_FILENAME}")))
 else:
-    logger.info(f'located translation file at: {TRANSLATION_TABLE_PATH}')
+    # logger.debug(f'Find translation file at: {logging.yellow(TRANSLATION_TABLE_PATH)}')
+    pass
 
 # typing
 DataDict = Dict[str, Any]
@@ -143,10 +131,10 @@ class UIGallerySelectData:
         self.index = index
         self.key = key
 
-    @overload
+    @ overload
     def select(self, selected: gr.SelectData): ...
 
-    @overload
+    @ overload
     def select(self, selected: Tuple[int, str]): ...
 
     def select(self, selected: Union[gr.SelectData, Tuple[int, str]]):
@@ -202,11 +190,11 @@ def init_cn_translation():
     except FileNotFoundError:
         TRANSLATION_EN2CN = {}
         TRANSLATION_CN2EN = {}
-        logger.warning(f'missing translation file: {TRANSLATION_TABLE_PATH}')
+        logger.warning(f'Cannot find the translation file from {logging.yellow(f"{JSON_ROOT}/.../{TRANSLATION_TABLE_FILENAME}")}')
     except Exception as e:
         TRANSLATION_EN2CN = {}
         TRANSLATION_CN2EN = {}
-        logger.warning('translation_cn.json error: %s' % e)
+        logger.warning(f'Failed to load the translation file. Error: {e}')
 
 
 def en2cn(text):
@@ -237,25 +225,28 @@ def translate(text, language='en'):
         raise TypeError(f'Unsupported type: {type(text)}')
 
 
-def get_quality2score():
-    global QUALITY2SCORE
-    if QUALITY2SCORE is not None:
-        return QUALITY2SCORE
+def get_scorer2score2quality():
+    global SCORER2SCORE2QUALITY
+    if SCORER2SCORE2QUALITY is not None:
+        return SCORER2SCORE2QUALITY
     try:
-        with open(SCORE2QUALITY_PATH, 'r', encoding='utf-8') as f:
-            QUALITY2SCORE = json.load(f)
-        QUALITY2SCORE = {k: v for k, v in sorted(QUALITY2SCORE.items(), key=lambda item: item[1], reverse=True)}
+        with open(SCORER2SCORE2QUALITY_PATH, 'r', encoding='utf-8') as f:
+            SCORER2SCORE2QUALITY = json.load(f)
+        SCORER2SCORE2QUALITY = {name: {k: v for k, v in sorted(quality2score.items(), key=lambda item: item[1], reverse=True)} for name, quality2score in SCORER2SCORE2QUALITY.items()}
     except FileNotFoundError:
-        QUALITY2SCORE = {}
-        raise gr.Error(f'missing score2quality file: {SCORE2QUALITY_PATH}')
+        SCORER2SCORE2QUALITY = {}
+        raise gr.Error('Cannot find the quality2score file from {}'.format(logging.yellow(f"{JSON_ROOT}/.../quality2score.json")))
     except Exception as e:
-        QUALITY2SCORE = {}
-        raise gr.Error('score2quality.json error: %s' % e)
-    return QUALITY2SCORE
+        SCORER2SCORE2QUALITY = {}
+        raise gr.Error('Failed to load `score2quality.json`. Error: %s' % e)
+    return SCORER2SCORE2QUALITY
 
 
-def convert_score2quality(score):
-    score2quality = get_quality2score()
+def convert_score2quality(score, scorer_type: Literal['ws4', 'as2']):
+    scorer2score2quality = get_scorer2score2quality()
+    score2quality = scorer2score2quality.get(scorer_type)
+    if score2quality is None:
+        return None
     for quality, score_range in score2quality.items():
         if score >= score_range:
             return quality
@@ -263,7 +254,7 @@ def convert_score2quality(score):
 
 
 def kwargs_setter(func, **preset_kwargs):
-    @wraps(func)
+    @ wraps(func)
     def wrapper(*args, **kwargs):
         kwargs.update(preset_kwargs)
         return func(*args, **kwargs)

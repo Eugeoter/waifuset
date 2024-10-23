@@ -9,7 +9,7 @@ from typing import Dict, List, Union
 from huggingface_hub import hf_hub_download
 
 from ...utils import image_utils
-from ... import logging
+from ... import logging, tagging
 
 logger = logging.get_logger("waifu_tagger")
 
@@ -157,7 +157,7 @@ class WaifuTagger(object):
             # Get top general tag
             general_tags = postprocess_tags(general_tags)
             character_tags = postprocess_tags(character_tags)
-            character_tags = [f"character:{tag}" for tag in character_tags]
+            character_tags = [tagging.comment_tag(tag, tagtype='character') for tag in character_tags]
 
             tags = character_tags + general_tags
             batch_captions.append(tags)
