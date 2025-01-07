@@ -9,9 +9,12 @@ def get_config():
     gradio_sever_port: Optional[int] = None
     gradio_sever_name: Optional[str] = None
     gradio_max_threads: Optional[int] = 40
+    tags_column: Optional[str] = 'tags'
+    description_column: Optional[str] = 'description'
     ui_language: Literal['en', 'cn'] = 'cn'
     ui_page_size: int = 40
     cpu_max_workers: int = 1
+    enable_category: bool = None  # Auto
     verbose: bool = True
 
     return config_utils.config(
@@ -20,9 +23,12 @@ def get_config():
         gradio_sever_port=gradio_sever_port,
         gradio_sever_name=gradio_sever_name,
         gradio_max_threads=gradio_max_threads,
+        tags_column=tags_column,
+        description_column=description_column,
         ui_language=ui_language,
         ui_page_size=ui_page_size,
         cpu_max_workers=cpu_max_workers,
+        enable_category=enable_category,
         verbose=verbose,
     )
 

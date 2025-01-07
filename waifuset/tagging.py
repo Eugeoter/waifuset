@@ -1,6 +1,7 @@
 import re
 import json
 import os
+from enum import Enum
 from huggingface_hub import hf_hub_download
 from typing import Literal, List, Union, Dict, Callable
 from . import logging
@@ -9,6 +10,10 @@ logger = logging.get_logger('tagging')
 
 
 def search_file(filename, search_path):
+    r"""
+    Search for a file in a directory recursively.
+    Returns the path of the file if found, otherwise None.
+    """
     for root, dirs, files in os.walk(search_path):
         if filename in files:
             return os.path.abspath(os.path.join(root, filename))
@@ -16,7 +21,7 @@ def search_file(filename, search_path):
 
 
 WIKI_REPO_ID = 'Eugeoter/waifuset-wiki'
-WIKI_DIR = None
+WIKI_DIR = 'wiki'
 WIKI_CACHE_DIR = None
 
 WIKI_FILES = {
@@ -87,10 +92,12 @@ WIKI_FILES = {
     },
 }
 
+# Constants for tag parsing
 SEP_TAGTYPE = '*'
 SEP_TAG = ', '
 SEP_WORD = '_'
 
+# Regex patterns for tag parsing
 ALL_TAG_TYPES = ('artist', 'character', 'style', 'quality', 'aesthetic', 'copyright', 'meta', 'safety', 'year', 'period')
 
 PATTERN_ARTIST_TAG = r"(?:^|,\s)(by[\s_]([\w\d][\w_\-.\s()\\]*))"  # match `by xxx`
@@ -126,6 +133,7 @@ REGEX_SAFETY = re.compile(PATTERN_SAFETY)
 REGEX_YEAR = re.compile(PATTERN_YEAR)
 REGEX_PERIOD = re.compile(PATTERN_PERIOD)
 
+REGEX_BAD_COLON = re.compile(r'(\w+:)([^_])')
 
 CUSTOM_TAGS = None
 QUALITY_TAGS = None
@@ -185,9 +193,6 @@ def fmt2unescape(tag):
 
 def fmt2escape(tag):
     return re.sub(r'(?<!\\)(\()(.*)(?<!\\)(\))', r'\\\1\2\\\3', tag)  # negative lookbehind
-
-
-REGEX_BAD_COLON = re.compile(r'(\w+:)([^_])')
 
 
 def fmt2danbooru(tag):
@@ -254,6 +259,11 @@ def comment_tag(tag: str, tagtype=None):
 # ======================================== tagtype ========================================
 
 
+def set_sep_tagtype(sep):
+    global SEP_TAGTYPE
+    SEP_TAGTYPE = sep
+
+
 def get_tags_from_tagtype(tagtype: Literal['artist', 'character', 'style', 'aesthetic', 'copyright', 'quality', 'meta', 'safety', 'year', 'period', 'helpful_meta', 'helpless_meta']) -> Union[set, None]:
     r"""
     Get specific tagset.
@@ -306,6 +316,20 @@ def get_tagtype_from_wiki(tag: str):
 
 def get_tagtype(tag: str):
     return get_tagtype_from_comment(tag) or get_tagtype_from_wiki(tag)
+
+
+class TagType(Enum):
+    GENERAL = 'general'
+    ARTIST = 'artist'
+    CHARACTER = 'character'
+    COPYRIGHT = 'copyright'
+    META = 'meta'
+    QUALITY = 'quality'
+    SAFETY = 'safety'
+    YEAR = 'year'
+    PERIOD = 'period'
+    STYLE = 'style'
+    AESTHETIC = 'aesthetic'
 
 # ======================================== tagset functions ========================================
 
@@ -619,7 +643,7 @@ def get_character_features(character: str, feature_type_to_frequency_threshold: 
     if 'sex' in feature_type_to_frequency_threshold:
         ch2sex = get_ch2sex()
         threshold = feature_type_to_frequency_threshold['sex']
-        features.extend([feature for feature, ratio in ch2sex.get(character, {}).items() if ratio >= threshold])
+        features.extend(['1' + feature for feature, ratio in ch2sex.get(character, {}).items() if ratio >= threshold])
     return features
 
 
@@ -640,7 +664,7 @@ def get_character_feature2ratio(character: str, feature_types: List[Literal['phy
         features.update(ch2clothes.get(character, {}))
     if 'sex' in feature_types:
         ch2sex = get_ch2sex()
-        features.update(ch2sex.get(character, {}))
+        features.update({f'1{feature}': ratio for feature, ratio in ch2sex.get(character, {}).items()})
     return features
 
 # ======================================== tag priority functions ========================================

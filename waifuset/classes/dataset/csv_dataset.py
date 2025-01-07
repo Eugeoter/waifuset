@@ -38,7 +38,7 @@ class CSVDataset(DictDataset, DiskIOMixin):
         kwargs = {**config, **kwargs}
         return cls(data, **kwargs)
 
-    def dump(self, fp, mode='w', encoding='utf-8'):
+    def dump(self, fp, mode='w', encoding='utf-8', columns=None):
         if mode == 'a' and os.path.exists(fp):
             with open(fp, 'r', encoding=encoding) as f:
                 reader = csv.DictReader(f)
@@ -47,6 +47,6 @@ class CSVDataset(DictDataset, DiskIOMixin):
         else:
             data = self.data
         with open(fp, 'w', encoding=encoding) as f:
-            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer = csv.DictWriter(f, fieldnames=columns or self.column_names)
             writer.writeheader()
             writer.writerows(data.values())

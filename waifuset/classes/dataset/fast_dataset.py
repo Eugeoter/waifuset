@@ -1,9 +1,8 @@
 import requests
 import os
-import math
 import contextlib
 from pathlib import Path
-from typing import Dict, List, Any, Literal, Union, Tuple, Iterable, Callable
+from typing import Dict, List, Any, Literal, Union, Tuple, Iterable
 from .auto_dataset import AutoDataset
 from .dict_dataset import DictDataset
 from .sqlite3_dataset import SQLite3Dataset
@@ -34,12 +33,15 @@ DEFAULT_KWARGS = {
     'max_retries': None,
 
     'annotations': ['instances', 'captions'],
+
+    'additional_metadata_column': 'meta_info',
 }
 
 
 class FastDataset(AutoDataset):
     def __new__(cls, *source, dataset_cls: type = None, merge_mode: Literal['union', 'intersection', 'update'] = 'union', **default_kwargs) -> Dataset:
         source = parse_source_input(source)
+        check_parsed_source(source)
         if merge_mode == 'chain':
             from .chain_dataset import ChainDataset
             return ChainDataset(*source, dataset_cls=dataset_cls, merge_mode=merge_mode, **default_kwargs)
@@ -139,6 +141,14 @@ def load_fast_dataset(
                         remove_columns=src.pop('remove_columns', default_kwargs.get('remove_columns')),
                         fp_key=src.pop('fp_key', default_kwargs.get('fp_key')),
                         read_attrs=src.pop('read_attrs', default_kwargs.get('read_attrs')),
+                        verbose=src.pop('verbose', verbose),
+                        **src,
+                    )
+                elif dataset_type == 'index_kits':
+                    dataset = load_index_kits_dataset(
+                        name_or_path,
+                        additional_metadata_column=src.pop('additional_metadata_column', default_kwargs.get('additional_metadata_column')),
+                        primary_key=primary_key,
                         verbose=src.pop('verbose', verbose),
                         **src,
                     )
@@ -259,7 +269,7 @@ def load_huggingface_dataset(
     """
     import datasets
     try:
-        import huggingface_hub.utils._errors
+        import huggingface_hub
     except ImportError:
         raise ImportError("Please install huggingface-hub by `pip install huggingface-hub` to load dataset from HuggingFace.")
     if dataset_cls is None:
@@ -278,7 +288,7 @@ def load_huggingface_dataset(
                 **kwargs,
             )
             break
-        except (huggingface_hub.utils._errors.HfHubHTTPError, ConnectionError, requests.exceptions.HTTPError, requests.exceptions.ReadTimeout):
+        except (huggingface_hub.utils.HfHubHTTPError, ConnectionError, requests.exceptions.HTTPError, requests.exceptions.ReadTimeout):
             logger.info(logging.yellow(f"Connection error when downloading dataset `{name_or_path}` from HuggingFace. Retrying..."))
             if max_retries is not None and retries >= max_retries:
                 raise
@@ -305,6 +315,26 @@ def load_huggingface_dataset(
         for index, img_key in enumerate(hfset[primary_key]):
             dic[img_key] = HuggingFaceData(hfset, index=index, **{primary_key: img_key})
     return dataset_cls.from_dict(dic, verbose=verbose)
+
+
+def load_index_kits_dataset(
+    name_or_path: str,
+    additional_metadata_column: str = None,
+    primary_key: str = 'image_key',
+    verbose: bool = False,
+    **kwargs: Dict[str, Any],
+) -> Dataset:
+    r"""
+    Load dataset from Index Kits and convert it to `Dataset`.
+    """
+    from .index_kits_dataset import IndexKitsDataset
+    return IndexKitsDataset.from_disk(
+        name_or_path,
+        additional_metadata_column=additional_metadata_column,
+        primary_key=primary_key,
+        verbose=verbose,
+        **kwargs
+    )
 
 
 def load_coco_dataset(
@@ -406,6 +436,17 @@ def parse_source_input(source: Union[List, Tuple, Dict, str, Path, None]) -> Lis
         for src in source
     ]
     return source
+
+
+def check_parsed_source(source: List[Dict[str, Any]]) -> None:
+    for i, src in enumerate(source):
+        if isinstance(src, Dataset):
+            continue
+        if 'name_or_path' not in src:
+            raise ValueError(f"source[{i}] must contain 'name_or_path'")
+        for key, value in src.items():
+            if key != 'name_or_path' and key not in DEFAULT_KWARGS:
+                raise ValueError(f"Invalid keyword argument: {key}={value}")
 
 
 def patch_key(dataset, primary_key) -> Dataset:

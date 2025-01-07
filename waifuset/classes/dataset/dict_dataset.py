@@ -27,7 +27,7 @@ class DictDataset(Dataset):
         elif isinstance(key, int):
             return self.data[list(self.data.keys())[key]]
         else:
-            raise KeyError
+            raise KeyError(f"key must be a str, slice or int, not {type(key)}")
 
     def __setitem__(self, key, value):
         self.data[key] = value

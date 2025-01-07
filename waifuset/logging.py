@@ -116,6 +116,9 @@ class ConsoleLogger:
     def critical(self, *msg: str, **kwargs):
         self.print(*msg, level='critical', **kwargs)
 
+    def write(self, *msg: str, **kwargs):
+        self.print(*msg, write=True, **kwargs)
+
     def __deepcopy__(self, memo):
         new_instance = self.__class__(
             name=self.name,
@@ -293,6 +296,10 @@ def critical(*msg: str, **kwargs):
 
 def tqdm(*args, **kwargs):
     return logger.tqdm(*args, **kwargs)
+
+
+def write(*msg: str, **kwargs):
+    logger.print(*msg, write=True, **kwargs)
 
 # Special logging tools
 

@@ -4,6 +4,10 @@ from ...utils import class_utils
 
 
 class ImageInfo(DictData):
+    r"""
+    Dev.
+    """
+
     def __init__(self, image_path, **kwargs):
         super().__init__(image_path=image_path, **kwargs)
 

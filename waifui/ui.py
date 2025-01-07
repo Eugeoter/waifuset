@@ -38,7 +38,9 @@ class UIManager(class_utils.FromConfigMixin):
     ui_language: Literal['en', 'cn'] = 'cn'
     ui_page_size: int = 40
     cpu_max_workers: int = 1
-    enable_category: bool = True
+    tags_column: Optional[str] = None
+    description_column: Optional[str] = None
+    enable_category: bool = None
     hf_cache_dir: Optional[str] = None
     verbose: bool = False
 
@@ -66,15 +68,22 @@ class UIManager(class_utils.FromConfigMixin):
         }
 
     def load_dataset(self):
-        global COLUMN_TAGS, COLUMN_DESCRIPTION
+        global TAGS_COLUMN, DESCRIPTION_COLUMN
         tic = time.time()
         dataset = FastDataset(self.dataset_source, verbose=self.verbose, **self.get_default_kwargs())
         _time_load_original_dataset = time.time() - tic
         tic2 = time.time()
+        if self.enable_category is None:
+            self.enable_category = True
+            self.enable_category &= len(dataset) < 1e6
+            self.enable_category &= 'image_path' in dataset.headers or 'category' in dataset.headers
+            self.logger.info(f"Auto set `enable_category` to {logging.yellow(self.enable_category)}")
         if any(col not in dataset.headers for col in ('image_key', 'category')):
             self.logger.info(f"Patching dataset columns \"{logging.yellow('image_key')}\" and \"{logging.yellow('category')}\"")
-            dataset.add_columns(['image_path', 'image_key', 'category', 'source', COLUMN_TAGS, COLUMN_DESCRIPTION])
-            dataset.apply_map(patch_image_path_base_info)
+            orig_columns = dataset.headers
+            dataset.add_columns(['image_path', 'image_key', 'category', 'source', TAGS_COLUMN, DESCRIPTION_COLUMN])
+            if 'image_path' in orig_columns and self.enable_category:
+                dataset.apply_map(patch_image_path_base_info)
         _time_patch_columns = time.time() - tic2
         tic3 = time.time()
         dataset = UIDataset.from_dataset(
@@ -89,15 +98,19 @@ class UIManager(class_utils.FromConfigMixin):
         self.logger.info(f"  - Patch columns: {logging.yellow(_time_patch_columns, '.2f')}s", no_prefix=True)
         self.logger.info(f"  - Convert to UI dataset: {logging.yellow(_time_convert_to_ui_dataset, '.2f')}s", no_prefix=True)
 
-        # Set COLUMN_TAGS
-        if 'caption' in dataset.headers:
-            COLUMN_TAGS = 'caption'
+        # Set TAGS_COLUMN
+        if self.tags_column:
+            TAGS_COLUMN = self.tags_column
+        elif 'caption' in dataset.headers:
+            TAGS_COLUMN = 'caption'
         elif 'tags' in dataset.headers:
-            COLUMN_TAGS = 'tags'
+            TAGS_COLUMN = 'tags'
 
-        # Set COLUMN_DESCRIPTION
-        if 'description' in dataset.headers:
-            COLUMN_DESCRIPTION = 'description'
+        # Set DESCRIPTION_COLUMN
+        if self.description_column:
+            DESCRIPTION_COLUMN = self.description_column
+        elif 'description' in dataset.headers:
+            DESCRIPTION_COLUMN = 'description'
 
         self.logger.info(f"Full dataset size: {logging.yellow(len(dataset))}x{logging.yellow(len(dataset.headers))}")
         return dataset
@@ -185,7 +198,7 @@ def create_ui(
         return df
 
     def convert_dataset_to_gallery(dataset: Dataset):
-        return [(v['image_path'], k) for k, v in dataset.items()]
+        return [(v.get('image', v.get('image_path')), k) for k, v in dataset.items()]
 
     # demo
     with gr.Blocks() as demo:
@@ -594,51 +607,52 @@ def create_ui(
                             with gr.Tab(label=translate('Tools', language)):
 
                                 with gr.Tab(label=translate('Tagger', language)):
-                                    with gr.Row(variant='compact'):
-                                        wd3_run_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
+                                    with gr.Tab(label=translate('Waifu Tagger V3', language)):
+                                        with gr.Row(variant='compact'):
+                                            wd3_run_btn = EmojiButton(Emoji.black_right_pointing_triangle, variant='primary', min_width=40)
 
-                                    with gr.Row(variant='compact'):
-                                        wd3_model = gr.Dropdown(
-                                            label=translate('Model', language),
-                                            choices=WD_REPOS,
-                                            value=WD_REPOS[0],
-                                            multiselect=False,
-                                            allow_custom_value=True,
-                                            scale=1,
-                                        )
+                                        with gr.Row(variant='compact'):
+                                            wd3_model = gr.Dropdown(
+                                                label=translate('Model', language),
+                                                choices=WD_REPOS,
+                                                value=WD_REPOS[0],
+                                                multiselect=False,
+                                                allow_custom_value=True,
+                                                scale=1,
+                                            )
 
-                                    with gr.Row(variant='compact'):
-                                        wd3_batch_size = gr.Number(
-                                            value=1,
-                                            label=translate('Batch Size', language),
-                                            min_width=96,
-                                            precision=0,
-                                            scale=0,
-                                        )
+                                        with gr.Row(variant='compact'):
+                                            wd3_batch_size = gr.Number(
+                                                value=1,
+                                                label=translate('Batch Size', language),
+                                                min_width=96,
+                                                precision=0,
+                                                scale=0,
+                                            )
 
-                                        wd3_overwrite_mode = gr.Radio(
-                                            label=translate('Overwrite mode', language),
-                                            choices=translate(['overwrite', 'ignore', 'append', 'prepend'], language),
-                                            value=translate('overwrite', language),
-                                            scale=1,
-                                            min_width=128,
-                                        )
+                                            wd3_overwrite_mode = gr.Radio(
+                                                label=translate('Overwrite mode', language),
+                                                choices=translate(['overwrite', 'ignore', 'append', 'prepend'], language),
+                                                value=translate('overwrite', language),
+                                                scale=1,
+                                                min_width=128,
+                                            )
 
-                                    with gr.Row(variant='compact'):
-                                        wd3_general_threshold = gr.Slider(
-                                            label=translate('General Threshold', language),
-                                            value=0.35,
-                                            minimum=0,
-                                            maximum=1,
-                                            step=0.01,
-                                        )
-                                        wd3_character_threshold = gr.Slider(
-                                            label=translate('Character Threshold', language),
-                                            value=0.5,
-                                            minimum=0,
-                                            maximum=1,
-                                            step=0.01,
-                                        )
+                                        with gr.Row(variant='compact'):
+                                            wd3_general_threshold = gr.Slider(
+                                                label=translate('General Threshold', language),
+                                                value=0.35,
+                                                minimum=0,
+                                                maximum=1,
+                                                step=0.01,
+                                            )
+                                            wd3_character_threshold = gr.Slider(
+                                                label=translate('Character Threshold', language),
+                                                value=0.5,
+                                                minimum=0,
+                                                maximum=1,
+                                                step=0.01,
+                                            )
 
                                 with gr.Tab(label=translate('Scorer', language)):
                                     with gr.Tab(label=translate('Waifu Scorer V4', language)):
@@ -1069,7 +1083,7 @@ def create_ui(
             )
 
             cur_img_key_change_listeners = [image_path, resolution, caption, caption_metadata_df, description, other_metadata_df, positive_prompt, negative_prompt, gen_params_df, log_box]
-            BASE_MD_KEYS = ('image_key', 'image_path', COLUMN_TAGS, COLUMN_DESCRIPTION)
+            BASE_MD_KEYS = ('image_key', 'image_path', TAGS_COLUMN, DESCRIPTION_COLUMN)
             CAPTION_MD_KEYS = tagging.ALL_TAG_TYPES
 
             def get_other_md_keys(img_md=None):
@@ -1079,7 +1093,7 @@ def create_ui(
                 if img_key is None or img_key == '':
                     return None
                 img_md = univset[img_key]
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 return str(caption) if caption is not None else None
 
             def get_metadata_df(img_key, keys):
@@ -1096,7 +1110,7 @@ def create_ui(
                 if not img_key:
                     return None
                 img_md = univset[img_key]
-                return img_md.get(COLUMN_DESCRIPTION, None)
+                return img_md.get(DESCRIPTION_COLUMN, None)
 
             def get_original_size(img_key):
                 if not img_key:
@@ -1327,7 +1341,7 @@ def create_ui(
                     for img_key, res_md in res_dict.items():
                         if res_md:
                             if not is_undo_redo:
-                                if is_write_caption and COLUMN_TAGS in res_md and res_md[COLUMN_TAGS] == univset[img_key][COLUMN_TAGS]:
+                                if is_write_caption and TAGS_COLUMN in res_md and res_md[TAGS_COLUMN] == univset[img_key][TAGS_COLUMN]:
                                     continue  # skip if `write_caption` didn't change the caption
                                 if img_key not in buffer:
                                     buffer.do(img_key, univset[img_key])  # push the original data into the bottom of the buffer stack
@@ -1361,7 +1375,7 @@ def create_ui(
             )
 
             def write_caption(img_md, caption: str):
-                return {COLUMN_TAGS: caption}
+                return {TAGS_COLUMN: caption}
 
             caption.blur(
                 fn=data_edition_handler(write_caption),
@@ -1422,7 +1436,7 @@ def create_ui(
                         txt_path = img_path.with_suffix('.txt')
                         txt_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(txt_path, 'w', encoding='utf-8') as f:
-                            f.write(str(img_md[COLUMN_TAGS]))
+                            f.write(str(img_md[TAGS_COLUMN]))
                     save_one = track_progress(progress, desc=f"[{save_to_disk.__name__}]", total=len(buffer))(save_one)
                     for img_md in buffer.latests().values():
                         save_one(img_md)
@@ -1489,7 +1503,7 @@ def create_ui(
                 return any(re.search(r'%.*%', tag) for tag in tags)
 
             def add_tags(img_md, tags, do_append):
-                caption = Caption(img_md.get(COLUMN_TAGS, None))
+                caption = Caption(img_md.get(TAGS_COLUMN, None))
                 if isinstance(tags, str):
                     tags = [tags]
                 tags = [format_tag(img_md, tag) for tag in tags]
@@ -1499,10 +1513,10 @@ def create_ui(
                     caption += tags
                 else:
                     caption = tags + caption
-                return {COLUMN_TAGS: caption.text}
+                return {TAGS_COLUMN: caption.text}
 
             def remove_tags(img_md, tags, do_regex):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
                 caption = Caption(caption)
@@ -1519,7 +1533,7 @@ def create_ui(
                     except re.error as e:
                         raise gr.Error(f"invalid regex: {e}")
                 caption -= tags
-                return {COLUMN_TAGS: caption.text}
+                return {TAGS_COLUMN: caption.text}
 
             # ========================================= Custom Tagging ========================================= #
 
@@ -1538,7 +1552,7 @@ def create_ui(
                 )
 
             def replace_tag(img_md, old, new, match_tag, do_regex):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return
                 caption = Caption(caption)
@@ -1556,7 +1570,7 @@ def create_ui(
                         caption[old] = new
                     else:
                         caption = Caption(caption.text.replace(old, new))
-                return {COLUMN_TAGS: caption.text}
+                return {TAGS_COLUMN: caption.text}
 
             for replace_tag_btn, old_tag_selector, new_tag_selector in zip(replace_tag_btns, old_tag_selectors, new_tag_selectors):
                 replace_tag_btn.click(
@@ -1618,12 +1632,12 @@ def create_ui(
             )
 
             def parse_caption_attrs(img_md):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
                 caption = Caption(caption).parsed()
                 attr_dict = {}
-                attr_dict[COLUMN_TAGS] = caption.text
+                attr_dict[TAGS_COLUMN] = caption.text
                 attrs = caption.attrs
                 attrs.pop('tags')
                 for attr, value in attrs.items():
@@ -1638,10 +1652,10 @@ def create_ui(
             )
 
             def sort_caption(img_md):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
-                return {COLUMN_TAGS: Caption(caption).sorted().text}
+                return {TAGS_COLUMN: Caption(caption).sorted().text}
 
             sort_caption_btn.click(
                 fn=data_edition_handler(sort_caption),
@@ -1651,7 +1665,7 @@ def create_ui(
             )
 
             def formalize_caption(img_md, formats):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
                 if isinstance(formats, str):
@@ -1661,7 +1675,7 @@ def create_ui(
                 caption = Caption(caption)
                 for fmt in formats:
                     caption.format(FORMAT_PRESETS[fmt])
-                return {COLUMN_TAGS: caption.text}
+                return {TAGS_COLUMN: caption.text}
 
             formalize_caption_btn.click(
                 fn=data_edition_handler(formalize_caption),
@@ -1671,10 +1685,10 @@ def create_ui(
             )
 
             def deduplicate_caption(img_md):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
-                return {COLUMN_TAGS: Caption(caption).deduplicated().text}
+                return {TAGS_COLUMN: Caption(caption).deduplicated().text}
 
             deduplicate_caption_btn.click(
                 fn=data_edition_handler(deduplicate_caption),
@@ -1684,10 +1698,10 @@ def create_ui(
             )
 
             def deimplicate_caption(img_md):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
-                return {COLUMN_TAGS: Caption(caption).deimplicated().text}
+                return {TAGS_COLUMN: Caption(caption).deimplicated().text}
 
             deoverlap_caption_btn.click(
                 fn=data_edition_handler(deimplicate_caption),
@@ -1697,12 +1711,12 @@ def create_ui(
             )
 
             def defeature_caption(img_md, feature_type, freq_thres):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
                 if language != 'en':
                     feature_type = translate(feature_type, 'en')
-                return {COLUMN_TAGS: Caption(caption).defeatured(feature_type_to_frequency_threshold={feature_type: freq_thres}).text}
+                return {TAGS_COLUMN: Caption(caption).defeatured(feature_type_to_frequency_threshold={feature_type: freq_thres}).text}
 
             defeature_caption_btn.click(
                 fn=data_edition_handler(defeature_caption),
@@ -1712,12 +1726,12 @@ def create_ui(
             )
 
             def alias_caption(img_md):
-                caption = img_md.get(COLUMN_TAGS, None)
+                caption = img_md.get(TAGS_COLUMN, None)
                 if caption is None:
                     return None
                 caption = Caption(caption)
                 caption.alias()
-                return {COLUMN_TAGS: caption.text}
+                return {TAGS_COLUMN: caption.text}
 
             alias_caption_btn.click(
                 fn=data_edition_handler(alias_caption),
@@ -1739,7 +1753,7 @@ def create_ui(
                 if not isinstance(batch, list):
                     batch = [batch]
                 if overwrite_mode == 'ignore':
-                    batch = [img_md for img_md in batch if img_md[COLUMN_TAGS] is None]
+                    batch = [img_md for img_md in batch if img_md[TAGS_COLUMN] is None]
                     if len(batch) == 0:
                         return []
 
@@ -1761,10 +1775,10 @@ def create_ui(
                     if overwrite_mode == 'overwrite' or overwrite_mode == 'ignore':
                         tags = pred_tags
                     elif overwrite_mode == 'append':
-                        tags = img_md.get(COLUMN_TAGS, '').split(', ') + pred_tags
+                        tags = img_md.get(TAGS_COLUMN, '').split(', ') + pred_tags
                     else:  # elif overwrite_mode == 'prepend':
-                        tags = pred_tags + img_md.get(COLUMN_TAGS, []).split(', ')
-                    batch_results.append({COLUMN_TAGS: ', '.join(tags)})
+                        tags = pred_tags + img_md.get(TAGS_COLUMN, []).split(', ')
+                    batch_results.append({TAGS_COLUMN: ', '.join(tags)})
                 return batch_results
 
             wd3_run_btn.click(
@@ -2023,6 +2037,9 @@ def create_ui(
                 use_sql_query = isinstance(rootset, SQLite3Dataset) and (len(queryset) >= 0.5 * len(univset))
 
                 # if pattern is empty, select None
+                if not isinstance(pattern, (re.Pattern, str)):
+                    pattern = str(pattern)
+
                 if not pattern:
                     if use_sql_query:
                         result_keys = [row[0] for row in rootset.table.select_in(attr, ['', None]) if row[0] in queryset]

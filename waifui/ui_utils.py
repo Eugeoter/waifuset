@@ -10,8 +10,8 @@ from waifuset import logging, tagging
 WAIFUI_ROOT = Path(__file__).parent
 JSON_ROOT = WAIFUI_ROOT / 'json'
 
-COLUMN_TAGS = 'tags'
-COLUMN_DESCRIPTION = 'description'
+TAGS_COLUMN = 'tags'
+DESCRIPTION_COLUMN = 'description'
 
 logger = logging.get_logger('UI')
 

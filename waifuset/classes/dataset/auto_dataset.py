@@ -1,4 +1,5 @@
 import os
+import inspect
 from pathlib import Path
 from .dataset import Dataset
 from .dataset_mixin import FromDiskMixin
@@ -58,4 +59,5 @@ class AutoDataset(object):
         if not issubclass(cls_, ToDiskMixin):
             raise TypeError(f'{cls_} does not support dump')
         dumpset = cls_.from_dataset(dataset, *args, fp=fp, **kwargs)
-        dumpset.commit()
+        commit_args = inspect.signature(dumpset.dump).parameters
+        dumpset.commit(**{k: v for k, v in kwargs.items() if k in commit_args})

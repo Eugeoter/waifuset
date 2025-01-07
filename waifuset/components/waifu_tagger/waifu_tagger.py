@@ -76,23 +76,45 @@ class WaifuTagger(object):
         elif device.type == 'cpu':
             providers = ['CPUExecutionProvider']
             device = device
+        else:
+            raise ValueError(f"device `{device}` is not supported.")
 
         if device != device:
-            logger.print(f"device `{device}` is not available, use `{device}` instead.")
+            logger.print(f"Device `{device}` is not available, use `{device}` instead.")
 
         if verbose:
-            logger.print(f"loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
-            logger.print(f"  providers: {logging.stylize(providers, logging.ANSI.GREEN)}")
-            if str(device) == 'cuda':
-                logger.print(f"  run on CUDA: {logging.stylize(torch.version.cuda, logging.ANSI.GREEN)}")
-            elif str(device) == 'cpu':
-                logger.print(f"  run on CPU.")
+            logger.print(f"Loading pretrained model from `{logging.stylize(pretrained_model_name_or_path, logging.ANSI.YELLOW, logging.ANSI.UNDERLINE)}`")
 
         with logging.timer("load WaifuTagger", logger=logger):
-            model = rt.InferenceSession(
-                model_path,
-                providers=providers
-            )
+            if model_path.endswith(".onnx"):
+                if 'CUDAExecutionProvider' in providers:
+                    device_id = device.index
+                    if device_id is None:
+                        device_id = 0
+                    providers[providers.index('CUDAExecutionProvider')] = ('CUDAExecutionProvider', {'device_id': int(device_id)})
+                model = rt.InferenceSession(
+                    model_path,
+                    providers=providers
+                )
+                model_providers = model.get_providers()
+
+                # check providers
+                if verbose:
+                    logger.print(f"  Providers: {logging.stylize(model_providers, logging.ANSI.GREEN)}")
+                    if 'CUDAExecutionProvider' in model_providers:
+                        logger.print(f"  Device: {logging.stylize('CUDA', logging.ANSI.GREEN)}")
+                    elif 'CPUExecutionProvider' in model_providers:
+                        logger.print(f"  Device: {logging.stylize('CPU', logging.ANSI.GREEN)}")
+
+                providers = [provider[0] if isinstance(provider, tuple) else provider for provider in providers]
+                unexpected_providers = set(providers) - set(model_providers)
+                missing_providers = set(model_providers) - set(providers)
+                if unexpected_providers:
+                    logger.warning(f"  Unexpected providers: {logging.red(unexpected_providers)}")
+                if missing_providers:
+                    logger.warning(f"  Missing providers: {logging.red(missing_providers)}")
+            elif model_path.endswith(".safetensors"):
+                raise NotImplementedError("SafeTensors is not supported yet.")
 
         # Load labels
         df = pd.read_csv(label_path)  # Read csv file

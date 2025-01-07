@@ -1,18 +1,18 @@
 import datasets
 from typing import Optional, Union, Sequence, Mapping, Dict, overload
 from datasets import Split, Features, DownloadConfig, DownloadMode, VerificationMode, Version
-from .dict_dataset import DictDataset
+from .dataset import Dataset
 
 
-class HuggingFaceDataset(DictDataset):
+class HuggingFaceDataset(Dataset, datasets.Dataset):
     DEFAULT_CONFIG = {
-        **DictDataset.DEFAULT_CONFIG,
+        **Dataset.DEFAULT_CONFIG,
         'repo_id': None,
         'split': None,
     }
 
     def __init__(self, source, **kwargs):
-        DictDataset.__init__(self, source, **kwargs)
+        Dataset.__init__(self, **kwargs)
 
     @overload
     @classmethod

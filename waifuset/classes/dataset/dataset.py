@@ -33,6 +33,24 @@ def get_column2type(dic, header=None):
 
 
 class Dataset(ConfigMixin):
+    r"""
+    To inherit this class, you need to implement the following methods:
+    - __getitem__(self, key)
+    - __setitem__(self, key, value)
+    - __delitem__(self, key)
+    - __contains__(self, key)
+    - __iter__(self)
+    - __len__(self)
+    - items(self)
+    - keys(self)
+    - values(self)
+    - get(self, key, default=None)
+    - set(self, key, value)
+    - set(self, dic: Dict)
+    - update(self, other)
+    - clear(self)
+    - from_dict(cls, dic: Dict, **kwargs)
+    """
     DEFAULT_CONFIG = {
         **ConfigMixin.DEFAULT_CONFIG,
         'name': None,

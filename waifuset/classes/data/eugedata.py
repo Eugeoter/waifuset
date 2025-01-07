@@ -5,6 +5,10 @@ from ... import logging
 
 
 class EugeData(ImageInfo):
+    r"""
+    Dev.
+    """
+
     def read(self, fp=None, types: List[Literal['txt', 'danbooru']] = None, **kwargs):
         try:
             attrs_dict = read_attrs(fp or self.image_path, types=types, **kwargs)
